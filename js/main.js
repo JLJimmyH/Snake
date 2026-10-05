@@ -15,7 +15,7 @@ const board = new Board($('#viewport'), {
     $('#zoom').textContent = Math.round(v.s * 100) + '%';
     if (!silent) scheduleSave();
   },
-  onSelect: has => { $('#btn-del').disabled = !has; },
+  onSelect: count => { $('#btn-del').disabled = !count; },
   onHistory: (canUndo, canRedo) => {
     $('#btn-undo').disabled = !canUndo;
     $('#btn-redo').disabled = !canRedo;
@@ -95,11 +95,13 @@ async function seed() {
   const welcome = await createPage(null, '歡迎使用');
   const lines = [
     [28, '👋 歡迎！這是筆記 MVP'],
+    [18, '↖ 選取（預設）：單指拖曳移動畫面，點一下選取物件後可拖曳'],
+    [18, '➰ 套索：圈起筆跡/文字/圖片，一起移動或刪除'],
     [18, '✏️ 筆：單指或觸控筆直接書寫'],
+    [18, '🧽 橡皮擦：可切換「局部」或「整條」'],
     [18, '🤏 雙指：縮放與平移畫面'],
-    [18, 'T 文字：點空白處開始打字'],
-    [18, '🖼 圖片：從相簿或相機上傳'],
-    [18, '↖ 選取：拖曳圖片/文字，拉圖片右下角圓點縮放'],
+    [18, 'T 文字：點空白處開始打字，選取後拉右側把手調寬度'],
+    [18, '🖼 圖片：從相簿或相機上傳，拉右下角圓點縮放'],
     [18, '📁 左側頁面可以無限層巢狀（像 Notion）'],
   ];
   let y = 0;
@@ -354,7 +356,11 @@ $$('.opts').forEach(group => {
   group.addEventListener('click', e => {
     const sw = e.target.closest('.swatch');
     const wb = e.target.closest('.wbtn');
-    if (sw) {
+    const md = e.target.closest('[data-mode]');
+    if (md) {
+      style.mode = md.dataset.mode;
+      group.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === md));
+    } else if (sw) {
       style.color = sw.dataset.color;
       group.querySelectorAll('.swatch').forEach(x => x.classList.toggle('active', x === sw));
     } else if (wb) {
@@ -402,7 +408,7 @@ document.addEventListener('keydown', e => {
   if (mod && k === 'y') { e.preventDefault(); board.redo(); return; }
   if (mod) return;
   if (e.key === 'Delete' || e.key === 'Backspace') { board.deleteSelected(); return; }
-  const tools = { v: 'select', p: 'pen', h: 'hl', e: 'eraser', t: 'text' };
+  const tools = { v: 'select', l: 'lasso', p: 'pen', h: 'hl', e: 'eraser', t: 'text' };
   if (tools[k]) setTool(tools[k]);
 });
 
@@ -414,6 +420,21 @@ document.addEventListener('paste', async e => {
   setTool('select');
   for (const f of files) await board.addImage(f);
 });
+
+// 手機鍵盤彈出時 visualViewport 會變小：讓整個 app 貼齊可見範圍，再把游標捲進畫面
+const vv = window.visualViewport;
+if (vv) {
+  const fit = () => {
+    const root = document.documentElement.style;
+    root.setProperty('--app-h', vv.height + 'px');
+    root.setProperty('--app-top', vv.offsetTop + 'px');
+    board.rect = $('#viewport').getBoundingClientRect();
+    board.revealCaret();
+  };
+  vv.addEventListener('resize', fit);
+  vv.addEventListener('scroll', fit);
+  fit();
+}
 
 // iOS Safari 的整頁縮放手勢
 document.addEventListener('gesturestart', e => e.preventDefault());
@@ -434,7 +455,7 @@ async function init() {
   if (!pages.length) await seed();
   const last = await db.get('meta', 'lastPage');
   try { if (localStorage.getItem('fingerDraws') === '0') board.fingerDraws = false; } catch { /* ignore */ }
-  setTool('pen');
+  setTool('select');
   updateFinger();
   await openPage(byId(last) ? last : kids(null)[0].id);
 }

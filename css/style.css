@@ -44,10 +44,15 @@ svg.i {
   stroke-linejoin: round;
 }
 
+/* 高度跟著 visualViewport（iPhone 鍵盤彈出時會縮小），由 main.js 設定 */
 #app {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: var(--app-top, 0px);
   display: flex;
   height: 100vh;
-  height: 100dvh;
+  height: var(--app-h, 100dvh);
 }
 
 /* ---------- Sidebar (Notion 風格頁面樹) ---------- */
@@ -203,7 +208,8 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
 .tb-group { flex: none; display: flex; align-items: center; gap: 2px; }
 .tb-sep { flex: none; width: 1px; height: 24px; margin: 0 6px; background: var(--border); }
 #toolbar:not([data-tool="pen"]) .opts[data-for="pen"],
-#toolbar:not([data-tool="hl"]) .opts[data-for="hl"] { display: none; }
+#toolbar:not([data-tool="hl"]) .opts[data-for="hl"],
+#toolbar:not([data-tool="eraser"]) .opts[data-for="eraser"] { display: none; }
 
 .tbtn {
   flex: none;
@@ -286,12 +292,14 @@ svg.ink {
 }
 svg.ink path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 svg.ink path.hl { opacity: .5; mix-blend-mode: multiply; }
+svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
 
 .item { position: absolute; }
 
 #viewport[data-tool="pen"] .item,
 #viewport[data-tool="hl"] .item,
 #viewport[data-tool="eraser"] .item,
+#viewport[data-tool="lasso"] .item,
 #viewport[data-tool="text"] .img-item { pointer-events: none; }
 
 .img-item img {
@@ -307,9 +315,12 @@ svg.ink path.hl { opacity: .5; mix-blend-mode: multiply; }
 .text-item {
   width: max-content;
   max-width: 32em;
+  border-radius: 4px;
+}
+.text-item.fixed-w { max-width: none; }
+.text-body {
   min-width: 1em;
   padding: 2px 4px;
-  border-radius: 4px;
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-word;
@@ -317,17 +328,25 @@ svg.ink path.hl { opacity: .5; mix-blend-mode: multiply; }
   -webkit-user-select: text;
   user-select: text;
 }
-.text-item:focus { box-shadow: 0 0 0 calc(1.5px * var(--inv, 1)) var(--accent); }
-.text-item:empty::before { content: "輸入文字…"; color: var(--muted); }
-#viewport[data-tool="select"] .text-item:not(:focus) {
+.text-item:focus-within { box-shadow: 0 0 0 calc(1.5px * var(--inv, 1)) var(--accent); }
+.text-body:empty::before { content: "輸入文字…"; color: var(--muted); }
+#viewport[data-tool="select"] .text-item:not(:focus-within) {
   cursor: move;
   -webkit-user-select: none;
   user-select: none;
 }
+#viewport[data-tool="select"] .text-item:not(:focus-within) .text-body {
+  -webkit-user-select: none;
+  user-select: none;
+}
 
-.item.selected {
-  outline: calc(2px * var(--inv, 1)) solid var(--accent);
-  outline-offset: calc(2px * var(--inv, 1));
+/* 選取範圍框（世界座標，跟著縮放） */
+.sel-box {
+  position: absolute;
+  border: calc(1.5px * var(--inv, 1)) dashed var(--accent);
+  border-radius: calc(4px * var(--inv, 1));
+  background: rgba(119, 25, 170, .04);
+  pointer-events: none;
 }
 
 .handle {
@@ -342,7 +361,28 @@ svg.ink path.hl { opacity: .5; mix-blend-mode: multiply; }
   background: #fff;
   cursor: nwse-resize;
 }
-#viewport[data-tool="select"] .img-item.selected .handle { display: block; }
+/* 文字框右側的寬度把手 */
+.w-handle {
+  top: 50%;
+  bottom: auto;
+  right: calc(-9px * var(--inv, 1));
+  width: calc(14px * var(--inv, 1));
+  height: calc(32px * var(--inv, 1));
+  margin-top: calc(-16px * var(--inv, 1));
+  border-radius: calc(7px * var(--inv, 1));
+  cursor: ew-resize;
+}
+#viewport[data-tool="select"] .item.selected .handle { display: block; }
+
+/* 橡皮擦範圍圈（螢幕座標） */
+.eraser-cursor {
+  position: absolute;
+  z-index: 5;
+  border: 1.5px solid rgba(0, 0, 0, .45);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .35);
+  pointer-events: none;
+}
 
 /* ---------- Menu / Toast ---------- */
 #menu {

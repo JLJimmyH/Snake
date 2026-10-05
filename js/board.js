@@ -60,6 +60,50 @@ function strokeHit(it, p, r) {
   return false;
 }
 
+function inPoly(x, y, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const [xi, yi] = poly[i], [xj, yj] = poly[j];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+// 從折線挖掉圓 (c, R) 覆蓋的部分，回傳剩下的片段；完全沒碰到回傳 null
+function cutStroke(pts, c, R) {
+  const R2 = R * R;
+  const inside = p => (p[0] - c.x) ** 2 + (p[1] - c.y) ** 2 <= R2;
+  if (pts.length === 1) return inside(pts[0]) ? [] : null;
+  const out = [];
+  let cur = inside(pts[0]) ? null : [pts[0]];
+  let touched = !cur;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    const dx = b[0] - a[0], dy = b[1] - a[1], fx = a[0] - c.x, fy = a[1] - c.y;
+    const A = dx * dx + dy * dy, B = 2 * (fx * dx + fy * dy), C = fx * fx + fy * fy - R2;
+    const disc = B * B - 4 * A * C;
+    let lo = 1, hi = 0;
+    if (A > 0 && disc > 0) {
+      const s = Math.sqrt(disc);
+      lo = Math.max(0, (-B - s) / (2 * A));
+      hi = Math.min(1, (-B + s) / (2 * A));
+    } else if (A === 0 && C <= 0) {
+      lo = 0; hi = 1;
+    }
+    if (lo >= hi) {
+      (cur ??= [a]).push(b);
+      continue;
+    }
+    touched = true;
+    const at = t => [r1(a[0] + dx * t), r1(a[1] + dy * t)];
+    if (lo > 0) (cur ??= [a]).push(at(lo));
+    if (cur && cur.length >= 2) out.push(cur);
+    cur = hi < 1 ? [at(hi), b] : null;
+  }
+  if (cur && cur.length >= 2) out.push(cur);
+  return touched ? out : null;
+}
+
 // 手機照片動輒 4000px / 5MB，先縮到 2000px 內再存
 async function prepareImage(file) {
   const url = URL.createObjectURL(file);
@@ -94,8 +138,14 @@ export class Board {
     this.svg = document.createElementNS(SVGNS, 'svg');
     this.svg.setAttribute('class', 'ink');
     this.textLayer = h('div', 'layer');
-    this.world.append(this.imgLayer, this.svg, this.textLayer);
-    vp.append(this.world);
+    this.uiLayer = h('div', 'layer');
+    this.selBox = h('div', 'sel-box');
+    this.selBox.hidden = true;
+    this.uiLayer.append(this.selBox);
+    this.world.append(this.imgLayer, this.svg, this.textLayer, this.uiLayer);
+    this.cursor = h('div', 'eraser-cursor');
+    this.cursor.hidden = true;
+    vp.append(this.world, this.cursor);
 
     this.items = [];          // 視為不可變：要改某個 item 先 _own() 複製
     this.els = new Map();     // item.id -> DOM
@@ -104,16 +154,18 @@ export class Board {
     this.style = {
       pen: { color: '#1f2937', width: 3 },
       hl: { color: '#fde047', width: 20 },
+      eraser: { mode: 'partial', width: 12 }, // width = 螢幕上的半徑
     };
     this.fingerDraws = true;  // 偵測到觸控筆後自動改成手指只負責移動
     this.pointers = new Map();
     this.action = null;
     this.editing = null;
-    this.selected = null;
+    this.sel = new Set();
+    this.selBounds = null;
     this.undoStack = [];
     this.redoStack = [];
     this.rect = vp.getBoundingClientRect();
-    this.setTool('pen');
+    this.setTool('select');
     this._bind();
   }
 
@@ -122,14 +174,13 @@ export class Board {
     this.action = null;
     this.pointers.clear();
     this.editing = null;
-    this.selected = null;
+    this.sel = new Set();
     this.items = doc?.items ?? [];
     this.undoStack = [];
     this.redoStack = [];
     this._renderAll();
     const v = doc?.view ?? { x: 40, y: 40, s: 1 };
     this.setView(v.x, v.y, v.s, true);
-    this.cb.onSelect?.(false);
     this._history();
   }
 
@@ -137,7 +188,8 @@ export class Board {
     this.commitText();
     this.tool = t;
     this.vp.dataset.tool = t;
-    if (t !== 'select') this.select(null);
+    this.cursor.hidden = true;
+    if (t !== 'select' && t !== 'lasso') this.setSelection([]);
   }
 
   setView(x, y, s, silent = false) {
@@ -167,23 +219,25 @@ export class Board {
     return { x: (cx - r.left - this.view.x) / this.view.s, y: (cy - r.top - this.view.y) / this.view.s };
   }
 
-  select(id) {
-    if (this.selected === id) return;
-    this.els.get(this.selected)?.classList.remove('selected');
-    this.selected = id;
-    this.els.get(id)?.classList.add('selected');
-    this.cb.onSelect?.(!!id);
+  setSelection(ids) {
+    for (const id of this.sel) this.els.get(id)?.classList.remove('selected');
+    this.sel = new Set(ids);
+    // 只有單選時顯示縮放把手
+    if (this.sel.size === 1) this.els.get(ids[0])?.classList.add('selected');
+    this._updateSelBox();
+    this.cb.onSelect?.(this.sel.size);
   }
 
   deleteSelected() {
-    const id = this.selected;
-    if (!id) return;
+    if (!this.sel.size) return;
     this.commitText();
-    this.select(null);
-    if (!this.items.some(x => x.id === id)) return;
+    const ids = this.sel;
+    this.setSelection([]);
+    const n = this.items.length;
     const before = this._snap();
-    this.items = this.items.filter(x => x.id !== id);
-    this._unmount(id);
+    this.items = this.items.filter(x => !ids.has(x.id));
+    if (this.items.length === n) return;
+    ids.forEach(id => this._unmount(id));
     this._commit(before);
   }
 
@@ -224,13 +278,34 @@ export class Board {
     this.items.push(item);
     this._mount(item);
     this._commit(before);
-    this.select(item.id);
+    this.setSelection([item.id]);
   }
 
   // 結束目前的文字編輯（會觸發 focusout 存檔）
   commitText() {
     const a = document.activeElement;
-    if (a?.classList?.contains('text-item')) a.blur();
+    if (a?.classList?.contains('text-body')) a.blur();
+  }
+
+  // 讓正在輸入的游標留在可見範圍（手機鍵盤彈出時）
+  revealCaret() {
+    const body = document.activeElement;
+    if (!body?.classList?.contains('text-body')) return;
+    const vr = this.vp.getBoundingClientRect();
+    let r = null;
+    const sel = getSelection();
+    if (sel.rangeCount) {
+      const rects = sel.getRangeAt(0).getClientRects();
+      if (rects.length) r = rects[rects.length - 1];
+    }
+    if (!r || (!r.width && !r.height)) r = body.getBoundingClientRect();
+    const m = 24;
+    let dx = 0, dy = 0;
+    if (r.bottom > vr.bottom - m) dy = vr.bottom - m - r.bottom;
+    else if (r.top < vr.top + m) dy = vr.top + m - r.top;
+    if (r.right > vr.right - m) dx = vr.right - m - r.right;
+    else if (r.left < vr.left + m) dx = vr.left + m - r.left;
+    if (dx || dy) this.setView(this.view.x + dx, this.view.y + dy, this.view.s);
   }
 
   // ---------- events ----------
@@ -240,6 +315,7 @@ export class Board {
     vp.addEventListener('pointermove', e => this._move(e));
     vp.addEventListener('pointerup', e => this._up(e));
     vp.addEventListener('pointercancel', e => this._up(e));
+    vp.addEventListener('pointerleave', e => { if (!this.action) this.cursor.hidden = true; });
     vp.addEventListener('wheel', e => this._wheel(e), { passive: false });
     vp.addEventListener('contextmenu', e => { if (!e.target.isContentEditable) e.preventDefault(); });
     // focus 到文字框時瀏覽器可能偷偷捲動 overflow:hidden 的容器，強制歸零
@@ -302,8 +378,10 @@ export class Board {
     }
     if (this.action) return;
 
+    const itemEl = e.target.closest('.item');
+    const handle = e.target.closest('.handle');
     const textEl = e.target.closest('.text-item');
-    if (textEl && (this.tool === 'text' || textEl === document.activeElement)) return; // 交給瀏覽器放游標
+    if (!handle && textEl && (this.tool === 'text' || textEl.contains(document.activeElement))) return; // 交給瀏覽器放游標
 
     e.preventDefault();
     this.commitText();
@@ -311,11 +389,13 @@ export class Board {
 
     const w = this.toWorld(e.clientX, e.clientY);
     const base = { id: e.pointerId, ptype: e.pointerType };
-    const drawTool = this.tool === 'pen' || this.tool === 'hl' || this.tool === 'eraser';
+    const fingerPans = isTouch && !this.fingerDraws;
+    const t = this.tool;
 
-    if (drawTool && !(isTouch && !this.fingerDraws)) {
-      if (this.tool === 'eraser') {
+    if ((t === 'pen' || t === 'hl' || t === 'eraser') && !fingerPans) {
+      if (t === 'eraser') {
         this.action = { ...base, kind: 'erase', before: this._snap(), hit: false, last: w };
+        this._showCursor(e);
         this._eraseAt(w);
       } else {
         this._startStroke(base, w);
@@ -323,20 +403,15 @@ export class Board {
       return;
     }
 
-    if (this.tool === 'select') {
-      const itemEl = e.target.closest('.item');
+    if (t === 'select' || t === 'lasso') {
+      if (handle && itemEl) return this._startResize(base, w, itemEl.dataset.id);
       if (itemEl) {
         const id = itemEl.dataset.id;
-        const before = this._snap();
-        const item = this._own(id);
-        this.select(id);
-        if (e.target.closest('.handle')) {
-          this.action = { ...base, kind: 'resize', item, before, start: w, ow: item.w, ratio: item.h / item.w };
-        } else {
-          this.action = { ...base, kind: 'move', item, before, start: w, ox: item.x, oy: item.y, moved: false };
-        }
-        return;
+        if (!this.sel.has(id)) this.setSelection([id]);
+        return this._startMove(base, w, id);
       }
+      if (this._inSelBox(w)) return this._startMove(base, w, null);
+      if (t === 'lasso' && !fingerPans) return this._startLasso(base, w);
     }
 
     this._startPan(e, w);
@@ -350,6 +425,7 @@ export class Board {
   }
 
   _move(e) {
+    if (this.tool === 'eraser' && (e.pointerType !== 'touch' || this.action?.kind === 'erase')) this._showCursor(e);
     const p = this.pointers.get(e.pointerId);
     if (!p) return;
     p.x = e.clientX;
@@ -365,6 +441,12 @@ export class Board {
       a.path.setAttribute('d', pathData(a.item.pts));
     } else if (a.kind === 'erase') {
       this._eraseAt(this.toWorld(e.clientX, e.clientY));
+    } else if (a.kind === 'lasso') {
+      const w = this.toWorld(e.clientX, e.clientY);
+      const last = a.pts[a.pts.length - 1];
+      if (Math.hypot(w.x - last[0], w.y - last[1]) * this.view.s < 3) return;
+      a.pts.push([r1(w.x), r1(w.y)]);
+      a.path.setAttribute('d', 'M' + a.pts.map(q => q.join(' ')).join('L') + 'Z');
     } else if (a.kind === 'pan') {
       const dx = e.clientX - a.sx, dy = e.clientY - a.sy;
       if (!a.moved && Math.hypot(dx, dy) < 6) return;
@@ -374,16 +456,15 @@ export class Board {
       const w = this.toWorld(e.clientX, e.clientY);
       const dx = w.x - a.start.x, dy = w.y - a.start.y;
       if (!a.moved && Math.hypot(dx, dy) * this.view.s < 6) return;
-      a.moved = true;
-      a.item.x = r1(a.ox + dx);
-      a.item.y = r1(a.oy + dy);
-      this._place(a.item);
+      if (!a.moved) this._beginMove(a);
+      this._applyMove(a, dx, dy);
     } else if (a.kind === 'resize') {
       const w = this.toWorld(e.clientX, e.clientY);
-      const nw = Math.max(24 / this.view.s, a.ow + w.x - a.start.x);
+      const nw = Math.max(a.min, a.ow + w.x - a.start.x);
       a.item.w = r1(nw);
-      a.item.h = r1(nw * a.ratio);
+      if (a.item.type === 'image') a.item.h = r1(nw * a.ratio);
       this._place(a.item);
+      this._updateSelBox();
     }
   }
 
@@ -409,18 +490,23 @@ export class Board {
         break;
       case 'erase':
         if (a.hit) this._commit(a.before);
+        if (a.ptype !== 'mouse') this.cursor.hidden = true;
+        break;
+      case 'lasso':
+        this._endLasso(a);
         break;
       case 'move':
-        if (a.moved) this._commit(a.before);
-        else if (a.item.type === 'text') this._focusText(a.item.id);
+        if (a.moved) this._finishMove(a);
+        else if (a.tapId && this._item(a.tapId)?.type === 'text') this._focusText(a.tapId);
         break;
       case 'resize':
         this._commit(a.before);
+        this._updateSelBox();
         break;
       case 'pan':
         if (a.moved || !a.at) break;
         if (this.tool === 'text') this._newText(a.at);
-        else if (this.tool === 'select') this.select(null);
+        else if (this.tool === 'select' || this.tool === 'lasso') this._tapSelect(a.at);
         break;
     }
   }
@@ -430,8 +516,10 @@ export class Board {
     const a = this.action;
     this.action = null;
     if (!a) return;
-    if (a.kind === 'draw') a.path.remove();
-    else if ((a.kind === 'move' && a.moved) || a.kind === 'resize' || (a.kind === 'erase' && a.hit)) this._commit(a.before);
+    if (a.kind === 'draw' || a.kind === 'lasso') a.path.remove();
+    else if (a.kind === 'move' && a.moved) this._finishMove(a);
+    else if (a.kind === 'resize' || (a.kind === 'erase' && a.hit)) this._commit(a.before);
+    this.cursor.hidden = true;
   }
 
   _startGesture([a, b]) {
@@ -476,23 +564,208 @@ export class Board {
     a.item.pts.push([r1(w.x), r1(w.y)]);
   }
 
+  _showCursor(e) {
+    const d = this.style.eraser.width * 2;
+    const r = this.vp.getBoundingClientRect();
+    Object.assign(this.cursor.style, {
+      width: d + 'px', height: d + 'px',
+      left: e.clientX - r.left - d / 2 + 'px',
+      top: e.clientY - r.top - d / 2 + 'px',
+    });
+    this.cursor.hidden = false;
+  }
+
   _eraseAt(w) {
-    const a = this.action, r = 10 / this.view.s;
-    const steps = Math.max(1, Math.ceil(dist(a.last, w) / r));
+    const a = this.action;
+    const r = this.style.eraser.width / this.view.s;
+    const steps = Math.max(1, Math.ceil(dist(a.last, w) / (r / 2)));
     const samples = [];
     for (let i = 1; i <= steps; i++) {
       samples.push({ x: a.last.x + (w.x - a.last.x) * i / steps, y: a.last.y + (w.y - a.last.y) * i / steps });
     }
     a.last = w;
-    const keep = this.items.filter(it => {
-      if (it.type !== 'stroke' || !samples.some(p => strokeHit(it, p, r))) return true;
+
+    const partial = this.style.eraser.mode === 'partial';
+    let changed = false;
+    const next = [];
+    for (const it of this.items) {
+      if (it.type !== 'stroke' || !samples.some(p => strokeHit(it, p, r))) {
+        next.push(it);
+        continue;
+      }
+      changed = true;
+      if (partial) {
+        // 局部擦除：把筆跡切成剩下的片段，原位置插回去以保持上下順序
+        let pieces = [it.pts];
+        for (const p of samples) {
+          pieces = pieces.flatMap(pc => cutStroke(pc, p, r + it.width / 2) ?? [pc]);
+        }
+        const oldEl = this.els.get(it.id);
+        for (const pts of pieces) {
+          const piece = { ...it, id: uid(), pts };
+          next.push(piece);
+          this._mount(piece, oldEl);
+        }
+      }
       this._unmount(it.id);
-      return false;
-    });
-    if (keep.length !== this.items.length) {
-      this.items = keep;
+    }
+    if (changed) {
+      this.items = next;
       a.hit = true;
     }
+  }
+
+  // ---------- selection ----------
+  _item(id) {
+    return this.items.find(x => x.id === id);
+  }
+
+  _box(it) {
+    if (it.type === 'stroke') {
+      const b = bbox(it), p = it.width / 2;
+      return { x: b[0] - p, y: b[1] - p, w: b[2] - b[0] + 2 * p, h: b[3] - b[1] + 2 * p };
+    }
+    if (it.type === 'image') return { x: it.x, y: it.y, w: it.w, h: it.h };
+    const el = this.els.get(it.id);
+    return { x: it.x, y: it.y, w: el?.offsetWidth ?? 0, h: el?.offsetHeight ?? 0 };
+  }
+
+  _updateSelBox() {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const id of this.sel) {
+      const it = this._item(id);
+      if (!it) continue;
+      const b = this._box(it);
+      x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
+      x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
+    }
+    if (x0 === Infinity) {
+      this.selBounds = null;
+      this.selBox.hidden = true;
+      return;
+    }
+    const pad = 6 / this.view.s;
+    this.selBounds = { x0: x0 - pad, y0: y0 - pad, x1: x1 + pad, y1: y1 + pad };
+    this._placeSelBox(0, 0);
+    this.selBox.hidden = false;
+  }
+
+  _placeSelBox(dx, dy) {
+    const b = this.selBounds;
+    Object.assign(this.selBox.style, {
+      left: b.x0 + dx + 'px', top: b.y0 + dy + 'px',
+      width: b.x1 - b.x0 + 'px', height: b.y1 - b.y0 + 'px',
+    });
+  }
+
+  _inSelBox(w) {
+    const b = this.selBounds;
+    return !!b && w.x >= b.x0 && w.x <= b.x1 && w.y >= b.y0 && w.y <= b.y1;
+  }
+
+  _hitTest(w) {
+    const r = 10 / this.view.s;
+    for (let i = this.items.length - 1; i >= 0; i--) {
+      const it = this.items[i];
+      if (it.type === 'stroke') {
+        if (strokeHit(it, w, r)) return it;
+      } else {
+        const b = this._box(it);
+        if (w.x >= b.x && w.x <= b.x + b.w && w.y >= b.y && w.y <= b.y + b.h) return it;
+      }
+    }
+    return null;
+  }
+
+  _tapSelect(w) {
+    const hit = this._hitTest(w);
+    this.setSelection(hit ? [hit.id] : []);
+  }
+
+  _startLasso(base, w) {
+    const path = document.createElementNS(SVGNS, 'path');
+    path.setAttribute('class', 'lasso');
+    path.setAttribute('stroke-width', 1.5 / this.view.s);
+    path.setAttribute('stroke-dasharray', `${6 / this.view.s} ${4 / this.view.s}`);
+    this.svg.append(path);
+    this.action = { ...base, kind: 'lasso', path, at: w, pts: [[r1(w.x), r1(w.y)]] };
+  }
+
+  _endLasso(a) {
+    a.path.remove();
+    const xs = a.pts.map(p => p[0]), ys = a.pts.map(p => p[1]);
+    const size = Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * this.view.s;
+    if (a.pts.length < 3 || size < 10) return this._tapSelect(a.at);
+    const poly = a.pts;
+    const ids = this.items.filter(it => {
+      if (it.type === 'stroke') {
+        const n = it.pts.filter(([x, y]) => inPoly(x, y, poly)).length;
+        return n / it.pts.length >= 0.5;
+      }
+      const b = this._box(it);
+      return inPoly(b.x + b.w / 2, b.y + b.h / 2, poly);
+    }).map(it => it.id);
+    this.setSelection(ids);
+  }
+
+  _startMove(base, w, tapId) {
+    this.action = { ...base, kind: 'move', tapId, before: this._snap(), start: w, moved: false, dx: 0, dy: 0 };
+  }
+
+  _beginMove(a) {
+    a.moved = true;
+    a.orig = new Map();
+    for (const id of this.sel) {
+      const it = this._item(id);
+      if (!it) continue;
+      if (it.type === 'stroke') {
+        a.orig.set(id, null);
+      } else {
+        const own = this._own(id);
+        a.orig.set(id, { item: own, x: own.x, y: own.y });
+      }
+    }
+  }
+
+  _applyMove(a, dx, dy) {
+    a.dx = dx;
+    a.dy = dy;
+    for (const [id, o] of a.orig) {
+      if (o) {
+        o.item.x = r1(o.x + dx);
+        o.item.y = r1(o.y + dy);
+        this._place(o.item);
+      } else {
+        // 筆跡拖曳中先用 transform，放開時再把位移寫進座標
+        this.els.get(id)?.setAttribute('transform', `translate(${dx} ${dy})`);
+      }
+    }
+    if (this.selBounds) this._placeSelBox(dx, dy);
+  }
+
+  _finishMove(a) {
+    for (const [id, o] of a.orig) {
+      if (o) continue;
+      const own = this._own(id);
+      own.pts = own.pts.map(([x, y]) => [r1(x + a.dx), r1(y + a.dy)]);
+      const el = this.els.get(id);
+      el.removeAttribute('transform');
+      el.setAttribute('d', pathData(own.pts));
+    }
+    this._commit(a.before);
+    this._updateSelBox();
+  }
+
+  _startResize(base, w, id) {
+    const before = this._snap();
+    const item = this._own(id);
+    const isText = item.type === 'text';
+    this.action = {
+      ...base, kind: 'resize', item, before, start: w,
+      ow: isText ? (item.w ?? this.els.get(id).offsetWidth) : item.w,
+      ratio: isText ? 0 : item.h / item.w,
+      min: isText ? item.size * 2 : 24 / this.view.s,
+    };
   }
 
   // ---------- text ----------
@@ -507,11 +780,11 @@ export class Board {
   }
 
   _focusText(id) {
-    const el = this.els.get(id);
-    if (!el) return;
-    el.focus({ preventScroll: true });
+    const body = this.els.get(id)?.querySelector('.text-body');
+    if (!body) return;
+    body.focus({ preventScroll: true });
     const range = document.createRange();
-    range.selectNodeContents(el);
+    range.selectNodeContents(body);
     range.collapse(false);
     const sel = getSelection();
     sel.removeAllRanges();
@@ -521,6 +794,7 @@ export class Board {
   _focusIn(e) {
     const el = e.target.closest?.('.text-item');
     if (!el) return;
+    setTimeout(() => this.revealCaret(), 350); // 等手機鍵盤動畫
     const id = el.dataset.id;
     if (this.editing?.id === id) return;
     const before = this._snap();
@@ -531,20 +805,22 @@ export class Board {
   _input() {
     const ed = this.editing;
     if (!ed) return;
-    ed.item.text = this.els.get(ed.id).innerText;
+    ed.item.text = this.els.get(ed.id).querySelector('.text-body').innerText;
+    if (this.sel.has(ed.id)) this._updateSelBox();
+    requestAnimationFrame(() => this.revealCaret());
     this.cb.onChange?.();
   }
 
   _focusOut(e) {
     const ed = this.editing;
-    if (!ed || e.target.dataset?.id !== ed.id) return;
+    if (!ed || e.target.closest?.('.text-item')?.dataset.id !== ed.id) return;
     this.editing = null;
     const text = e.target.innerText.replace(/\n+$/, '');
     ed.item.text = text;
     if (!text.trim()) {
       this.items = this.items.filter(x => x.id !== ed.id);
-      if (this.selected === ed.id) this.select(null);
       this._unmount(ed.id);
+      if (this.sel.has(ed.id)) this.setSelection([...this.sel].filter(x => x !== ed.id));
       if (ed.created) this.cb.onChange?.();
       else this._commit(ed.before);
     } else if (ed.created || text !== ed.orig) {
@@ -553,7 +829,7 @@ export class Board {
   }
 
   // ---------- render ----------
-  _mount(item) {
+  _mount(item, beforeEl = null) {
     let el;
     if (item.type === 'stroke') {
       el = document.createElementNS(SVGNS, 'path');
@@ -561,12 +837,14 @@ export class Board {
       el.setAttribute('stroke', item.color);
       el.setAttribute('stroke-width', item.width);
       if (item.tool === 'hl') el.setAttribute('class', 'hl');
-      this.svg.append(el);
+      this.svg.insertBefore(el, beforeEl);
     } else if (item.type === 'text') {
       el = h('div', 'item text-item');
-      el.contentEditable = 'true';
-      el.spellcheck = false;
-      el.innerText = item.text;
+      const body = h('div', 'text-body');
+      body.contentEditable = 'true';
+      body.spellcheck = false;
+      body.innerText = item.text;
+      el.append(body, h('div', 'handle w-handle'));
       el.style.fontSize = item.size + 'px';
       this.textLayer.append(el);
     } else if (item.type === 'image') {
@@ -599,17 +877,17 @@ export class Board {
     if (item.type === 'image') {
       el.style.width = item.w + 'px';
       el.style.height = item.h + 'px';
+    } else {
+      el.style.width = item.w ? item.w + 'px' : '';
+      el.classList.toggle('fixed-w', !!item.w);
     }
   }
 
   _renderAll() {
-    this.svg.replaceChildren();
-    this.imgLayer.replaceChildren();
-    this.textLayer.replaceChildren();
+    for (const layer of [this.svg, this.imgLayer, this.textLayer]) layer.replaceChildren();
     this.els.clear();
     for (const it of this.items) this._mount(it);
-    if (this.selected && this.els.has(this.selected)) this.els.get(this.selected).classList.add('selected');
-    else this.select(null);
+    this.setSelection([...this.sel].filter(id => this.els.has(id)));
   }
 
   async _url(blobId) {
