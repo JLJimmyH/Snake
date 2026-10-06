@@ -30,6 +30,10 @@
         <input id="page-title" placeholder="未命名" autocomplete="off">
       </div>
       <span id="save-state"></span>
+      <span id="collab-state" role="status" aria-live="polite"></span>
+      <span id="collab-presence" hidden></span>
+      <button id="collab-leave" class="chip" hidden>回本機</button>
+      <button id="collab-button" class="chip" hidden>協作</button>
     </header>
 
     <div id="toolbar" data-tool="select">
@@ -114,6 +118,31 @@
 <div id="menu" hidden></div>
 <div id="toast"></div>
 
+<dialog id="collab-dialog" aria-labelledby="collab-heading">
+  <div class="collab-heading"><h2 id="collab-heading">同步與協作</h2><button id="collab-close" class="icon-btn" aria-label="關閉協作視窗">✕</button></div>
+  <p id="collab-mode">使用 Google 帳號登入，把頁面分享給指定的人一起編輯。</p>
+  <p id="collab-user">登入後可以同步與分享筆記</p>
+  <div id="demo-accounts" hidden>
+    <button class="chip" data-demo-email="alice@example.test">示範 Alice</button>
+    <button class="chip" data-demo-email="bob@example.test">示範 Bob</button>
+    <button class="chip" data-demo-email="eve@example.test">示範 Eve</button>
+  </div>
+  <button id="collab-login" class="collab-primary">使用 Google 登入</button>
+  <button id="collab-logout" class="chip" hidden>登出</button>
+  <hr>
+  <button id="collab-copy" class="collab-primary" disabled>將此頁複製到協作空間</button>
+  <p class="collab-help">只分享此頁，不包含子頁面。原本的本機筆記會保留。不同人的筆跡可以同時編輯；同一文字框請輪流輸入。</p>
+  <div id="collab-pages" aria-label="協作頁面"></div>
+  <form id="collab-share" hidden>
+    <h3 id="share-page-name">分享頁面</h3>
+    <input id="share-page-id" type="hidden">
+    <label for="share-email">對方登入的 email</label>
+    <input id="share-email" type="email" autocomplete="email" required placeholder="name@example.com">
+    <label for="share-role">權限</label>
+    <select id="share-role"><option value="editor">可編輯</option><option value="viewer">唯讀</option></select>
+    <button id="share-submit" class="collab-primary" type="submit">儲存分享</button>
+  </form>
+</dialog>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

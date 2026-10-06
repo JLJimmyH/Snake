@@ -35,6 +35,22 @@ export const db = {
   get: (store, key) => run(store, 'readonly', s => s.get(key)),
   getAll: (store) => run(store, 'readonly', s => s.getAll()),
   put: (store, value, key) => run(store, 'readwrite', s => (key === undefined ? s.put(value) : s.put(value, key))),
+  // Atomic read/modify/write, used to merge offline snapshots from multiple tabs.
+  update: async (store, key, fn) => {
+    const database = await open();
+    return new Promise((resolve, reject) => {
+      const tx = database.transaction(store, 'readwrite');
+      const objectStore = tx.objectStore(store);
+      const request = objectStore.get(key);
+      request.onsuccess = () => {
+        try { objectStore.put(fn(request.result), key); }
+        catch (error) { tx.abort(); reject(error); }
+      };
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+      tx.onabort = () => reject(tx.error);
+    });
+  },
   del: (store, key) => run(store, 'readwrite', s => s.delete(key)),
 };
 

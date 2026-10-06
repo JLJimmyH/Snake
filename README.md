@@ -1,7 +1,7 @@
 # 筆記 MVP
 
 OneNote 式的無限畫布（手寫／打字／圖片／雙指縮放），加上 Notion 式的無限層級頁面樹。
-純靜態網頁，資料存在瀏覽器 IndexedDB。
+預設為純靜態網頁，資料存在瀏覽器 IndexedDB；新增的協作模式使用 Node + Yjs，正式登入與雲端儲存使用 Supabase。
 
 ## 👉 直接使用
 
@@ -20,6 +20,12 @@ python server.py        # 預設 port 8000
 ```
 
 電腦開 `http://localhost:8000`，手機（同一個 Wi-Fi）開終端機印出的 `http://<電腦IP>:8000`。
+
+## 多人協作（第一版）
+
+保留原本的單機流程，另提供 Google 登入、指定 email 分享、多人筆跡／物件同步、圖片與離線補送。尚未建立 Supabase 時，可先用限定本機的 Alice/Bob 示範帳號測試。
+
+完整指令、Supabase 建立步驟、驗證方式與限制請看 [協作設定](collaboration/README.md)。此版同一文字框請輪流輸入；正式 Google 登入與 Supabase 權限仍需在真實專案驗收。
 
 ## 結構
 

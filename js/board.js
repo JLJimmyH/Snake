@@ -184,6 +184,52 @@ export class Board {
     this._history();
   }
 
+  setReadOnly(value) {
+    this.readOnly = value;
+    this.vp.dataset.readonly = String(value);
+    for (const body of this.textLayer.querySelectorAll('.text-body')) body.contentEditable = String(!value);
+  }
+
+  // Apply committed remote objects without resetting view, history or a gesture.
+  applyRemote(items) {
+    const next = new Map(items.map(item => [item.id, item]));
+    for (const item of this.items) if (!next.has(item.id)) this._unmount(item.id);
+    for (const item of items) {
+      const old = this._item(item.id);
+      if (!old || JSON.stringify(old) !== JSON.stringify(item)) {
+        this._unmount(item.id); this._mount(item);
+      }
+    }
+    this.items = structuredClone(items);
+    this.setSelection([...this.sel].filter(id => next.has(id)));
+  }
+
+  refreshImages() {
+    for (const item of this.items) if (item.type === 'image') {
+      const el = this.els.get(item.id);
+      this._url(item.blobId).then(url => { if (url && el?.isConnected) el.querySelector('img').src = url; });
+    }
+  }
+
+  preview(peerId, item) {
+    this.previews ??= new Map();
+    const old = this.previews.get(peerId);
+    old?.remove(); this.previews.delete(peerId);
+    if (!item || this.els.has(item.id)) return;
+    const path = document.createElementNS(SVGNS, 'path');
+    path.setAttribute('class', 'remote-preview');
+    path.setAttribute('d', pathData(item.pts));
+    path.setAttribute('stroke', item.color);
+    path.setAttribute('stroke-width', item.width);
+    path.dataset.previewId = item.id;
+    this.svg.append(path); this.previews.set(peerId, path);
+  }
+
+  clearPreviews() {
+    for (const path of this.previews?.values() ?? []) path.remove();
+    this.previews?.clear();
+  }
+
   setTool(t) {
     this.commitText();
     this.tool = t;
@@ -229,6 +275,7 @@ export class Board {
   }
 
   deleteSelected() {
+    if (this.readOnly) return;
     if (!this.sel.size) return;
     this.commitText();
     const ids = this.sel;
@@ -242,6 +289,8 @@ export class Board {
   }
 
   undo() {
+    if (this.readOnly) return;
+    if (this.historyDelegate) return this.historyDelegate.undo();
     this.commitText();
     if (!this.undoStack.length) return;
     this.redoStack.push(this.items);
@@ -252,6 +301,8 @@ export class Board {
   }
 
   redo() {
+    if (this.readOnly) return;
+    if (this.historyDelegate) return this.historyDelegate.redo();
     this.commitText();
     if (!this.redoStack.length) return;
     this.undoStack.push(this.items);
@@ -262,6 +313,7 @@ export class Board {
   }
 
   async addImage(file) {
+    if (this.readOnly) return;
     const { blob, w, h: ih } = await prepareImage(file);
     const blobId = uid();
     await db.put('blobs', blob, blobId);
@@ -346,6 +398,13 @@ export class Board {
       return;
     }
 
+    if (this.readOnly) {
+      e.preventDefault();
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
+      this._startPan(e, null);
+      try { this.vp.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      return;
+    }
     const isPen = e.pointerType === 'pen';
     const isTouch = e.pointerType === 'touch';
 
@@ -832,6 +891,7 @@ export class Board {
   _mount(item, beforeEl = null) {
     let el;
     if (item.type === 'stroke') {
+      for (const [peer, path] of this.previews ?? []) if (path.dataset.previewId === item.id) { path.remove(); this.previews.delete(peer); }
       el = document.createElementNS(SVGNS, 'path');
       el.setAttribute('d', pathData(item.pts));
       el.setAttribute('stroke', item.color);
@@ -841,7 +901,7 @@ export class Board {
     } else if (item.type === 'text') {
       el = h('div', 'item text-item');
       const body = h('div', 'text-body');
-      body.contentEditable = 'true';
+      body.contentEditable = String(!this.readOnly);
       body.spellcheck = false;
       body.innerText = item.text;
       el.append(body, h('div', 'handle w-handle'));
@@ -892,7 +952,7 @@ export class Board {
 
   async _url(blobId) {
     if (!this.urls.has(blobId)) {
-      const blob = await db.get('blobs', blobId);
+      const blob = this.blobLoader ? await this.blobLoader(blobId) : await db.get('blobs', blobId);
       if (!blob) return null;
       this.urls.set(blobId, URL.createObjectURL(blob));
     }
@@ -912,6 +972,9 @@ export class Board {
   }
 
   _commit(before) {
+    if (this.historyDelegate) {
+      this.cb.onChange?.(); this._history(); return;
+    }
     this.undoStack.push(before);
     if (this.undoStack.length > HISTORY) this.undoStack.shift();
     this.redoStack.length = 0;
@@ -920,6 +983,7 @@ export class Board {
   }
 
   _history() {
+    if (this.historyDelegate) { this.cb.onHistory?.(...this.historyDelegate.state()); return; }
     this.cb.onHistory?.(this.undoStack.length > 0, this.redoStack.length > 0);
   }
 }

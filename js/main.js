@@ -8,6 +8,8 @@ const isMobile = () => matchMedia('(max-width: 767px)').matches;
 let pages = [];
 let current = null;
 let saveTimer = null;
+let collaboration = null;
+let lastLocalPage = null;
 
 const board = new Board($('#viewport'), {
   onChange: scheduleSave,
@@ -30,7 +32,8 @@ const board = new Board($('#viewport'), {
 function setSaveState(t) { $('#save-state').textContent = t; }
 
 function scheduleSave() {
-  if (!current) return;
+  if (!current && !collaboration?.active) return;
+  collaboration?.changed();
   setSaveState('編輯中…');
   clearTimeout(saveTimer);
   saveTimer = setTimeout(saveNow, 500);
@@ -39,6 +42,11 @@ function scheduleSave() {
 async function saveNow() {
   clearTimeout(saveTimer);
   saveTimer = null;
+  if (collaboration?.active) {
+    await collaboration.saved();
+    setSaveState('已存於本機');
+    return;
+  }
   if (!current) return;
   await db.put('docs', { pageId: current, items: board.items, view: board.view });
   setSaveState('已儲存');
@@ -120,7 +128,10 @@ async function seed() {
 
 async function openPage(id) {
   await flush();
+  await collaboration?.detach();
   current = id;
+  lastLocalPage = id;
+  $('#page-title').readOnly = false;
   board.load(await db.get('docs', id));
   setSaveState('');
   db.put('meta', id, 'lastPage');
@@ -257,6 +268,7 @@ $('#add-root').addEventListener('click', () => addPage(null));
 
 $('#page-title').addEventListener('input', e => {
   const p = byId(current);
+  if (!p) return;
   p.title = e.target.value;
   savePage(p);
   renderTree();
@@ -449,6 +461,20 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
+// Static hosting keeps local notes usable and explains collaboration status.
+function showLocalCollaborationInfo() {
+  const dialog = $('#collab-dialog');
+  $('#collab-mode').textContent = '此網站目前使用本機儲存，多人協作尚未啟用。';
+  $('#collab-user').textContent = '筆記只存在目前裝置的瀏覽器，不會上傳，也不會與其他人同步。';
+  $('#collab-pages').textContent = '你可以繼續新增頁面、書寫、插入圖片與使用復原／重做。帳號登入、分享及多人共同編輯需等協作服務啟用。';
+  for (const id of ['collab-login', 'collab-logout', 'collab-copy', 'demo-accounts', 'collab-share']) $('#' + id).hidden = true;
+  $('.collab-help').hidden = true;
+  $('#collab-button').hidden = false;
+  $('#collab-button').textContent = '協作說明';
+  $('#collab-button').addEventListener('click', () => dialog.showModal());
+  $('#collab-close').addEventListener('click', () => dialog.close());
+}
+
 // ---------- init ----------
 async function init() {
   pages = await db.getAll('pages');
@@ -458,6 +484,27 @@ async function init() {
   setTool('select');
   updateFinger();
   await openPage(byId(last) ? last : kids(null)[0].id);
+  try {
+    const response = await fetch(new URL('api/config', document.baseURI));
+    if (response.ok) {
+      const { setupCollaboration } = await import('/collab-assets/collaboration.js');
+      collaboration = await setupCollaboration({
+        board, beforeOpen: flush, localPage: () => byId(current), toast,
+        onOpen: page => {
+          current = null;
+          $('#page-title').value = page.title;
+          $('#page-title').readOnly = true;
+          $('#crumbs').textContent = '協作頁面';
+          document.title = page.title + ' - 協作筆記';
+          renderTree(); setSaveState('');
+        },
+        onLeave: () => openPage(byId(lastLocalPage) ? lastLocalPage : kids(null)[0].id),
+      });
+    } else showLocalCollaborationInfo();
+  } catch (error) {
+    showLocalCollaborationInfo();
+    toast('協作服務無法啟動：' + error.message);
+  }
 }
 
 init().catch(err => {

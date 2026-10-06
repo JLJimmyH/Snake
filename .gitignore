@@ -3,3 +3,9 @@ __pycache__/
 .DS_Store
 .vscode/
 .claude/
+node_modules/
+collab-assets/
+.local-data/
+.env
+.env.*
+!.env.example
