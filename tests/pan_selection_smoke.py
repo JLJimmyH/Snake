@@ -109,4 +109,30 @@ with sync_playwright() as pw:
     assert state(page)['items'][1]['text'].endswith(' edited')
     assert not errors,errors
     print('PASS: resize handle, undo, touch pan, touch move and explicit text editing')
+    # Stacked objects: tapping the same spot again selects the next layer down,
+    # wrapping back to the top; dragging then moves only that layer.
+    page.evaluate("""async () => {
+      const {db}=await import('./js/db.js');
+      const id=await db.get('meta','lastPage');
+      await db.put('docs',{pageId:id,view:{x:40,y:40,s:1},items:[
+        {id:'back',type:'image',x:100,y:100,w:200,h:160,blobId:'pan-image'},
+        {id:'middle',type:'stroke',tool:'pen',width:6,color:'#123456',pts:[[80,180],[320,180]]},
+        {id:'front',type:'image',x:160,y:140,w:80,h:80,blobId:'pan-image'}
+      ]});
+    }""")
+    page.reload();expect(page.locator('.img-item')).to_have_count(2)
+    page.locator('.tool[data-tool=select]').click()
+    stacked=state(page)['items']
+    x,y=center(page.locator('.img-item[data-id=front]'))
+    for expected in ['front','middle','back','front','middle','back']:
+        page.mouse.click(x,y)
+        expect(page.locator(f'[data-id={expected}].selected')).to_have_count(1)
+    before=state(page)
+    page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+30,y+20,steps=6);page.mouse.up();saved(page)
+    after=state(page)
+    assert after['view']==before['view']
+    assert (after['items'][0]['x'],after['items'][0]['y'])==(stacked[0]['x']+30,stacked[0]['y']+20),after['items'][0]
+    assert after['items'][1:]==stacked[1:]
+    assert not errors,errors
+    print('PASS: repeated taps cycle through stacked objects and drag moves the chosen layer')
     browser.close()

@@ -735,8 +735,10 @@ export class Board {
       this.selBox.hidden = true;
       return;
     }
-    const pad = 6 / this.view.s;
-    this.selBounds = { x0: x0 - pad, y0: y0 - pad, x1: x1 + pad, y1: y1 + pad };
+    // 選取框在螢幕上至少 44px，細筆跡的把手才不會擠在一起、手指點框內不會誤觸把手
+    const pad = 6 / this.view.s, min = 44 / this.view.s;
+    const px = Math.max(pad, (min - (x1 - x0)) / 2), py = Math.max(pad, (min - (y1 - y0)) / 2);
+    this.selBounds = { x0: x0 - px, y0: y0 - py, x1: x1 + px, y1: y1 + py };
     this._placeSelBox(0, 0);
     this.selBox.hidden = false;
   }
@@ -754,22 +756,27 @@ export class Board {
     return !!b && w.x >= b.x0 && w.x <= b.x1 && w.y >= b.y0 && w.y <= b.y1;
   }
 
-  _hitTest(w) {
+  // 該點命中的所有物件，由上層到下層
+  _hitsAt(w) {
     const r = 10 / this.view.s;
+    const hits = [];
     for (let i = this.items.length - 1; i >= 0; i--) {
       const it = this.items[i];
       if (it.type === 'stroke') {
-        if (strokeHit(it, w, r)) return it;
+        if (strokeHit(it, w, r)) hits.push(it);
       } else {
         const b = this._box(it);
-        if (w.x >= b.x && w.x <= b.x + b.w && w.y >= b.y && w.y <= b.y + b.h) return it;
+        if (w.x >= b.x && w.x <= b.x + b.w && w.y >= b.y && w.y <= b.y + b.h) hits.push(it);
       }
     }
-    return null;
+    return hits;
   }
 
+  // 點一下選最上層；在已選取的物件上再點一下改選下一層（到底後回到最上層）
   _tapSelect(w) {
-    const hit = this._hitTest(w);
+    const hits = this._hitsAt(w);
+    const cur = this.sel.size === 1 ? hits.findIndex(it => this.sel.has(it.id)) : -1;
+    const hit = hits[(cur + 1) % hits.length];
     this.setSelection(hit ? [hit.id] : []);
   }
 
