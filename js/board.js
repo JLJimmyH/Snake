@@ -756,20 +756,19 @@ export class Board {
     return !!b && w.x >= b.x0 && w.x <= b.x1 && w.y >= b.y0 && w.y <= b.y1;
   }
 
-  // 該點命中的所有物件，由上層到下層
+  // 該點命中的所有物件，依畫面上的疊放順序由上到下。
+  // 畫面是分層畫的（圖片層 < 筆跡層 < 文字層），同層內 DOM 越後面越上層，
+  // 跟 items 順序不一定相同，所以用 DOM 順序排，點選才會跟看到的一致。
   _hitsAt(w) {
     const r = 10 / this.view.s;
-    const hits = [];
-    for (let i = this.items.length - 1; i >= 0; i--) {
-      const it = this.items[i];
-      if (it.type === 'stroke') {
-        if (strokeHit(it, w, r)) hits.push(it);
-      } else {
-        const b = this._box(it);
-        if (w.x >= b.x && w.x <= b.x + b.w && w.y >= b.y && w.y <= b.y + b.h) hits.push(it);
-      }
-    }
-    return hits;
+    const hits = this.items.filter(it => {
+      if (!this.els.has(it.id)) return false;
+      if (it.type === 'stroke') return strokeHit(it, w, r);
+      const b = this._box(it);
+      return w.x >= b.x && w.x <= b.x + b.w && w.y >= b.y && w.y <= b.y + b.h;
+    });
+    return hits.sort((a, b) =>
+      this.els.get(a.id).compareDocumentPosition(this.els.get(b.id)) & Node.DOCUMENT_POSITION_FOLLOWING ? 1 : -1);
   }
 
   // 點一下選最上層；在已選取的物件上再點一下改選下一層（到底後回到最上層）
