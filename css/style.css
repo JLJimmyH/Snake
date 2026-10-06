@@ -275,7 +275,7 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
   cursor: crosshair;
 }
 #viewport.no-grid { background-image: none; }
-#viewport[data-tool="select"] { cursor: default; }
+#viewport[data-tool="select"] { cursor: grab; }
 #viewport[data-tool="text"] { cursor: text; }
 
 .world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
@@ -331,7 +331,7 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
 .text-item:focus-within { box-shadow: 0 0 0 calc(1.5px * var(--inv, 1)) var(--accent); }
 .text-body:empty::before { content: "輸入文字…"; color: var(--muted); }
 #viewport[data-tool="select"] .text-item:not(:focus-within) {
-  cursor: move;
+  cursor: grab;
   -webkit-user-select: none;
   user-select: none;
 }

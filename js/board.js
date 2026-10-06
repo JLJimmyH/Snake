@@ -463,7 +463,7 @@ export class Board {
     const itemEl = e.target.closest('.item');
     const handle = e.target.closest('.handle');
     const textEl = e.target.closest('.text-item');
-    if (!handle && textEl && (this.tool === 'text' || textEl.contains(document.activeElement))) return; // 交給瀏覽器放游標
+    if (!handle && textEl && this.tool === 'text') return; // 交給瀏覽器放游標
 
     e.preventDefault();
     this.commitText();
@@ -490,13 +490,9 @@ export class Board {
 
     if (t === 'select' || t === 'lasso') {
       if (handle && itemEl) return this._startResize(base, w, itemEl.dataset.id);
-      if (itemEl) {
-        const id = itemEl.dataset.id;
-        if (!this.sel.has(id)) this.setSelection([id]);
-        return this._startMove(base, w, id);
-      }
-      if (this._inSelBox(w)) return this._startMove(base, w, null);
-      if (t === 'lasso' && !fingerPans) return this._startLasso(base, w);
+      // Only handles transform content; dragging any object pans the canvas.
+      // Selection happens on pointer-up after a tap, never on pointer-down.
+      if (t === 'lasso' && !fingerPans && !itemEl) return this._startLasso(base, w);
     }
 
     this._startPan(e, w);
@@ -538,12 +534,6 @@ export class Board {
       if (!a.moved && Math.hypot(dx, dy) < 6) return;
       a.moved = true;
       this.setView(a.vx + dx, a.vy + dy, this.view.s);
-    } else if (a.kind === 'move') {
-      const w = this.toWorld(e.clientX, e.clientY);
-      const dx = w.x - a.start.x, dy = w.y - a.start.y;
-      if (!a.moved && Math.hypot(dx, dy) * this.view.s < 6) return;
-      if (!a.moved) this._beginMove(a);
-      this._applyMove(a, dx, dy);
     } else if (a.kind === 'transform') {
       this._transform(a, this.toWorld(e.clientX, e.clientY));
     } else if (a.kind === 'resize') {
@@ -583,10 +573,6 @@ export class Board {
       case 'lasso':
         this._endLasso(a);
         break;
-      case 'move':
-        if (a.moved) this._finishMove(a);
-        else if (a.tapId && this._item(a.tapId)?.type === 'text') this._focusText(a.tapId);
-        break;
       case 'transform':
         if (a.changed) this._commit(a.before);
         this._updateSelBox();
@@ -609,7 +595,6 @@ export class Board {
     this.action = null;
     if (!a) return;
     if (a.kind === 'draw' || a.kind === 'lasso') a.path.remove();
-    else if (a.kind === 'move' && a.moved) this._finishMove(a);
     else if (a.kind === 'resize' || (a.kind === 'transform' && a.changed) || (a.kind === 'erase' && a.hit)) this._commit(a.before);
     this.cursor.hidden = true;
   }
@@ -752,11 +737,6 @@ export class Board {
     });
   }
 
-  _inSelBox(w) {
-    const b = this.selBounds;
-    return !!b && w.x >= b.x0 && w.x <= b.x1 && w.y >= b.y0 && w.y <= b.y1;
-  }
-
   _hitTest(w) {
     const r = 10 / this.view.s;
     for (let i = this.items.length - 1; i >= 0; i--) {
@@ -800,54 +780,6 @@ export class Board {
       return inPoly(b.x + b.w / 2, b.y + b.h / 2, poly);
     }).map(it => it.id);
     this.setSelection(ids);
-  }
-
-  _startMove(base, w, tapId) {
-    this.action = { ...base, kind: 'move', tapId, before: this._snap(), start: w, moved: false, dx: 0, dy: 0 };
-  }
-
-  _beginMove(a) {
-    a.moved = true;
-    a.orig = new Map();
-    for (const id of this.sel) {
-      const it = this._item(id);
-      if (!it) continue;
-      if (it.type === 'stroke') {
-        a.orig.set(id, null);
-      } else {
-        const own = this._own(id);
-        a.orig.set(id, { item: own, x: own.x, y: own.y });
-      }
-    }
-  }
-
-  _applyMove(a, dx, dy) {
-    a.dx = dx;
-    a.dy = dy;
-    for (const [id, o] of a.orig) {
-      if (o) {
-        o.item.x = r1(o.x + dx);
-        o.item.y = r1(o.y + dy);
-        this._place(o.item);
-      } else {
-        // 筆跡拖曳中先用 transform，放開時再把位移寫進座標
-        this.els.get(id)?.setAttribute('transform', `translate(${dx} ${dy})`);
-      }
-    }
-    if (this.selBounds) this._placeSelBox(dx, dy);
-  }
-
-  _finishMove(a) {
-    for (const [id, o] of a.orig) {
-      if (o) continue;
-      const own = this._own(id);
-      own.pts = own.pts.map(([x, y]) => [r1(x + a.dx), r1(y + a.dy)]);
-      const el = this.els.get(id);
-      el.removeAttribute('transform');
-      el.setAttribute('d', pathData(own.pts));
-    }
-    this._commit(a.before);
-    this._updateSelBox();
   }
 
   _startTransform(base, w, direction) {
