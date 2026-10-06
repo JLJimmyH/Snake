@@ -133,3 +133,8 @@ python tests/browser_smoke.py
 - 最終驗證：12 個 Node tests、6 組版本／Drive mock 瀏覽器情境、3 組編輯 smoke、9 組協作 smoke 全數通過；build 與 diff check 通過。
 - OAuth 教學：docs/GOOGLE_DRIVE_SETUP.md。公開 Client ID 尚未設定，可先從 UI 輸入驗證；真實 OAuth／Drive、Pages 上線仍待外部驗收。
 - 版本視窗在 390px 手機與 1280px 桌機檢查通過，無橫向溢出。
+
+## Google OAuth 網頁用戶端設定
+- [x] 將使用者提供的網頁 OAuth 公開 Client ID 設為網站預設值；新使用者不必自行設定 Google Cloud。
+- [ ] 使用者確認 Google Console 的 JavaScript origin、drive.file 與測試帳號，實際登入及備份驗收。
+- 不包含 client secret；OAuth 尚未完成真實帳號驗收。
