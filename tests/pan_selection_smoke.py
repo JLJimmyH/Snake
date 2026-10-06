@@ -1,4 +1,4 @@
-"""Verify select-mode dragging pans, while taps and handles select/resize."""
+"""Verify select-mode dragging pans, taps select, and dragging a selection moves it."""
 import os
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8030')
@@ -11,6 +11,12 @@ def state(page):
 
 def saved(page):
     expect(page.locator('#save-state')).to_have_text('已儲存')
+
+def moved(item,dx,dy):
+    item=dict(item)
+    if item['type']=='stroke': item['pts']=[[x+dx,y+dy] for x,y in item['pts']]
+    else: item['x']+=dx;item['y']+=dy
+    return item
 
 def center(locator):
     box=locator.bounding_box()
@@ -36,9 +42,9 @@ with sync_playwright() as pw:
     }""")
     page.reload();expect(page.locator('.img-item')).to_have_count(1)
     original=state(page)['items']
-    for selector in ['.ink path[data-id=stroke]','.text-item','.img-item']:
+    for index,selector in enumerate(['.ink path[data-id=stroke]','.text-item','.img-item']):
         # Blank-space tap clears selection. Dragging an unselected object must
-        # not select or move it; selected objects follow the same pan gesture.
+        # not select or move it; dragging a selected object moves it instead.
         viewport=page.locator('#viewport').bounding_box()
         page.mouse.click(viewport['x']+10,viewport['y']+viewport['height']-20)
         expect(page.locator('.sel-box')).to_be_hidden()
@@ -50,14 +56,20 @@ with sync_playwright() as pw:
             if not selected: expect(page.locator('.sel-box')).to_be_hidden()
             page.mouse.move(x+28,y+18,steps=6);page.mouse.up();saved(page)
             after=state(page)
-            assert after['items']==original,(selector,selected,'object mutated')
-            assert abs(after['view']['x']-before['view']['x']-28)<.1
-            assert abs(after['view']['y']-before['view']['y']-18)<.1
             if not selected:
+                assert after['items']==original,(selector,'unselected object mutated')
+                assert abs(after['view']['x']-before['view']['x']-28)<.1
+                assert abs(after['view']['y']-before['view']['y']-18)<.1
                 expect(page.locator('.sel-box')).to_be_hidden()
                 x,y=center(item);page.mouse.click(x,y)
                 expect(page.locator('.sel-box')).to_be_visible()
-        print('PASS: tap selects and dragging pans, selected or not:',selector)
+            else:
+                s=before['view']['s']
+                assert after['view']==before['view'],(selector,'selected drag panned')
+                assert after['items'][index]==moved(original[index],28/s,18/s),(selector,after['items'][index])
+                page.locator('#btn-undo').click();saved(page)
+                assert state(page)['items']==original
+        print('PASS: tap selects, unselected drag pans, selected drag moves:',selector)
     # Image resize is available only via the selected object's handle.
     before=state(page);handle=page.locator('.img-item .handle');x,y=center(handle)
     page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+50,y+30,steps=5);page.mouse.up();saved(page)
@@ -75,6 +87,20 @@ with sync_playwright() as pw:
     saved(page);after=state(page)
     assert after['items']==original
     assert after['view']['x']>before['view']['x']
+    # Touch tap selects; a second touch drag on the selected text moves it.
+    x,y=center(page.locator('.text-item'))
+    session.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y}]})
+    session.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+    expect(page.locator('.sel-box')).to_be_visible()
+    before=state(page)
+    session.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y}]})
+    for delta in [10,20,30]:
+        session.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':x+delta,'y':y+delta}]})
+    session.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
+    saved(page);after=state(page)
+    assert after['view']==before['view']
+    assert after['items'][1]['x']>original[1]['x'] and after['items'][1]['y']>original[1]['y']
+    page.locator('#btn-undo').click();saved(page);assert state(page)['items']==original
     # Editing requires choosing the text tool; clicking in select mode did not
     # focus the contenteditable and therefore cannot swallow a pan gesture.
     page.locator('.tool[data-tool=text]').click()
@@ -82,5 +108,5 @@ with sync_playwright() as pw:
     page.locator('#page-title').click();saved(page)
     assert state(page)['items'][1]['text'].endswith(' edited')
     assert not errors,errors
-    print('PASS: resize handle, undo, touch pan and explicit text editing')
+    print('PASS: resize handle, undo, touch pan, touch move and explicit text editing')
     browser.close()

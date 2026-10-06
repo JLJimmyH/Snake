@@ -373,6 +373,7 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
   cursor: ew-resize;
 }
 #viewport[data-tool="select"] .item.selected .handle { display: block; }
+#viewport[data-tool="select"] .item.selected { cursor: move; }
 
 /* 橡皮擦範圍圈（螢幕座標） */
 .eraser-cursor {

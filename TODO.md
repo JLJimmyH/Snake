@@ -143,3 +143,8 @@ python tests/browser_smoke.py
 - [x] 新增 privacy.html，說明本機與 Drive 資料、授權用途、保留與刪除、第三方服務及聯絡管道；版本視窗加入連結。
 - Google 品牌設定政策網址：https://jljimmyh.github.io/note-mvp/privacy.html
 - 發布後由使用者填入 Google Console；正式發布及 Google 驗證狀態以控制台為準。
+
+## 🐛 已選取物件可拖曳移動（2026-10-06）
+- [x] 修正上一輪把「拖曳已選取物件」也改成移動畫布的誤解：拖曳空白處／未選取物件＝移動畫布；點一下＝選取；在選取框內拖曳＝移動已選取物件（多選一起移動），可 undo。
+- [x] tests/pan_selection_smoke.py 改為驗證已選取物件拖曳會移動物件、畫布不動，並新增觸控點選後拖曳移動文字的情境。
+- [x] 本機 Chrome headless 以 CDP 觸控／滑鼠事件驗證筆跡、文字、圖片三種物件皆通過；圖片把手縮放與雙指縮放不受影響。
