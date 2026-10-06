@@ -540,7 +540,9 @@ export class Board {
     const itemEl = e.target.closest('.item');
     const handle = e.target.closest('.handle');
     const textEl = e.target.closest('.text-item');
-    if (!handle && textEl && this.tool === 'text') return; // 交給瀏覽器放游標
+    // 文字工具，或點在正在編輯的文字框裡：交給瀏覽器放游標。
+    // 不能先 blur 再讓瀏覽器 focus 回來，手機鍵盤會收起又跳出。
+    if (!handle && textEl && (this.tool === 'text' || textEl.contains(document.activeElement))) return;
 
     e.preventDefault();
     this.commitText();
