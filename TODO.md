@@ -138,3 +138,8 @@ python tests/browser_smoke.py
 - [x] 將使用者提供的網頁 OAuth 公開 Client ID 設為網站預設值；新使用者不必自行設定 Google Cloud。
 - [ ] 使用者確認 Google Console 的 JavaScript origin、drive.file 與測試帳號，實際登入及備份驗收。
 - 不包含 client secret；OAuth 尚未完成真實帳號驗收。
+
+## 隱私權政策頁面
+- [x] 新增 privacy.html，說明本機與 Drive 資料、授權用途、保留與刪除、第三方服務及聯絡管道；版本視窗加入連結。
+- Google 品牌設定政策網址：https://jljimmyh.github.io/note-mvp/privacy.html
+- 發布後由使用者填入 Google Console；正式發布及 Google 驗證狀態以控制台為準。

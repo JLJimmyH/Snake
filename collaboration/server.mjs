@@ -153,7 +153,7 @@ export async function createCollaborationServer(options = {}) {
       }
       if (!['GET', 'HEAD'].includes(req.method)) throw new HttpError(405, '方法不允許');
       // Explicit allowlist: never expose .env, backend sources, lockfiles or data.
-      if (!(path === '/' || path === '/index.html' || path === '/docs/GOOGLE_DRIVE_SETUP.md' || /^\/(css|js)\/[a-zA-Z0-9_-]+\.(css|js)$/.test(path) || path === '/collab-assets/collaboration.js')) throw new HttpError(404, '找不到檔案');
+      if (!(path === '/' || path === '/index.html' || path === '/privacy.html' || path === '/docs/GOOGLE_DRIVE_SETUP.md' || /^\/(css|js)\/[a-zA-Z0-9_-]+\.(css|js)$/.test(path) || path === '/collab-assets/collaboration.js')) throw new HttpError(404, '找不到檔案');
       const file = resolve(ROOT, '.' + (path === '/' ? '/index.html' : path));
       let content;
       try { content = await readFile(file); } catch (error) { if (error.code === 'ENOENT') throw new HttpError(404, '請先執行 npm run build'); throw error; }
