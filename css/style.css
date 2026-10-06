@@ -487,3 +487,23 @@ svg.ink path.remote-preview { opacity: .55; }
   #collab-state { max-width: 160px; font-size: 11px; }
   #collab-presence { display: none; }
 }
+
+/* Brush controls and screen-sized preview. */
+.brush-color input { width: 32px; height: 32px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: white; cursor: pointer; }
+.brush-size { display: flex; align-items: center; gap: 6px; font-size: 12px; }
+.brush-size input { width: 110px; accent-color: var(--accent); }
+.brush-size output { min-width: 44px; font-variant-numeric: tabular-nums; }
+#brush-preview { position: fixed; z-index: 70; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 132px; height: 140px; border: 1px solid var(--border); border-radius: 12px; background: white; box-shadow: 0 4px 16px #0002; pointer-events: none; }
+.brush-dot { display: block; border-radius: 50%; flex: none; }
+.brush-caption { font-size: 12px; color: var(--muted); }
+.stroke-handle { position: absolute; width: calc(14px * var(--inv, 1)); height: calc(14px * var(--inv, 1)); background: white; border: calc(2px * var(--inv, 1)) solid var(--accent); border-radius: calc(3px * var(--inv, 1)); pointer-events: auto; transform: translate(-50%, -50%); touch-action: none; }
+.stroke-handle[data-transform=nw] { left: 0; top: 0; cursor: nwse-resize; }
+.stroke-handle[data-transform=n] { left: 50%; top: 0; cursor: ns-resize; }
+.stroke-handle[data-transform=ne] { left: 100%; top: 0; cursor: nesw-resize; }
+.stroke-handle[data-transform=e] { left: 100%; top: 50%; cursor: ew-resize; }
+.stroke-handle[data-transform=se] { left: 100%; top: 100%; cursor: nwse-resize; }
+.stroke-handle[data-transform=s] { left: 50%; top: 100%; cursor: ns-resize; }
+.stroke-handle[data-transform=sw] { left: 0; top: 100%; cursor: nesw-resize; }
+.stroke-handle[data-transform=w] { left: 0; top: 50%; cursor: ew-resize; }
+.stroke-handle[data-transform=rotate] { left: 50%; top: calc(-28px * var(--inv, 1)); border-radius: 50%; cursor: grab; }
+#viewport:not([data-tool=select]):not([data-tool=lasso]) .stroke-handle, #viewport[data-readonly=true] .stroke-handle { display: none; }

@@ -374,13 +374,49 @@ $$('.opts').forEach(group => {
       group.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === md));
     } else if (sw) {
       style.color = sw.dataset.color;
+      if (group.querySelector('input[type=color]')) group.querySelector('input[type=color]').value = style.color;
       group.querySelectorAll('.swatch').forEach(x => x.classList.toggle('active', x === sw));
     } else if (wb) {
       style.width = +wb.dataset.width;
+      const slider = group.querySelector('input[type=range]');
+      if (slider) { slider.value = style.width; group.querySelector('output').textContent = style.width; }
       group.querySelectorAll('.wbtn').forEach(x => x.classList.toggle('active', x === wb));
     }
   });
 });
+
+for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) {
+  const style = board.style[group.dataset.for];
+  const color = group.querySelector('input[type=color]');
+  const slider = group.querySelector('input[type=range]');
+  const preview = $('#brush-preview');
+  const showPreview = () => {
+    const rect = slider.getBoundingClientRect();
+    preview.style.left = Math.max(8, Math.min(innerWidth - 140, rect.left + rect.width / 2 - 66)) + 'px';
+    preview.style.top = Math.min(innerHeight - 148, rect.bottom + 10) + 'px';
+    const dot = preview.querySelector('.brush-dot');
+    dot.style.width = dot.style.height = style.width + 'px';
+    dot.style.backgroundColor = style.color;
+    dot.style.opacity = group.dataset.for === 'hl' ? '.5' : '1';
+    preview.querySelector('.brush-caption').textContent = style.width + ' px';
+    preview.hidden = false;
+  };
+  color.addEventListener('input', () => {
+    style.color = color.value;
+    group.querySelectorAll('.swatch').forEach(button => button.classList.toggle('active', button.dataset.color === style.color));
+  });
+  slider.addEventListener('input', () => {
+    style.width = Math.round(Number(slider.value) * 100) / 100;
+    group.querySelector('output').textContent = style.width;
+    group.querySelectorAll('.wbtn').forEach(button => button.classList.toggle('active', Number(button.dataset.width) === style.width));
+    showPreview();
+  });
+  slider.addEventListener('pointerdown', showPreview);
+  slider.addEventListener('focus', showPreview);
+  slider.addEventListener('blur', () => { preview.hidden = true; });
+  slider.addEventListener('pointerup', () => { preview.hidden = true; });
+  slider.addEventListener('pointercancel', () => { preview.hidden = true; });
+}
 
 $('#btn-image').addEventListener('click', () => $('#file').click());
 $('#file').addEventListener('change', async e => {
@@ -425,12 +461,21 @@ document.addEventListener('keydown', e => {
 });
 
 document.addEventListener('paste', async e => {
-  if (typing(document.activeElement)) return;
-  const files = [...e.clipboardData.files].filter(f => f.type.startsWith('image/'));
-  if (!files.length) return;
+  if (typing(document.activeElement) || board.readOnly || $('#collab-dialog').open) return;
+  const clipboard = e.clipboardData;
+  if (!clipboard) return;
+  const files = [...clipboard.files].filter(file => file.type.startsWith('image/'));
+  const text = clipboard.getData('text/plain');
+  if (!files.length && !text) return;
   e.preventDefault();
   setTool('select');
-  for (const f of files) await board.addImage(f);
+  const position = board.pastePosition();
+  if (files.length) {
+    for (let i = 0; i < files.length; i++) {
+      try { await board.addImage(files[i], { x: position.x + i * 24, y: position.y + i * 24 }); }
+      catch (error) { toast(error.message); }
+    }
+  } else board.addText(text, position);
 });
 
 // 手機鍵盤彈出時 visualViewport 會變小：讓整個 app 貼齊可見範圍，再把游標捲進畫面

@@ -90,3 +90,14 @@ python tests/browser_smoke.py
 - 新增「協作說明」：未啟用後端時明確顯示資料僅存本機，不顯示假的登入／分享按鈕。
 - Pages 無法運行 Node WebSocket、Google 登入與 Supabase 協作；這些須另部署正式服務。
 - 單機 smoke、Pages /note-mvp/ 子路徑與協作說明 UI、6 個 Node tests 驗證通過。使用者授權直接推到 origin/main；不包含 .env、node_modules、.local-data 或生成 bundle。
+
+## 🚧 畫布編輯功能更新（使用者授權，進行中）
+- [x] 筆／螢光筆自訂顏色、連續大小滑桿，調整時預覽實際螢幕直徑。
+- [x] 選中的單條／多條筆跡：8 方向獨立縮放、旋轉；變形寫回點座標，支援儲存、擦除與 undo／協作同步。
+- [x] 畫布 Ctrl/Cmd+V 貼上純文字或圖片；保留文字輸入框正常貼上，唯讀不能新增。
+- [x] tests/editor_smoke.py：顏色／小數大小／預覽、分別沿 X/Y 縮放、旋轉、undo/redo/reload、真實系統剪貼簿 Ctrl+V 文字/PNG、文字框內貼上與原物件保留通過。單機 smoke 與 9 項協作回歸也通過。
+- 延續先前使用者已授權的 main/Pages 發布流程，完成驗證後推送；正式協作仍未部署。
+
+- 本輪測試服務：Python port 8010（session 57003），Node demo port 8011（session 28936）。
+- 可重跑 NOTE_TEST_ORIGIN=http://127.0.0.1:8010 python tests/editor_smoke.py；協作測試用同一變數設為 port 8011。
+- 新增圖片貼上測試使用瀏覽器 canvas 產生有效 PNG 寫入系統 clipboard，再真實 Ctrl+V；不依賴固定 base64 範例圖。

@@ -141,6 +141,13 @@ export class Board {
     this.uiLayer = h('div', 'layer');
     this.selBox = h('div', 'sel-box');
     this.selBox.hidden = true;
+    for (const direction of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'rotate']) {
+      const handle = h('button', 'stroke-handle');
+      handle.dataset.transform = direction;
+      handle.title = direction === 'rotate' ? '拖曳旋轉筆跡' : '拖曳縮放筆跡（不固定比例）';
+      handle.setAttribute('aria-label', direction === 'rotate' ? '旋轉筆跡' : '縮放筆跡 ' + direction);
+      this.selBox.append(handle);
+    }
     this.uiLayer.append(this.selBox);
     this.world.append(this.imgLayer, this.svg, this.textLayer, this.uiLayer);
     this.cursor = h('div', 'eraser-cursor');
@@ -312,7 +319,22 @@ export class Board {
     this.cb.onChange?.();
   }
 
-  async addImage(file) {
+  pastePosition() {
+    const rect = this.vp.getBoundingClientRect();
+    const position = this.lastPointer;
+    if (position && position.x >= rect.left && position.x <= rect.right && position.y >= rect.top && position.y <= rect.bottom) return this.toWorld(position.x, position.y);
+    return this.toWorld(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  }
+
+  addText(text, position = this.pastePosition()) {
+    if (this.readOnly || !text) return;
+    this.commitText();
+    const before = this._snap();
+    const item = { id: uid(), type: 'text', x: r1(position.x), y: r1(position.y), size: r1(18 / this.view.s), text };
+    this.items.push(item); this._mount(item); this._commit(before); this.setSelection([item.id]);
+  }
+
+  async addImage(file, position = null) {
     if (this.readOnly) return;
     const { blob, w, h: ih } = await prepareImage(file);
     const blobId = uid();
@@ -323,7 +345,7 @@ export class Board {
     const r = this.rect, s = this.view.s;
     const k = Math.min(1 / s, (r.width * 0.8 / s) / w, (r.height * 0.8 / s) / ih);
     const iw = w * k, ihh = ih * k;
-    const c = this.toWorld(r.left + r.width / 2, r.top + r.height / 2);
+    const c = position ?? this.toWorld(r.left + r.width / 2, r.top + r.height / 2);
     const item = { id: uid(), type: 'image', blobId, x: r1(c.x - iw / 2), y: r1(c.y - ihh / 2), w: r1(iw), h: r1(ihh) };
 
     const before = this._snap();
@@ -389,6 +411,7 @@ export class Board {
 
   _down(e) {
     this.rect = this.vp.getBoundingClientRect();
+    this.lastPointer = { x: e.clientX, y: e.clientY };
     if (e.pointerType === 'mouse' && e.button !== 0) {
       if (e.button === 1 && !this.action) {
         e.preventDefault();
@@ -444,12 +467,15 @@ export class Board {
 
     e.preventDefault();
     this.commitText();
+    if (document.activeElement?.matches('input, select, textarea')) document.activeElement.blur();
     try { this.vp.setPointerCapture(e.pointerId); } catch { /* ignore */ }
 
     const w = this.toWorld(e.clientX, e.clientY);
     const base = { id: e.pointerId, ptype: e.pointerType };
     const fingerPans = isTouch && !this.fingerDraws;
     const t = this.tool;
+    const transform = e.target.closest('[data-transform]');
+    if (transform && (t === 'select' || t === 'lasso')) return this._startTransform(base, w, transform.dataset.transform);
 
     if ((t === 'pen' || t === 'hl' || t === 'eraser') && !fingerPans) {
       if (t === 'eraser') {
@@ -484,6 +510,7 @@ export class Board {
   }
 
   _move(e) {
+    this.lastPointer = { x: e.clientX, y: e.clientY };
     if (this.tool === 'eraser' && (e.pointerType !== 'touch' || this.action?.kind === 'erase')) this._showCursor(e);
     const p = this.pointers.get(e.pointerId);
     if (!p) return;
@@ -517,6 +544,8 @@ export class Board {
       if (!a.moved && Math.hypot(dx, dy) * this.view.s < 6) return;
       if (!a.moved) this._beginMove(a);
       this._applyMove(a, dx, dy);
+    } else if (a.kind === 'transform') {
+      this._transform(a, this.toWorld(e.clientX, e.clientY));
     } else if (a.kind === 'resize') {
       const w = this.toWorld(e.clientX, e.clientY);
       const nw = Math.max(a.min, a.ow + w.x - a.start.x);
@@ -558,6 +587,10 @@ export class Board {
         if (a.moved) this._finishMove(a);
         else if (a.tapId && this._item(a.tapId)?.type === 'text') this._focusText(a.tapId);
         break;
+      case 'transform':
+        if (a.changed) this._commit(a.before);
+        this._updateSelBox();
+        break;
       case 'resize':
         this._commit(a.before);
         this._updateSelBox();
@@ -577,7 +610,7 @@ export class Board {
     if (!a) return;
     if (a.kind === 'draw' || a.kind === 'lasso') a.path.remove();
     else if (a.kind === 'move' && a.moved) this._finishMove(a);
-    else if (a.kind === 'resize' || (a.kind === 'erase' && a.hit)) this._commit(a.before);
+    else if (a.kind === 'resize' || (a.kind === 'transform' && a.changed) || (a.kind === 'erase' && a.hit)) this._commit(a.before);
     this.cursor.hidden = true;
   }
 
@@ -690,6 +723,8 @@ export class Board {
   }
 
   _updateSelBox() {
+    const strokesOnly = this.sel.size > 0 && [...this.sel].every(id => this._item(id)?.type === 'stroke');
+    for (const handle of this.selBox.children) handle.hidden = !strokesOnly || this.readOnly;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const id of this.sel) {
       const it = this._item(id);
@@ -812,6 +847,40 @@ export class Board {
       el.setAttribute('d', pathData(own.pts));
     }
     this._commit(a.before);
+    this._updateSelBox();
+  }
+
+  _startTransform(base, w, direction) {
+    if (this.readOnly || !this.selBounds || ![...this.sel].every(id => this._item(id)?.type === 'stroke')) return;
+    this.action = { ...base, kind: 'transform', direction, start: w, bounds: { ...this.selBounds }, before: this._snap(), changed: false,
+      originals: [...this.sel].map(id => structuredClone(this._item(id))) };
+  }
+
+  _transform(a, point) {
+    const b = a.bounds, cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    let sx = 1, sy = 1, angle = 0, ox = cx, oy = cy;
+    if (a.direction === 'rotate') {
+      angle = Math.atan2(point.y - cy, point.x - cx) - Math.atan2(a.start.y - cy, a.start.x - cx);
+    } else {
+      const d = a.direction;
+      ox = d.includes('w') ? b.x1 : b.x0;
+      oy = d.includes('n') ? b.y1 : b.y0;
+      const safeScale = value => Math.sign(value || 1) * Math.max(.05, Math.min(100, Math.abs(value)));
+      if (d.includes('w') || d.includes('e')) sx = safeScale(1 + (point.x - a.start.x) / (d.includes('w') ? b.x0 - b.x1 : b.x1 - b.x0));
+      if (d.includes('n') || d.includes('s')) sy = safeScale(1 + (point.y - a.start.y) / (d.includes('n') ? b.y0 - b.y1 : b.y1 - b.y0));
+    }
+    if (!a.changed && Math.hypot(point.x - a.start.x, point.y - a.start.y) * this.view.s < 2) return;
+    a.changed = true;
+    for (const original of a.originals) {
+      const item = this._own(original.id);
+      item.pts = original.pts.map(([x, y]) => {
+        if (a.direction === 'rotate') return [r1(cx + (x - cx) * Math.cos(angle) - (y - cy) * Math.sin(angle)), r1(cy + (x - cx) * Math.sin(angle) + (y - cy) * Math.cos(angle))];
+        return [r1(ox + (x - ox) * sx), r1(oy + (y - oy) * sy)];
+      });
+      item.width = Math.max(.1, Math.round(original.width * Math.sqrt(Math.abs(sx * sy)) * 100) / 100);
+      const path = this.els.get(item.id);
+      path.setAttribute('d', pathData(item.pts)); path.setAttribute('stroke-width', item.width);
+    }
     this._updateSelBox();
   }
 
