@@ -117,11 +117,32 @@
         </button>
         <span class="tb-sep"></span>
         <button class="chip" id="btn-finger" title="單指觸控要書寫還是移動畫面"></button>
-        <button class="chip" id="zoom" title="回到 100%">100%</button>
       </div>
     </div>
 
     <div id="viewport" data-tool="select"></div>
+    <button id="back-to-content" class="chip" hidden>
+      <svg class="i" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/></svg>回到內容
+    </button>
+    <div id="nav">
+      <div id="minimap" hidden><canvas aria-label="小地圖：點一下或拖曳來移動畫面"></canvas></div>
+      <div class="nav-bar">
+        <button class="nav-btn" id="zoom-out" title="縮小" aria-label="縮小">
+          <svg class="i" viewBox="0 0 24 24"><path d="M5 12h14"/></svg>
+        </button>
+        <button id="zoom" title="回到 100% (Shift+0)">100%</button>
+        <button class="nav-btn" id="zoom-in" title="放大" aria-label="放大">
+          <svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+        <span class="nav-sep"></span>
+        <button class="nav-btn" id="btn-fit" title="顯示全部內容 (Shift+1)" aria-label="顯示全部內容">
+          <svg class="i" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 00-2 2v3M21 8V5a2 2 0 00-2-2h-3M3 16v3a2 2 0 002 2h3M16 21h3a2 2 0 002-2v-3"/></svg>
+        </button>
+        <button class="nav-btn" id="btn-map" title="小地圖 (M)" aria-label="小地圖" aria-pressed="false" aria-controls="minimap">
+          <svg class="i" viewBox="0 0 24 24"><path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/></svg>
+        </button>
+      </div>
+    </div>
     <input type="file" id="file" accept="image/*" multiple hidden>
   </main>
 </div>

@@ -4,6 +4,9 @@ import { db, uid } from './db.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const MIN_S = 0.1, MAX_S = 8, GRID = 24, HISTORY = 100;
+// 觸控板捏合的 deltaY 很小，照原比例縮放才跟手；滑鼠滾輪一格約 100，限制成一格約 10%
+const WHEEL_ZOOM_MAX = 10;
+const ZOOM_STEPS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
 
 const r1 = n => Math.round(n * 10) / 10;
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -158,6 +161,7 @@ export class Board {
     this.els = new Map();     // item.id -> DOM
     this.urls = new Map();    // blobId -> objectURL
     this.view = { x: 0, y: 0, s: 1 };
+    this.anim = 0;            // animateView 的 requestAnimationFrame id
     this.style = {
       pen: { color: '#1f2937', width: 3 },
       hl: { color: '#fde047', width: 20 },
@@ -178,6 +182,7 @@ export class Board {
 
   // ---------- public ----------
   load(doc) {
+    this._stopAnim();
     this.action = null;
     this.pointers.clear();
     this.editing = null;
@@ -209,6 +214,7 @@ export class Board {
     }
     this.items = structuredClone(items);
     this.setSelection([...this.sel].filter(id => next.has(id)));
+    this.cb.onRemote?.();
   }
 
   refreshImages() {
@@ -265,6 +271,76 @@ export class Board {
   zoomTo(s) {
     const r = this.vp.getBoundingClientRect();
     this.zoomAt(r.width / 2, r.height / 2, s / this.view.s);
+  }
+
+  // 縮放按鈕：跳到下一個整數百分比
+  zoomStep(dir) {
+    const s = this.view.s;
+    const next = dir > 0 ? ZOOM_STEPS.find(z => z > s * 1.01) : ZOOM_STEPS.findLast(z => z < s * 0.99);
+    if (next) this.zoomTo(next);
+  }
+
+  centerOn(wx, wy) {
+    this._stopAnim();
+    const s = this.view.s;
+    this.setView(this.vp.clientWidth / 2 - wx * s, this.vp.clientHeight / 2 - wy * s, s);
+  }
+
+  // 縮放到看得見全部內容，最多放大到 100%；空白頁回到原點
+  fitContent() {
+    const b = this.contentBounds();
+    if (!b) return this.animateView(40, 40, 1);
+    const w = this.vp.clientWidth, ht = this.vp.clientHeight, pad = 48;
+    const s = clamp(Math.min((w - pad * 2) / (b.x1 - b.x0 || 1), (ht - pad * 2) / (b.y1 - b.y0 || 1)), MIN_S, 1);
+    this.animateView(w / 2 - (b.x0 + b.x1) / 2 * s, ht / 2 - (b.y0 + b.y1) / 2 * s, s);
+  }
+
+  // 平滑移到指定視角：中心點線性移動、縮放以對數內插，大幅跳轉時才看得出從哪裡到哪裡
+  animateView(x, y, s) {
+    this._stopAnim();
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return this.setView(x, y, s);
+    const w = this.vp.clientWidth / 2, ht = this.vp.clientHeight / 2, from = { ...this.view };
+    const c0 = { x: (w - from.x) / from.s, y: (ht - from.y) / from.s };
+    const c1 = { x: (w - x) / s, y: (ht - y) / s };
+    const t0 = performance.now();
+    const step = now => {
+      const t = Math.min(1, (now - t0) / 300), e = 1 - (1 - t) ** 3;
+      const ns = from.s * (s / from.s) ** e;
+      this.setView(w - (c0.x + (c1.x - c0.x) * e) * ns, ht - (c0.y + (c1.y - c0.y) * e) * ns, ns);
+      this.anim = t < 1 ? requestAnimationFrame(step) : 0;
+    };
+    this.anim = requestAnimationFrame(step);
+  }
+
+  _stopAnim() {
+    cancelAnimationFrame(this.anim);
+    this.anim = 0;
+  }
+
+  // 全部物件的外框（世界座標），空白頁回傳 null
+  contentBounds() {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const it of this.items) {
+      const b = this._box(it);
+      x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
+      x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
+    }
+    return x0 === Infinity ? null : { x0, y0, x1, y1 };
+  }
+
+  // 目前畫面看得到的範圍（世界座標）
+  viewBounds() {
+    const { x, y, s } = this.view;
+    return { x0: -x / s, y0: -y / s, x1: (this.vp.clientWidth - x) / s, y1: (this.vp.clientHeight - y) / s };
+  }
+
+  // 畫面裡是否有任何物件；沒有代表使用者可能迷路了
+  hasVisibleContent() {
+    const v = this.viewBounds();
+    return this.items.some(it => {
+      const b = this._box(it);
+      return b.x < v.x1 && b.x + b.w > v.x0 && b.y < v.y1 && b.y + b.h > v.y0;
+    });
   }
 
   toWorld(cx, cy) {
@@ -410,6 +486,7 @@ export class Board {
   }
 
   _down(e) {
+    this._stopAnim();
     this.rect = this.vp.getBoundingClientRect();
     this.lastPointer = { x: e.clientX, y: e.clientY };
     if (e.pointerType === 'mouse' && e.button !== 0) {
@@ -626,10 +703,12 @@ export class Board {
 
   _wheel(e) {
     e.preventDefault();
+    this._stopAnim();
     this.rect = this.vp.getBoundingClientRect();
     const k = e.deltaMode === 1 ? 16 : 1;
     if (e.ctrlKey || e.metaKey) {
-      this.zoomAt(e.clientX - this.rect.left, e.clientY - this.rect.top, Math.exp(-e.deltaY * k * 0.01));
+      const d = clamp(e.deltaY * k, -WHEEL_ZOOM_MAX, WHEEL_ZOOM_MAX);
+      this.zoomAt(e.clientX - this.rect.left, e.clientY - this.rect.top, Math.exp(-d * 0.01));
     } else {
       this.setView(this.view.x - e.deltaX * k, this.view.y - e.deltaY * k, this.view.s);
     }

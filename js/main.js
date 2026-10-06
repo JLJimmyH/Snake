@@ -1,5 +1,6 @@
 import { db, uid } from './db.js';
 import { Board } from './board.js';
+import { Minimap } from './minimap.js';
 import { setupHistory } from './version-ui.js';
 
 const $ = s => document.querySelector(s);
@@ -13,9 +14,11 @@ let collaboration = null;
 let lastLocalPage = null;
 
 const board = new Board($('#viewport'), {
-  onChange: scheduleSave,
+  onChange: () => { scheduleSave(); refreshNav(); },
+  onRemote: refreshNav,
   onView: (v, silent) => {
     $('#zoom').textContent = Math.round(v.s * 100) + '%';
+    refreshNav();
     if (!silent) scheduleSave();
   },
   onSelect: count => { $('#btn-del').disabled = !count; },
@@ -475,7 +478,41 @@ $('#file').addEventListener('change', async e => {
 $('#btn-undo').addEventListener('click', () => board.undo());
 $('#btn-redo').addEventListener('click', () => board.redo());
 $('#btn-del').addEventListener('click', () => board.deleteSelected());
+
+// ---------- 導覽：縮放、顯示全部、小地圖、回到內容 ----------
+const minimap = new Minimap(board, $('#minimap canvas'));
+let navFrame = 0;
+
+// 視角或內容變了：下一個 frame 重畫小地圖，並判斷要不要提示「回到內容」
+function refreshNav() {
+  if (navFrame) return;
+  navFrame = requestAnimationFrame(() => {
+    navFrame = 0;
+    minimap.draw();
+    const lost = $('#back-to-content');
+    lost.hidden = !board.items.length || board.hasVisibleContent();
+    if (!lost.hidden) lost.style.top = $('#viewport').offsetTop + 12 + 'px';
+  });
+}
+
+function setMinimap(open) {
+  $('#minimap').hidden = !open;
+  $('#btn-map').setAttribute('aria-pressed', String(open));
+  try { localStorage.setItem('minimap', open ? '1' : '0'); } catch { /* ignore */ }
+  refreshNav();
+}
+
 $('#zoom').addEventListener('click', () => board.zoomTo(1));
+$('#zoom-in').addEventListener('click', () => board.zoomStep(1));
+$('#zoom-out').addEventListener('click', () => board.zoomStep(-1));
+$('#btn-fit').addEventListener('click', () => board.fitContent());
+$('#back-to-content').addEventListener('click', () => board.fitContent());
+$('#btn-map').addEventListener('click', () => setMinimap($('#minimap').hidden));
+// 停在導覽列上按 Ctrl+滾輪不要縮放整個網頁
+$('#nav').addEventListener('wheel', e => e.preventDefault(), { passive: false });
+// 圖片載入完成後小地圖才畫得出縮圖（load 不會冒泡，用 capture）
+$('#viewport').addEventListener('load', refreshNav, true);
+window.addEventListener('resize', refreshNav);
 
 function updateFinger() {
   try { localStorage.setItem('fingerDraws', board.fingerDraws ? '1' : '0'); } catch { /* ignore */ }
@@ -498,6 +535,9 @@ document.addEventListener('keydown', e => {
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? board.redo() : board.undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); board.redo(); return; }
   if (mod) return;
+  if (e.shiftKey && e.code === 'Digit1') { board.fitContent(); return; }
+  if (e.shiftKey && e.code === 'Digit0') { board.zoomTo(1); return; }
+  if (k === 'm') { setMinimap($('#minimap').hidden); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { board.deleteSelected(); return; }
   const tools = { v: 'select', l: 'lasso', p: 'pen', h: 'hl', e: 'eraser', t: 'text' };
   if (tools[k]) setTool(tools[k]);
@@ -569,6 +609,10 @@ async function init() {
   if (!pages.length) await seed();
   const last = await db.get('meta', 'lastPage');
   try { if (localStorage.getItem('fingerDraws') === '0') board.fingerDraws = false; } catch { /* ignore */ }
+  // 小地圖預設：桌機打開、手機收合；之後記住使用者的選擇
+  let map = null;
+  try { map = localStorage.getItem('minimap'); } catch { /* ignore */ }
+  setMinimap(map ? map === '1' : !isMobile());
   setTool('select');
   updateFinger();
   await openPage(byId(last) ? last : kids(null)[0].id);
