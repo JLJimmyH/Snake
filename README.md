@@ -1,93 +1,26 @@
-# 筆記 MVP
+# 📒 筆記 MVP
 
-OneNote 式的無限畫布（手寫／打字／圖片／雙指縮放），加上 Notion 式的無限層級頁面樹。
-預設為純靜態網頁，資料存在瀏覽器 IndexedDB；新增的協作模式使用 Node + Yjs，正式登入與雲端儲存使用 Supabase。
+手寫無限畫布 ＋ 無限層頁面
 
-## 👉 直接使用
+### 👉 [打開就用](https://jljimmyh.github.io/note-mvp/)　手機・平板・電腦，免安裝
 
-**https://jljimmyh.github.io/note-mvp/**
+![](docs/images/hero.png)
 
-手機、平板、電腦用瀏覽器打開就能用，不用安裝。
+<table>
+<tr><th width="50%">✏️ 寫</th><th width="50%">✋ 選取・套索</th></tr>
+<tr><td><img src="docs/images/draw.gif" alt="寫"></td><td><img src="docs/images/select.gif" alt="選取・套索"></td></tr>
+<tr><th>🧽 擦</th><th>🔍 縮放</th></tr>
+<tr><td><img src="docs/images/erase.gif" alt="擦"></td><td><img src="docs/images/zoom.gif" alt="縮放"></td></tr>
+<tr><th>📁 頁面</th><th>☁️ 備份</th></tr>
+<tr><td><img src="docs/images/pages.gif" alt="頁面"></td><td><img src="docs/images/backup.png" alt="備份"></td></tr>
+</table>
 
-> **資料存在哪？** 筆記只存在你自己這台裝置的瀏覽器裡，不會上傳。
-> 重開機還在；但換瀏覽器／換裝置看不到，清除瀏覽器資料或用無痕模式會消失。
-> iPhone / iPad 的 Safari 若超過 7 天沒開這個網站，資料可能被系統清除。
+<p align="center"><img src="docs/images/mobile.png" width="560" alt="手機"></p>
 
-## 本機開發
+> ⚠️ 筆記只存在這台裝置的瀏覽器。換裝置、清除瀏覽器資料就看不到 → 用「版本 / Drive」備份。
 
-```
-python server.py        # 預設 port 8000
-```
+<kbd>V</kbd> <kbd>L</kbd> <kbd>P</kbd> <kbd>H</kbd> <kbd>E</kbd> <kbd>T</kbd> 切工具　<kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> 復原／重做　<kbd>Ctrl</kbd>+<kbd>V</kbd> 貼上　<kbd>Ctrl</kbd>+滾輪 縮放　<kbd>M</kbd> 小地圖
 
-電腦開 `http://localhost:8000`，手機（同一個 Wi-Fi）開終端機印出的 `http://<電腦IP>:8000`。
+---
 
-## Google Drive 版本歷史
-
-點「版本 / Drive」可手動保存全部本機頁面的不可變版本，預覽頁面／文字／筆跡／圖片的變更，並還原舊版本。還原會先建立保護版本，再產生新的還原版本。圖片和未修改內容以 SHA-256 去重，每十個版本保存完整快照。
-
-- 不連線也能建立本機版本；本機版本仍存在同一瀏覽器，清除網站資料會移除尚未備份的內容。
-- 連結 Google Drive 後，按「建立並備份」才上傳；連線／讀取歷史不會自動上傳或替換筆記。
-- 各 Google 帳號有自己的版本分支，離線可先選該帳號建立版本，再連線按「上傳目前分支／重試」。
-- 換裝置時，連結同一 Google 帳號，讀取歷史、預覽、再還原。若兩台裝置各自修改，會保留分歧，不會直接互相覆蓋。
-- 版本僅包含本機筆記，不包含協作快取、帳號設定、登入 token 或分享權限。這不是即時共同編輯。
-
-**網站管理者請先依 [Google Cloud OAuth 新手設定](docs/GOOGLE_DRIVE_SETUP.md) 建立公開 Client ID。** 可以先在介面測試，再填入 `js/drive-config.js` 供所有訪客使用。此功能使用 `drive.file`，不需要 Client secret 或 API key。
-
-目前支援手動版本、差異與還原；自動備份、分歧合併、舊版本／無引用檔案清理尚未實作。單個內容／圖片限制 20 MB，單份還原內容限制 100 MB、2000 頁／20000 物件；還原前請關閉其他編輯分頁。筆記在還原交易之前若被其他分頁修改，會拒絕覆蓋。
-
-本機與 Google API 模擬測試已通過；真實 Google OAuth／Drive 仍需要設定 Client ID 後驗收。瀏覽器測試：`NOTE_TEST_ORIGIN=http://127.0.0.1:8040 python tests/history_smoke.py`（需要 Python Playwright 與 Chromium；Google API 使用 mock，不會讀寫真實帳號）。
-
-## 多人協作（第一版）
-
-保留原本的單機流程，另提供 Google 登入、指定 email 分享、多人筆跡／物件同步、圖片與離線補送。尚未建立 Supabase 時，可先用限定本機的 Alice/Bob 示範帳號測試。
-
-完整指令、Supabase 建立步驟、驗證方式與限制請看 [協作設定](collaboration/README.md)。此版同一文字框請輪流輸入；正式 Google 登入與 Supabase 權限仍需在真實專案驗收。
-
-## 結構
-
-| 檔案 | 職責 |
-| --- | --- |
-| `index.html` | 版面：側欄頁面樹、標題列、工具列、畫布 |
-| `css/style.css` | 樣式，`< 768px` 時側欄變成抽屜 |
-| `js/db.js` | IndexedDB 包裝：`pages` / `docs` / `blobs` / `meta` |
-| `js/board.js` | 畫布引擎：指標事件、手勢、筆跡、文字、圖片、橡皮擦、復原 |
-| `js/main.js` | 頁面樹 CRUD、工具列、自動儲存、快捷鍵 |
-| `server.py` | 區網測試伺服器（正確 MIME、關閉快取） |
-
-## 畫布編輯
-
-- 筆與螢光筆點選顏色按鈕後，可在同一色盤選常用色或自訂色；粗細統一由大小滑桿調整，支援 0.5～100 px；拖曳調整時顯示實際大小的筆點預覽。
-- 用選取工具點選筆跡，或用套索選取多條筆跡；拖曳選取框四角／四邊可自由拉伸，拖曳上方圓形把手可旋轉。左右與上下縮放不固定比例。
-- 在畫布上按 Ctrl+V（Mac 為 Cmd+V）可貼上文字或剪貼簿圖片，放在最後游標位置，沒有游標位置時放在畫布中央。文字以純文字貼上；編輯文字框時則貼進原文字框。
-- 以上操作支援本機儲存與復原／重做；協作唯讀頁面不可修改。
-
-## 畫面導覽
-
-- 畫布右下角：縮小／目前比例（點一下回到 100%）／放大（依 10%、25%、50%、75%、100%、125%… 整數比例跳）、「顯示全部內容」、小地圖開關。
-- 小地圖：縮圖顯示整頁內容與目前畫面（紫框）。地圖範圍＝全部內容＋目前畫面，所以移到很遠的空白處也看得到兩者；內容縮得太小時會以圓點標示位置。點一下＝畫面中心跳到該處，拖曳紫框＝移動畫面。桌機預設開啟、手機預設收合，會記住上次選擇。
-- 畫面裡看不到任何物件時，畫布上方出現「回到內容」，點一下縮放到能看見全部內容（最多放大到 100%）。
-
-## 資料模型
-
-```js
-page = { id, parentId, title, order, open }          // 樹狀分類（Notion）
-doc  = { pageId, view: {x, y, s}, items: [...] }      // 每頁一張無限畫布（OneNote）
-item = { id, type: 'stroke', tool, color, width, pts: [[x, y], ...] }
-     | { id, type: 'text',  x, y, size, text }
-     | { id, type: 'image', x, y, w, h, blobId }     // 圖片本體在 blobs store
-```
-
-所有座標都是「世界座標」，畫面以 `translate(x,y) scale(s)` 呈現。
-`items` 視為不可變（修改前先複製），所以復原只要保存陣列快照。
-
-## 觸控規則
-
-- 預設工具是「選取」：拖曳空白處或未選取的物件＝移動畫布；點一下物件＝選取（顯示選取框）；拖曳選取框內＝移動已選取的物件；物件疊在一起時，在同一處再點一下＝改選下一層（到底後回到最上層；順序跟畫面上的疊放一致：文字在最上、筆跡其次、圖片在最下，同類型後加的在上）；拖把手＝縮放／旋轉。文字內容使用「文字」工具點選編輯
-- 套索：圈選多個物件（筆跡過半落在圈內、文字/圖片中心在圈內即選取）
-- 橡皮擦：「局部」只挖掉碰到的部分（筆跡會被切成多段），「整條」碰到就刪整條
-- 文字框：選取後拉右側把手固定寬度；圖片拉右下角等比縮放
-- 手機鍵盤：app 高度跟著 `visualViewport`，輸入時自動把游標捲進可見範圍
-- 單指（其他工具）：依工具書寫／擦除／打字；偵測到觸控筆後自動改成「單指移動畫面」（工具列可切換）
-- 雙指：縮放＋平移，會取消剛開始的那一筆
-- 觸控筆書寫中會忽略手掌觸控
-- 桌機：滾輪平移、Ctrl+滾輪縮放（滑鼠一格約 10%，觸控板捏合照手指比例）、中鍵拖曳平移；V/L/P/H/E/T 切工具，Ctrl+Z / Ctrl+Y；Shift+1 顯示全部內容、Shift+0 回到 100%、M 開關小地圖
+開發：`python server.py` → http://localhost:8000 ・ [協作設定](collaboration/README.md) ・ [Google Drive 設定](docs/GOOGLE_DRIVE_SETUP.md)
