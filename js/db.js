@@ -134,30 +134,41 @@ export function readNotebook(notebookId) {
   });
 }
 
+function putContent(tx, notebook, { pages, docs, blobs }) {
+  tx.objectStore('notebooks').put(notebook, notebook.id);
+  for (const page of pages) tx.objectStore('pages').put({ ...page, notebookId: notebook.id });
+  for (const doc of docs) tx.objectStore('docs').put(doc);
+  for (const [id, blob] of blobs) tx.objectStore('blobs').put(blob, id);
+}
+
+// 刪掉一本筆記本的頁面、內容與圖片（不含筆記本紀錄本身）
+function removeContent(tx, notebookId) {
+  const pages = tx.objectStore('pages').index('notebookId').getAll(notebookId);
+  pages.onsuccess = () => {
+    for (const page of pages.result) {
+      const doc = tx.objectStore('docs').get(page.id);
+      doc.onsuccess = () => {
+        for (const id of imageIds(doc.result ? [doc.result] : [])) tx.objectStore('blobs').delete(id);
+        tx.objectStore('docs').delete(page.id);
+      };
+      tx.objectStore('pages').delete(page.id);
+    }
+  };
+}
+
+const ALL = ['notebooks', 'pages', 'docs', 'blobs'];
+
 // 匯入或從 Drive 開啟：筆記本與全部內容一次寫入，不會只寫一半
-export function addNotebook(notebook, { pages, docs, blobs }) {
-  return transaction(['notebooks', 'pages', 'docs', 'blobs'], 'readwrite', tx => {
-    tx.objectStore('notebooks').put(notebook, notebook.id);
-    for (const page of pages) tx.objectStore('pages').put({ ...page, notebookId: notebook.id });
-    for (const doc of docs) tx.objectStore('docs').put(doc);
-    for (const [id, blob] of blobs) tx.objectStore('blobs').put(blob, id);
-  });
+export function addNotebook(notebook, content) {
+  return transaction(ALL, 'readwrite', tx => putContent(tx, notebook, content));
+}
+
+// 從 Drive 同步：舊內容換成新內容，同一個 transaction（新內容的 ID 都是新的，不會被刪到）
+export function replaceNotebook(notebook, content) {
+  return transaction(ALL, 'readwrite', tx => { removeContent(tx, notebook.id); putContent(tx, notebook, content); });
 }
 
 // 關閉筆記本：移除本機的頁面、內容與圖片（Drive 上的檔案不受影響）
 export function deleteNotebook(notebookId) {
-  return transaction(['notebooks', 'pages', 'docs', 'blobs'], 'readwrite', tx => {
-    const pages = tx.objectStore('pages').index('notebookId').getAll(notebookId);
-    pages.onsuccess = () => {
-      for (const page of pages.result) {
-        const doc = tx.objectStore('docs').get(page.id);
-        doc.onsuccess = () => {
-          for (const id of imageIds(doc.result ? [doc.result] : [])) tx.objectStore('blobs').delete(id);
-          tx.objectStore('docs').delete(page.id);
-        };
-        tx.objectStore('pages').delete(page.id);
-      }
-    };
-    tx.objectStore('notebooks').delete(notebookId);
-  });
+  return transaction(ALL, 'readwrite', tx => { removeContent(tx, notebookId); tx.objectStore('notebooks').delete(notebookId); });
 }

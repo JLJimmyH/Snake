@@ -1,4 +1,4 @@
-import { db, uid, newNotebook, readNotebook, addNotebook, deleteNotebook } from './db.js';
+import { db, uid, newNotebook, readNotebook, addNotebook, replaceNotebook, deleteNotebook } from './db.js';
 import { packNotebook, unpackNotebook, cleanName, fileName, nameFromFile } from './notebook-core.js';
 import { DriveClient, loadGoogleIdentity } from './drive.js';
 import { GOOGLE_DRIVE_CLIENT_ID } from './drive-config.js';
@@ -11,8 +11,8 @@ const byCreated = (a, b) => a.created - b.created;
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 const size = bytes => bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(bytes / 1024)) + ' KB';
 
-// 筆記本：切換、新增、重新命名、關閉、匯入匯出 zip、Drive 開啟／儲存／另存副本
-export function setupNotebooks({ current, switchTo, create, flush, showMenu, toast }) {
+// 筆記本：切換、新增、重新命名、關閉、匯入匯出 zip、Drive 開啟／儲存／同步／另存副本
+export function setupNotebooks({ current, switchTo, reload, create, flush, showMenu, toast }) {
   const drive = new DriveClient(GOOGLE_DRIVE_CLIENT_ID);
   if (GOOGLE_DRIVE_CLIENT_ID) loadGoogleIdentity().catch(error => toast(error.message));
   const dialog = $('#drive-dialog');
@@ -28,6 +28,8 @@ export function setupNotebooks({ current, switchTo, create, flush, showMenu, toa
     save.textContent = !nb.drive ? '☁ 存到 Drive' : dirty(nb) ? '☁ 儲存到 Drive' : '☁ 已存到 Drive';
     save.classList.toggle('on', Boolean(nb.drive) && dirty(nb));
     save.disabled = busy;
+    $('#drive-sync').hidden = !nb.drive;
+    $('#drive-sync').disabled = busy;
   }
 
   async function run(task) {
@@ -52,16 +54,22 @@ export function setupNotebooks({ current, switchTo, create, flush, showMenu, toa
     return packNotebook({ name, ...await readNotebook(nb.id) });
   }
 
+  // 這本筆記本在 Drive 上的檔案；帳號不符、已刪除或在垃圾桶都擋下
+  async function remoteOf(nb) {
+    if (nb.drive.accountId !== drive.account.id) throw new Error(`這本筆記本存在 ${nb.drive.email} 的 Drive；請先中斷 Google 連線，再用該帳號連線（目前是 ${drive.account.email}）`);
+    let remote;
+    try { remote = await drive.file(nb.drive.fileId); }
+    catch (error) { throw error.status === 404 ? new Error('Drive 上的檔案已刪除或無法存取，請改用「另存副本到 Drive」') : error; }
+    if (remote.trashed) throw new Error('Drive 上的檔案已移到垃圾桶，請先還原，或改用「另存副本到 Drive」');
+    return remote;
+  }
+
   const save = () => withDrive(async () => {
     await flush();
     const nb = await db.get('notebooks', current());
     if (nb.drive) {
-      if (nb.drive.accountId !== drive.account.id) throw new Error(`這本筆記本存在 ${nb.drive.email} 的 Drive；請先中斷 Google 連線，再用該帳號連線（目前是 ${drive.account.email}）`);
-      let remote;
-      try { remote = await drive.file(nb.drive.fileId); }
-      catch (error) { throw error.status === 404 ? new Error('Drive 上的檔案已刪除或無法存取，請改用「另存副本到 Drive」') : error; }
-      if (remote.trashed) throw new Error('Drive 上的檔案已移到垃圾桶，請先還原，或改用「另存副本到 Drive」');
-      if (remote.headRevisionId !== nb.drive.revision && !confirm(`Drive 上的「${remote.name}」在這台裝置上次開啟或儲存後，已被其他裝置修改。\n\n覆蓋會以這台裝置的內容取代它（之後仍可在 Drive 的「管理版本」找回舊內容）。\n\n要覆蓋嗎？按「取消」可改用「另存副本到 Drive」。`)) return;
+      const remote = await remoteOf(nb);
+      if (remote.headRevisionId !== nb.drive.revision && !confirm(`Drive 上的「${remote.name}」在這台裝置上次開啟或儲存後，已被其他裝置修改。\n\n覆蓋會以這台裝置的內容取代它（之後仍可在 Drive 的「管理版本」找回舊內容）。\n\n要覆蓋嗎？按「取消」後可用「⟳ 同步」載入 Drive 上的內容，或「另存副本到 Drive」。`)) return;
     }
     const changes = nb.changes;
     toast('正在儲存到 Drive…');
@@ -69,6 +77,30 @@ export function setupNotebooks({ current, switchTo, create, flush, showMenu, toa
     const account = drive.account;
     await db.update('notebooks', nb.id, latest => latest && { ...latest, savedChanges: changes, drive: { accountId: account.id, email: account.email, fileId: file.id, revision: file.headRevisionId } });
     toast(`已儲存到 ${account.email} 的 Drive`);
+  });
+
+  // 同步：Drive 上有其他裝置存的新內容，就下載下來取代這台裝置的內容
+  const sync = () => withDrive(async () => {
+    await flush();
+    let nb = await db.get('notebooks', current());
+    if (!nb.drive) throw new Error('這本筆記本只在本機，請先「存到 Drive」');
+    const remote = await remoteOf(nb);
+    if (remote.headRevisionId === nb.drive.revision) {
+      toast(dirty(nb) ? '已是 Drive 上的最新內容（這台裝置有尚未儲存的變更）' : '已是最新內容');
+      return;
+    }
+    toast('正在從 Drive 同步…');
+    const { file: meta, data } = await drive.download(nb.drive.fileId);
+    const content = await unpackNotebook(data);
+    await flush();
+    nb = await db.get('notebooks', nb.id);
+    if (dirty(nb) && !confirm(`「${nb.name}」在這台裝置有尚未存到 Drive 的變更，同步會用 Drive 上的內容取代它們。\n\n確定要同步嗎？按「取消」可先「另存副本到 Drive」保留這些變更。`)) return;
+    // 頁面 ID 每次開啟都會換新，用標題找回剛剛開著的那一頁
+    const title = (await db.get('pages', nb.lastPage))?.title;
+    const lastPage = content.pages.find(page => page.title === title)?.id ?? null;
+    await replaceNotebook({ ...nb, name: nameFromFile(meta.name), lastPage, savedChanges: nb.changes, drive: { ...nb.drive, revision: meta.headRevisionId } }, content);
+    await reload(nb.id);
+    toast(`已同步 Drive 上最新的「${nameFromFile(meta.name)}」`);
   });
 
   // 另存副本：在 Drive 建立新檔當備份，目前的筆記本仍對應原本的檔案
@@ -172,6 +204,7 @@ export function setupNotebooks({ current, switchTo, create, flush, showMenu, toa
       ...list.map(nb => ({ label: `${nb.id === current() ? '✓' : '　'} ${nb.name} · ${state(nb)}`, run: () => nb.id !== current() && run(() => switchTo(nb.id)) })),
       { head: '這本筆記本' },
       { label: '☁ 儲存到 Drive（Ctrl+S）', run: save },
+      { label: '⟳ 從 Drive 同步', run: sync },
       { label: '☁ 另存副本到 Drive…', run: saveCopy },
       { label: '⬇ 匯出 zip', run: exportZip },
       { label: '✎ 重新命名', run: rename },
@@ -192,6 +225,7 @@ export function setupNotebooks({ current, switchTo, create, flush, showMenu, toa
 
   $('#nb-button').addEventListener('click', openMenu);
   $('#drive-save').addEventListener('click', save);
+  $('#drive-sync').addEventListener('click', sync);
   $('#drive-close').addEventListener('click', () => dialog.close());
   $('#drive-disconnect').addEventListener('click', disconnect);
   document.addEventListener('keydown', event => {

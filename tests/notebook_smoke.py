@@ -110,6 +110,7 @@ with sync_playwright() as pw:
     expect(page.locator('#page-title')).to_have_value('上次開的')
     assert titles(page) == ['舊頁面', '上次開的'], titles(page)
     expect(page.locator('#drive-save')).to_have_text('☁ 存到 Drive')
+    expect(page.locator('#drive-sync')).to_be_hidden()
     state = page.evaluate("""async()=>{const {db}=await import('./js/db.js');const d=await new Promise(r=>{const q=indexedDB.open('note-mvp');q.onsuccess=()=>r(q.result)});
       return {stores:[...d.objectStoreNames],meta:await db.get('meta','history:local'),collab:await db.get('meta','collab:u:p'),pages:await db.getAll('pages')}}""")
     assert 'versions' not in state['stores'] and 'objects' not in state['stores'] and 'notebooks' in state['stores'], state['stores']
@@ -196,9 +197,27 @@ with sync_playwright() as pw:
     assert len(notebooks(device)) == 2, 'opening an already open file switches instead of duplicating'
     draw(device, 120); device.locator('#drive-save').click(); expect(device.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
 
-    # 6. First device is now stale: cancel keeps Drive untouched, confirm overwrites.
+    # 6. First device is now stale. Sync pulls the other device's strokes and
+    # stays on the same page; syncing again is a no-op.
+    uploads = fake.uploads; strokes = page.locator('.ink path').count()
+    expect(page.locator('#drive-sync')).to_be_visible()
+    page.locator('#drive-sync').click(); toast(page, '已同步 Drive 上最新的「專案 A 改名」')
+    expect(page.locator('.ink path')).to_have_count(strokes + 1)
+    expect(page.locator('#page-title')).to_have_value('A 的頁面')
+    expect(page.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    assert titles(page) == ['A 的頁面'], titles(page)
+    page.locator('#drive-sync').click(); toast(page, '已是最新內容')
+    assert fake.uploads == uploads
+    # Unsaved local edits: cancelling the sync keeps them.
+    draw(device, 150); device.locator('#drive-save').click(); expect(device.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
     uploads = fake.uploads
-    draw(page, 180)
+    draw(page, 180); strokes = page.locator('.ink path').count()
+    dialogs.answers = [False]; page.locator('#drive-sync').click()
+    assert '尚未存到 Drive 的變更' in dialogs.last(page)
+    expect(page.locator('#drive-sync')).to_be_enabled()
+    expect(page.locator('.ink path')).to_have_count(strokes)
+    expect(page.locator('#drive-save')).to_have_text('☁ 儲存到 Drive')
+    # Saving while stale: cancel keeps Drive untouched, confirm overwrites.
     dialogs.answers = [False]; page.locator('#drive-save').click()
     assert '已被其他裝置修改' in dialogs.last(page)
     expect(page.locator('#drive-save')).to_be_enabled(); page.wait_for_timeout(300)

@@ -610,4 +610,4 @@ svg.ink path.remote-preview { opacity: .55; }
 .drive-file strong { overflow-wrap: anywhere; }
 .drive-file small { display: block; color: var(--muted); margin-top: 4px; }
 .drive-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
-#drive-save:disabled { opacity: .5; cursor: default; }
+#drive-save:disabled, #drive-sync:disabled { opacity: .5; cursor: default; }

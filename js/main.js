@@ -646,6 +646,16 @@ async function switchNotebook(id) {
   notebooks?.render();
 }
 
+// 從 Drive 同步後重新載入：畫布上的舊內容已被取代，丟掉，不能再存回去
+async function reloadNotebook(id) {
+  current = null;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  board.commitText();
+  contentChanged = false;
+  await switchNotebook(id);
+}
+
 // 這個分頁上次開的 → 任何分頁最後開的 → 最早建立的；全新安裝則建立含教學的「我的筆記」
 async function initialNotebook() {
   const list = await db.getAll('notebooks');
@@ -669,7 +679,7 @@ async function init() {
   setTool('select');
   updateFinger();
   notebooks = setupNotebooks({
-    current: () => notebookId, switchTo: switchNotebook, create: createNotebook, flush, showMenu, toast,
+    current: () => notebookId, switchTo: switchNotebook, reload: reloadNotebook, create: createNotebook, flush, showMenu, toast,
   });
   await switchNotebook(await initialNotebook());
   try {
