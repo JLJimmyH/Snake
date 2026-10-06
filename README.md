@@ -17,9 +17,9 @@
 
 <p align="center"><img src="docs/images/mobile.png" width="560" alt="手機"></p>
 
-> ⚠️ 筆記只存在這台裝置的瀏覽器。換裝置、清除瀏覽器資料就看不到 → 用「版本 / Drive」備份。
+> ⚠️ 筆記只存在這台裝置的瀏覽器。換裝置、清除瀏覽器資料就看不到 → 點左上角筆記本名稱，「存到 Drive」或「匯出 zip」。
 
-<kbd>V</kbd> <kbd>L</kbd> <kbd>P</kbd> <kbd>H</kbd> <kbd>E</kbd> <kbd>T</kbd> 切工具　<kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> 復原／重做　<kbd>Ctrl</kbd>+<kbd>V</kbd> 貼上　<kbd>Ctrl</kbd>+滾輪 縮放　<kbd>M</kbd> 小地圖
+<kbd>V</kbd> <kbd>L</kbd> <kbd>P</kbd> <kbd>H</kbd> <kbd>E</kbd> <kbd>T</kbd> 切工具　<kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> 復原／重做　<kbd>Ctrl</kbd>+<kbd>V</kbd> 貼上　<kbd>Ctrl</kbd>+滾輪 縮放　<kbd>M</kbd> 小地圖　<kbd>Ctrl</kbd>+<kbd>S</kbd> 存到 Drive
 
 ---
 

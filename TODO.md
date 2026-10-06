@@ -167,3 +167,17 @@ python tests/browser_smoke.py
 - [x] 畫面裡看不到任何物件時顯示「回到內容」，點擊或 Shift+1 以 300ms 動畫縮放到全部內容（最多 100%，尊重 prefers-reduced-motion）；Shift+0 回到 100%、M 開關小地圖。
 - [x] tests/navigation_smoke.py：滾輪縮放幅度、按鈕比例、小地圖點擊／拖曳、顯示全部、提示出現與消失、開關記憶。
 - [x] 本機 Chrome headless 以 CDP 在 1280×900 與 390×844 驗證同樣情境通過；本機沒有 Python Playwright，navigation_smoke.py 尚未實際執行。
+
+## ✨ 筆記本取代版本歷史（2026-10-06）
+- 原因：版本歷史把每筆筆跡／文字各存成一個 Drive 檔案，Drive 上檔案太多、上傳請求上千次。改成「一本筆記本 = 一個 zip 檔」，沒有版本歷史，要備份就另存副本。
+- [x] 側欄左上角筆記本選單：切換、新增、重新命名、關閉；狀態顯示 僅本機／未儲存到 Drive／已存到 Drive。每個瀏覽器分頁各自記住開著哪本。
+- [x] IndexedDB v3：新增 notebooks，pages 加 notebookId 索引；既有頁面遷移到「我的筆記」，lastPage 跟著搬。版本歷史（versions／objects 與相關 meta）依使用者決定直接刪除。
+- [x] zip 格式（js/notebook-core.js，fflate 0.8.2 放 js/vendor/）：manifest／pages／docs／images；匯入一律驗證、依宣告大小擋 zip bomb、頁面與圖片 ID 全部換新（同一檔開兩次或副本不會互相覆蓋）。
+- [x] Drive：存到 Drive（覆寫對應檔案、檔名＝筆記本名稱.zip、改名下次儲存同步）、另存副本（目前筆記本仍對應原檔）、從 Drive 開啟（已開啟就切換）。儲存前比對 headRevisionId，被其他裝置改過要確認；不能用其他帳號覆寫。resumable upload。
+- [x] 只移動畫面、展開收合頁面不算變更；內容、頁面增刪改名、筆記本改名才標記未儲存。
+- [x] 關閉：未存到 Drive 的變更與僅本機筆記本都要確認；最後一本關掉自動建一本空的；本機頁面、內容、圖片一併移除，Drive 檔案不動。
+- [x] 測試：tests/notebook-core.test.mjs（8 個）、tests/notebook_smoke.py（遷移、多本切換、匯出匯入、Drive mock 儲存／衝突／副本／跨裝置／帳號／關閉）通過；navigation_smoke、pan_selection_smoke 回歸通過。
+- editor_smoke.py 在本機 Windows Chrome headless 第 40 行失敗（items[0] 不是筆跡），改動前的 HEAD 也一樣失敗，與本次無關，待查。
+- collaboration.test.mjs 需要先 npm install（yjs／ws），本輪未執行。
+- [ ] 真實 Google 帳號驗收：存到 Drive、從 Drive 開啟、resumable upload 的 CORS（Location header）。
+- 本輪 Python 測試網站 port 8040；Playwright 裝在暫存 venv，以本機 Chrome 執行。

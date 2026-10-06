@@ -1,20 +1,24 @@
-import { db, uid } from './db.js';
+import { db, uid, newNotebook, pagesOf } from './db.js';
 import { Board } from './board.js';
 import { Minimap } from './minimap.js';
-import { setupHistory } from './version-ui.js';
+import { cleanName } from './notebook-core.js';
+import { setupNotebooks } from './notebook-ui.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
 const isMobile = () => matchMedia('(max-width: 767px)').matches;
 
-let pages = [];
+let notebookId = null;   // 每個分頁各自記住目前開著哪本
+let notebooks = null;
+let pages = [];          // 只有目前筆記本的頁面
 let current = null;
 let saveTimer = null;
+let contentChanged = false;
 let collaboration = null;
 let lastLocalPage = null;
 
 const board = new Board($('#viewport'), {
-  onChange: () => { scheduleSave(); refreshNav(); },
+  onChange: () => { contentChanged = true; scheduleSave(); refreshNav(); },
   onRemote: refreshNav,
   onView: (v, silent) => {
     $('#zoom').textContent = Math.round(v.s * 100) + '%';
@@ -47,6 +51,7 @@ async function saveNow() {
   clearTimeout(saveTimer);
   saveTimer = null;
   if (collaboration?.active) {
+    contentChanged = false;
     await collaboration.saved();
     setSaveState('已存於本機');
     return;
@@ -54,6 +59,17 @@ async function saveNow() {
   if (!current) return;
   await db.put('docs', { pageId: current, items: board.items, view: board.view });
   setSaveState('已儲存');
+  // 只移動畫面不算變更；有改內容才標記「尚未存到 Drive」
+  if (contentChanged) {
+    contentChanged = false;
+    await markChanged();
+  }
+}
+
+async function markChanged() {
+  if (!notebookId) return;
+  await db.update('notebooks', notebookId, nb => nb && { ...nb, changes: nb.changes + 1 });
+  notebooks?.render();
 }
 
 async function flush() {
@@ -89,7 +105,7 @@ function ancestors(id) {
 async function createPage(parentId, title = '') {
   const sibs = kids(parentId);
   const p = {
-    id: uid(), parentId, title,
+    id: uid(), notebookId, parentId, title,
     order: sibs.length ? sibs[sibs.length - 1].order + 1 : 0,
     open: true, created: Date.now(),
   };
@@ -138,7 +154,7 @@ async function openPage(id) {
   $('#page-title').readOnly = false;
   board.load(await db.get('docs', id));
   setSaveState('');
-  db.put('meta', id, 'lastPage');
+  db.update('notebooks', notebookId, nb => nb && { ...nb, lastPage: id });
   for (const a of ancestors(id)) {
     if (!a.open) {
       a.open = true;
@@ -151,6 +167,7 @@ async function openPage(id) {
 
 async function addPage(parentId) {
   const p = await createPage(parentId, '');
+  markChanged();
   await openPage(p.id);
   closeSidebar();
   $('#page-title').focus();
@@ -162,6 +179,7 @@ async function renamePage(id) {
   if (t === null) return;
   p.title = t.trim();
   await savePage(p);
+  markChanged();
   renderTree();
   renderHeader();
 }
@@ -169,6 +187,7 @@ async function renamePage(id) {
 async function swapOrder(a, b) {
   [a.order, b.order] = [b.order, a.order];
   await Promise.all([savePage(a), savePage(b)]);
+  markChanged();
   renderTree();
 }
 
@@ -183,6 +202,7 @@ async function movePage(id, parentId) {
     parent.open = true;
     await savePage(parent);
   }
+  markChanged();
   renderTree();
   renderHeader();
 }
@@ -205,6 +225,7 @@ async function deletePage(id) {
     await db.del('pages', pid);
   }
   pages = pages.filter(x => !ids.includes(x.id));
+  markChanged();
 
   if (!current) {
     const next = kids(null)[0] ?? await createPage(null, '');
@@ -275,6 +296,7 @@ $('#page-title').addEventListener('input', e => {
   if (!p) return;
   p.title = e.target.value;
   savePage(p);
+  markChanged();
   renderTree();
   document.title = (p.title || '未命名') + ' - 筆記';
 });
@@ -529,7 +551,7 @@ $('#btn-finger').addEventListener('click', () => {
 const typing = el => el && (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
 
 document.addEventListener('keydown', e => {
-  if (typing(document.activeElement) || $('#history-dialog').open || $('#collab-dialog').open) return;
+  if (typing(document.activeElement) || $('#drive-dialog').open || $('#collab-dialog').open) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? board.redo() : board.undo(); return; }
@@ -544,7 +566,7 @@ document.addEventListener('keydown', e => {
 });
 
 document.addEventListener('paste', async e => {
-  if (typing(document.activeElement) || board.readOnly || $('#collab-dialog').open || $('#history-dialog').open) return;
+  if (typing(document.activeElement) || board.readOnly || $('#collab-dialog').open || $('#drive-dialog').open) return;
   const clipboard = e.clipboardData;
   if (!clipboard) return;
   const files = [...clipboard.files].filter(file => file.type.startsWith('image/'));
@@ -593,7 +615,7 @@ function toast(msg) {
 function showLocalCollaborationInfo() {
   const dialog = $('#collab-dialog');
   $('#collab-mode').textContent = '此網站目前使用本機儲存，多人協作尚未啟用。';
-  $('#collab-user').textContent = '筆記會先儲存在目前裝置；可透過「版本 / Drive」手動備份至自己的 Google Drive。多人即時同步尚未啟用。';
+  $('#collab-user').textContent = '筆記會先儲存在目前裝置；可從左上角的筆記本選單存到自己的 Google Drive 或匯出 zip。多人即時同步尚未啟用。';
   $('#collab-pages').textContent = '你可以繼續新增頁面、書寫、插入圖片與使用復原／重做。帳號登入、分享及多人共同編輯需等協作服務啟用。';
   for (const id of ['collab-login', 'collab-logout', 'collab-copy', 'demo-accounts', 'collab-share']) $('#' + id).hidden = true;
   $('.collab-help').hidden = true;
@@ -603,11 +625,42 @@ function showLocalCollaborationInfo() {
   $('#collab-close').addEventListener('click', () => dialog.close());
 }
 
+// ---------- 筆記本 ----------
+async function createNotebook(name) {
+  const id = uid();
+  await db.put('notebooks', newNotebook(id, cleanName(name)), id);
+  return id;
+}
+
+async function switchNotebook(id) {
+  await flush();
+  const nb = await db.get('notebooks', id);
+  if (!nb) throw new Error('找不到這本筆記本');
+  notebookId = id;
+  try { sessionStorage.setItem('notebook', id); } catch { /* ignore */ }
+  db.put('meta', id, 'lastNotebook');
+  current = null;
+  pages = await pagesOf(id);
+  if (!pages.length) await createPage(null, '');
+  await openPage(byId(nb.lastPage) ? nb.lastPage : kids(null)[0].id);
+  notebooks?.render();
+}
+
+// 這個分頁上次開的 → 任何分頁最後開的 → 最早建立的；全新安裝則建立含教學的「我的筆記」
+async function initialNotebook() {
+  const list = await db.getAll('notebooks');
+  let saved = null;
+  try { saved = sessionStorage.getItem('notebook'); } catch { /* ignore */ }
+  const last = await db.get('meta', 'lastNotebook');
+  const found = [saved, last].find(id => list.some(nb => nb.id === id)) ?? list.sort((a, b) => a.created - b.created)[0]?.id;
+  if (found) return found;
+  notebookId = await createNotebook('我的筆記');
+  await seed();
+  return notebookId;
+}
+
 // ---------- init ----------
 async function init() {
-  pages = await db.getAll('pages');
-  if (!pages.length) await seed();
-  const last = await db.get('meta', 'lastPage');
   try { if (localStorage.getItem('fingerDraws') === '0') board.fingerDraws = false; } catch { /* ignore */ }
   // 小地圖預設：桌機打開、手機收合；之後記住使用者的選擇
   let map = null;
@@ -615,18 +668,10 @@ async function init() {
   setMinimap(map ? map === '1' : !isMobile());
   setTool('select');
   updateFinger();
-  await openPage(byId(last) ? last : kids(null)[0].id);
-  await setupHistory({
-    beforeAction: async () => {
-      if (collaboration?.active) throw new Error('請先按「回本機」，版本功能目前只備份本機筆記');
-      await flush();
-    },
-    afterRestore: async () => {
-      clearTimeout(saveTimer); saveTimer = null; current = null;
-      pages = await db.getAll('pages');
-      await openPage((await db.get('meta', 'lastPage')) || pages[0].id);
-    },
+  notebooks = setupNotebooks({
+    current: () => notebookId, switchTo: switchNotebook, create: createNotebook, flush, showMenu, toast,
   });
+  await switchNotebook(await initialNotebook());
   try {
     const response = await fetch(new URL('api/config', document.baseURI));
     if (response.ok) {

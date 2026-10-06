@@ -1,17 +1,23 @@
-// 極簡 IndexedDB 包裝：pages(頁面樹) / docs(頁面內容) / blobs(圖片) / meta(設定)
+// 極簡 IndexedDB 包裝：notebooks(筆記本) / pages(頁面樹) / docs(頁面內容) / blobs(圖片) / meta(設定)
 const DB_NAME = 'note-mvp';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
+// v3 拿掉版本歷史後不再使用的 meta key
+const LEGACY_META = /^(history:|history-device$|drive-|workspaceRevision$|lastPage$)/;
 
 let dbPromise;
 
 function open() {
   dbPromise ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains('pages')) db.createObjectStore('pages', { keyPath: 'id' });
+    req.onupgradeneeded = event => {
+      const db = req.result, tx = req.transaction;
+      const pages = db.objectStoreNames.contains('pages') ? tx.objectStore('pages') : db.createObjectStore('pages', { keyPath: 'id' });
+      if (!pages.indexNames.contains('notebookId')) pages.createIndex('notebookId', 'notebookId');
       if (!db.objectStoreNames.contains('docs')) db.createObjectStore('docs', { keyPath: 'pageId' });
-      for (const store of ['blobs', 'meta', 'versions', 'objects']) if (!db.objectStoreNames.contains(store)) db.createObjectStore(store);
+      for (const store of ['blobs', 'meta', 'notebooks']) if (!db.objectStoreNames.contains(store)) db.createObjectStore(store);
+      // 舊的版本快照直接刪除；筆記本身（pages/docs/blobs）不動
+      for (const store of ['versions', 'objects']) if (db.objectStoreNames.contains(store)) db.deleteObjectStore(store);
+      if (event.oldVersion > 0 && event.oldVersion < 3) migrateToNotebooks(tx);
     };
     req.onsuccess = () => { req.result.onversionchange = () => { req.result.close(); dbPromise = null; }; resolve(req.result); };
     req.onblocked = () => reject(new Error('請關閉其他舊版筆記分頁，再重新整理'));
@@ -20,18 +26,53 @@ function open() {
   return dbPromise;
 }
 
+// 升級前全部頁面就是一本筆記本：歸到「我的筆記」，lastPage 跟著搬過去
+function migrateToNotebooks(tx) {
+  const meta = tx.objectStore('meta');
+  const lastPage = meta.get('lastPage');
+  const id = uid();
+  let count = 0;
+  tx.objectStore('pages').openCursor().onsuccess = event => {
+    const cursor = event.target.result;
+    if (cursor) {
+      cursor.update({ ...cursor.value, notebookId: id });
+      count++;
+      cursor.continue();
+    } else if (count) {
+      tx.objectStore('notebooks').put(newNotebook(id, '我的筆記', { lastPage: lastPage.result ?? null }), id);
+    }
+  };
+  meta.openCursor().onsuccess = event => {
+    const cursor = event.target.result;
+    if (!cursor) return;
+    if (LEGACY_META.test(cursor.key)) cursor.delete();
+    cursor.continue();
+  };
+}
+
+// changes / savedChanges：不相等就是有尚未存到 Drive 的變更
+export function newNotebook(id, name, extra = {}) {
+  return { id, name, created: Date.now(), lastPage: null, changes: 0, savedChanges: 0, drive: null, ...extra };
+}
+
 async function run(store, mode, fn) {
   const db = await open();
   return new Promise((resolve, reject) => {
-    const changesNotes = mode === 'readwrite' && ['pages', 'docs', 'blobs'].includes(store);
-    const tx = db.transaction(changesNotes ? [store, 'meta'] : store, mode);
+    const tx = db.transaction(store, mode);
     const req = fn(tx.objectStore(store));
-    if (changesNotes) {
-      const meta = tx.objectStore('meta');
-      const rev = meta.get('workspaceRevision');
-      rev.onsuccess = () => meta.put((rev.result ?? 0) + 1, 'workspaceRevision');
-    }
     tx.oncomplete = () => resolve(req?.result);
+    tx.onerror = () => reject(tx.error);
+    tx.onabort = () => reject(tx.error);
+  });
+}
+
+// 多個 store 的單一 transaction；fn 回傳的值在 commit 後 resolve
+async function transaction(stores, mode, fn) {
+  const db = await open();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(stores, mode);
+    const result = fn(tx);
+    tx.oncomplete = () => resolve(result);
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
@@ -42,17 +83,21 @@ export const db = {
   getAll: (store) => run(store, 'readonly', s => s.getAll()),
   put: (store, value, key) => run(store, 'readwrite', s => (key === undefined ? s.put(value) : s.put(value, key))),
   // Atomic read/modify/write, used to merge offline snapshots from multiple tabs.
+  // fn 回傳 undefined 代表不寫入（例如紀錄已被別的分頁刪除）。
   update: async (store, key, fn) => {
     const database = await open();
     return new Promise((resolve, reject) => {
       const tx = database.transaction(store, 'readwrite');
       const objectStore = tx.objectStore(store);
       const request = objectStore.get(key);
+      let value;
       request.onsuccess = () => {
-        try { objectStore.put(fn(request.result), key); }
-        catch (error) { tx.abort(); reject(error); }
+        try {
+          value = fn(request.result);
+          if (value !== undefined) objectStore.put(value, key);
+        } catch (error) { tx.abort(); reject(error); }
       };
-      tx.oncomplete = () => resolve();
+      tx.oncomplete = () => resolve(value);
       tx.onerror = () => reject(tx.error);
       tx.onabort = () => reject(tx.error);
     });
@@ -62,57 +107,57 @@ export const db = {
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
+export const pagesOf = notebookId => run('pages', 'readonly', s => s.index('notebookId').getAll(notebookId));
 
-// Read pages, documents, their referenced images and revision in ONE transaction.
-export async function snapshotWorkspace() {
-  const database = await open();
-  return new Promise((resolve, reject) => {
-    const tx = database.transaction(['pages', 'docs', 'blobs', 'meta'], 'readonly');
-    const pages = tx.objectStore('pages').getAll();
-    const docs = tx.objectStore('docs').getAll();
-    const revision = tx.objectStore('meta').get('workspaceRevision');
-    const blobs = new Map();
-    docs.onsuccess = () => {
-      const pageIds = new Set(pages.result.map(p => p.id));
-      for (const id of new Set(docs.result.filter(d => pageIds.has(d.pageId)).flatMap(d => d.items.filter(i => i.type === 'image').map(i => i.blobId)))) {
-        const req = tx.objectStore('blobs').get(id);
-        req.onsuccess = () => { if (req.result) blobs.set(id, req.result); };
+const imageIds = docs => new Set(docs.flatMap(d => d.items.filter(i => i.type === 'image').map(i => i.blobId)));
+
+// 一本筆記本的頁面、內容與圖片，在同一個 transaction 讀出（匯出／存到 Drive 用）
+export function readNotebook(notebookId) {
+  return transaction(['pages', 'docs', 'blobs'], 'readonly', tx => {
+    const out = { pages: [], docs: [], blobs: new Map() };
+    const pages = tx.objectStore('pages').index('notebookId').getAll(notebookId);
+    pages.onsuccess = () => {
+      out.pages = pages.result;
+      for (const page of pages.result) {
+        const doc = tx.objectStore('docs').get(page.id);
+        doc.onsuccess = () => {
+          if (!doc.result) return;
+          out.docs.push(doc.result);
+          for (const id of imageIds([doc.result])) {
+            const blob = tx.objectStore('blobs').get(id);
+            blob.onsuccess = () => { if (blob.result) out.blobs.set(id, blob.result); };
+          }
+        };
       }
     };
-    tx.oncomplete = () => resolve({ pages: pages.result, docs: docs.result, blobs, revision: revision.result ?? 0 });
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
+    return out;
   });
 }
 
-// Both protecting the old state and applying the restored state are atomic.
-// A changed workspace revision aborts BEFORE any existing page is removed.
-export async function commitHistory({ scope, expectedHead, records, head, restore, expectedRevision }) {
-  const database = await open();
-  return new Promise((resolve, reject) => {
-    const stores = restore ? ['versions', 'meta', 'pages', 'docs', 'blobs'] : ['versions', 'meta'];
-    const tx = database.transaction(stores, 'readwrite');
-    const meta = tx.objectStore('meta');
-    const previous = meta.get('history:' + scope);
-    const revision = meta.get('workspaceRevision');
-    let failure;
-    revision.onsuccess = () => {
-      if ((previous.result?.head ?? null) !== expectedHead || (restore && (revision.result ?? 0) !== expectedRevision)) {
-        failure = new Error('其他分頁已修改筆記或版本，請重新開啟版本歷史後再試'); tx.abort(); return;
-      }
-      for (const commit of records) tx.objectStore('versions').put({ scope, commit }, scope + ':' + commit.id);
-      meta.put({ ...previous.result, head }, 'history:' + scope);
-      if (restore) {
-        tx.objectStore('pages').clear(); tx.objectStore('docs').clear();
-        for (const page of restore.pages) tx.objectStore('pages').put(page);
-        for (const doc of restore.docs) tx.objectStore('docs').put(doc);
-        for (const [id, blob] of restore.blobs) tx.objectStore('blobs').put(blob, id);
-        meta.put(restore.pages[0].id, 'lastPage');
-        meta.put((revision.result ?? 0) + 1, 'workspaceRevision');
+// 匯入或從 Drive 開啟：筆記本與全部內容一次寫入，不會只寫一半
+export function addNotebook(notebook, { pages, docs, blobs }) {
+  return transaction(['notebooks', 'pages', 'docs', 'blobs'], 'readwrite', tx => {
+    tx.objectStore('notebooks').put(notebook, notebook.id);
+    for (const page of pages) tx.objectStore('pages').put({ ...page, notebookId: notebook.id });
+    for (const doc of docs) tx.objectStore('docs').put(doc);
+    for (const [id, blob] of blobs) tx.objectStore('blobs').put(blob, id);
+  });
+}
+
+// 關閉筆記本：移除本機的頁面、內容與圖片（Drive 上的檔案不受影響）
+export function deleteNotebook(notebookId) {
+  return transaction(['notebooks', 'pages', 'docs', 'blobs'], 'readwrite', tx => {
+    const pages = tx.objectStore('pages').index('notebookId').getAll(notebookId);
+    pages.onsuccess = () => {
+      for (const page of pages.result) {
+        const doc = tx.objectStore('docs').get(page.id);
+        doc.onsuccess = () => {
+          for (const id of imageIds(doc.result ? [doc.result] : [])) tx.objectStore('blobs').delete(id);
+          tx.objectStore('docs').delete(page.id);
+        };
+        tx.objectStore('pages').delete(page.id);
       }
     };
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(failure || tx.error);
-    tx.onabort = () => reject(failure || tx.error);
+    tx.objectStore('notebooks').delete(notebookId);
   });
 }

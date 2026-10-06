@@ -1,6 +1,8 @@
-# 從零設定 Google Drive 版本備份
+# 從零設定 Google Drive 筆記本儲存
 
-這份文件寫給網站管理者。你設定一次後，其他使用者只要按「連結 Google Drive」，就能授權把版本存到**他們自己的**硬碟，不必每個人建立 Google Cloud 專案。
+這份文件寫給網站管理者。你設定一次後，其他使用者只要按「存到 Drive」，就能授權把筆記本存到**他們自己的**硬碟，不必每個人建立 Google Cloud 專案。
+
+每本筆記本在 Drive 上就是一個 `<筆記本名稱>.zip` 檔（內含頁面、內容與圖片）。「儲存」會覆寫同一個檔案；要留備份，使用「另存副本到 Drive」。
 
 目前網址：https://jljimmyh.github.io/note-mvp/
 
@@ -85,38 +87,33 @@ http://127.0.0.1:8040
 
 Google 可能同時顯示 Client secret；本專案不用它，請不要填到網站。
 
-## 5. 先在自己的瀏覽器測試
+## 5. 設定網站的 Client ID
 
-1. 等新版 Pages 完成部署，開啟網站。
-2. 點上方 **版本 / Drive**。
-3. 展開 **Google Drive 連線設定**。
-4. 將 Client ID 貼到欄位，按 **儲存設定**。
-5. 等待「設定已保存」，再按 **連結 Google Drive**。彈出視窗必須由你點擊觸發。
-6. 選擇已加入測試使用者的 Google 帳號，閱讀並接受 Drive 授權。
-7. 確認畫面顯示正確的 Google email。連線成功不會自動上傳筆記。
-8. 寫幾筆、加一張小圖片，再開「版本 / Drive」，填備註，按 **建立並備份到 Drive**。
-9. 等畫面明確顯示 **已備份至…的 Drive**。
-10. 到該帳號的 Google Drive，應可看到 **筆記 MVP 版本歷史** 資料夾。
-
-資料夾包含應用程式專用的版本索引與內容檔案。請勿手動改檔案內容或刪除個別圖片／版本依賴，否則歷史版本可能無法還原。版本驗證失敗時網站會拒絕還原，不會覆蓋本機筆記。
-
-介面保存的 Client ID 只在目前瀏覽器生效；關閉網站後 access token 不會保留，下次需要重新連線。
-
-## 6. 讓所有使用者共用網站設定
-
-你確認測試成功後，修改儲存庫的 `js/drive-config.js`：
+修改儲存庫的 `js/drive-config.js`：
 
 ```js
 export const GOOGLE_DRIVE_CLIENT_ID = '你的公開 Client ID.apps.googleusercontent.com';
 ```
 
-把實際完整 Client ID 放進字串，不要重複加上結尾。提交與部署後，其他人不必自己填 Client ID。
+把實際完整 Client ID 放進字串，不要重複加上結尾。提交並等 Pages 部署完成。
 
-若你先前在瀏覽器儲存過另一個 Client ID，可在設定面板確認目前值。網站預設設定會在重新整理後優先套用。
+## 6. 先在自己的瀏覽器測試
+
+1. 開啟網站，寫幾筆、加一張小圖片。
+2. 按上方 **☁ 存到 Drive**（或點左上角筆記本名稱 → **儲存到 Drive**）。彈出視窗必須由你點擊觸發。
+3. 選擇已加入測試使用者的 Google 帳號，閱讀並接受 Drive 授權。
+4. 等畫面顯示 **已儲存到…的 Drive**，按鈕變成 **☁ 已存到 Drive**。
+5. 到該帳號的 Google Drive，應可看到 `我的筆記.zip`。
+6. 換一個瀏覽器（或無痕視窗），點筆記本名稱 → **從 Drive 開啟…**，確認能開啟並看到相同內容與圖片。
+7. 在其中一邊修改並儲存，再回到另一邊儲存，應出現「已被其他裝置修改」的確認。
+
+zip 檔可以下載後解壓縮查看，但請勿手動修改裡面的檔案；格式不正確時網站會拒絕開啟，不會影響已開啟的筆記本。
+
+access token 只保存在記憶體，關閉網站後不會保留，下次儲存時需要重新連線。
 
 ## 7. 正式開放給所有人之前
 
-1. 確認 Google Drive 連結、圖片上傳、歷史下載、還原、重新授權都成功。
+1. 確認存到 Drive、從 Drive 開啟、圖片、另存副本、重新授權都成功。
 2. 準備真實的網站首頁、隱私權政策與支援聯絡方式。說明：筆記存於 IndexedDB／使用者 Drive、哪些權限會被使用、如何斷開及刪除資料。
 3. 在 Google Auth Platform 的 Audience 依介面切換到 Production／正式發布，並完成控制台要求的品牌、網域或應用驗證。
 4. `drive.file` 屬較窄的權限，但不能保證不需要任何 Google 驗證；以該專案控制台顯示的要求為準。
@@ -144,32 +141,34 @@ export const GOOGLE_DRIVE_CLIENT_ID = '你的公開 Client ID.apps.googleusercon
 
 ### 授權過期
 
-按「連結 Google Drive」重新授權，再按「上傳目前分支／重試」。本機版本仍保留。授權只暫存在記憶體，不保證網站關閉後繼續上傳。
+再按一次「儲存到 Drive」，會重新開啟 Google 授權視窗。本機筆記本仍保留。授權只暫存在記憶體，不保證網站關閉後繼續上傳。
 
 ### 換另一個 Google 帳號
 
-先中斷連結，再選另一個帳號。各帳號有獨立版本分支。連線／讀取歷史不會上傳本機資料；按「建立並備份」才會把當前筆記送到選定帳號。
+點筆記本名稱 →「中斷 Google 連線」，下次連線時再選另一個帳號。每本筆記本會記住它存在哪個帳號，不能用其他帳號覆寫；要存到另一個帳號，先連上該帳號，再用「另存副本到 Drive」。
 
 ### 另一台裝置找不到筆記
 
-在同一應用、使用同一 Google 帳號連線後按「讀取雲端歷史」，選版本預覽再還原。此版是手動版本管理，不是即時跨裝置同步。
+點筆記本名稱 →「從 Drive 開啟…」，用同一個 Google 帳號連線。只會列出由本網站存到 Drive 的筆記本；自己上傳到 Drive 的 zip 看不到，請下載後用「匯入 zip…」。這是手動儲存，不是即時跨裝置同步。
 
-### 多份分歧版本
+### 「已被其他裝置修改」
 
-代表不同裝置或分頁各自建立了分支。系統會保留全部歷史，不選擇性覆寫。先預覽，選需要的版本還原；還原也會產生新版本。
+代表這本筆記本上次在這台裝置開啟或儲存後，Drive 上的檔案被其他裝置或分頁覆寫過。選「取消」可改用「另存副本到 Drive」保留兩份；選「確定」會覆蓋。被覆蓋的內容通常仍可在 Drive 檔案的「管理版本」找回（Google 會依其政策清理舊版本）。
 
 ### 如何撤銷授權
 
-「中斷連結」只清除此頁的 access token，不刪 Drive 檔案。要撤銷應用權限，請至 Google 帳號 → 安全性 → 第三方應用程式與服務，找到此應用並移除存取權。
+「中斷 Google 連線」只清除此頁的 access token，不刪 Drive 檔案。要撤銷應用權限，請至 Google 帳號 → 安全性 → 第三方應用程式與服務，找到此應用並移除存取權。
 
 ## 官方參考
 
 - OAuth 用戶端設定：https://developers.google.com/identity/oauth2/web/guides/get-google-api-clientid
 - 前端 token 流程：https://developers.google.com/identity/oauth2/web/guides/use-token-model
 - Drive 權限：https://developers.google.com/workspace/drive/api/guides/api-specific-auth
-- Drive 上傳與預先產生 ID：https://developers.google.com/workspace/drive/api/guides/manage-uploads
+- Drive 上傳（resumable upload）：https://developers.google.com/workspace/drive/api/guides/manage-uploads
 
 
-## 檔案與版本限制
+## 檔案限制
 
-目前不會自動清除歷史。內容雜湊讓一般重試與連續版本可重用相同圖片；若兩台裝置同時首次上傳完全相同內容，Drive 不提供唯一鍵限制，實體檔案可能有副本，但版本清單會按版本 ID 去重，也不會覆寫任何版本。暫時不要手動清理個別檔案；自動垃圾清理留待後續版本。
+- 一本筆記本最大 100 MB，單張圖片最大 20 MB。
+- 沒有版本歷史；要保留某個時間點，請用「另存副本到 Drive」或「匯出 zip」。
+- 舊版的「筆記 MVP 版本歷史」資料夾不再使用，網站不會讀取或刪除它，可自行在 Drive 刪除。

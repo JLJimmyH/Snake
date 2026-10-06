@@ -19,34 +19,34 @@
   <p class="date">更新日期：2026 年 10 月 6 日</p>
   <p>本政策適用於 JLJimmyH 維護的 Note MVP 筆記網站（https://jljimmyh.github.io/note-mvp/），說明本網站如何處理筆記、本機資料及經您授權存取的 Google Drive 資料。</p>
 
-  <h2>1. 本機筆記與版本</h2>
-  <p>您建立的頁面、筆跡、文字、圖片及版本歷史，會儲存在目前瀏覽器的 IndexedDB。本機設定也包含裝置識別碼、版本時間、備註與備份狀態，用於版本管理及重試。未執行 Drive 備份時，這些筆記不會因為連結 Google 帳號而自動上傳。</p>
+  <h2>1. 本機筆記本</h2>
+  <p>您建立的筆記本、頁面、筆跡、文字與圖片，會儲存在目前瀏覽器的 IndexedDB。每本筆記本另外記錄名稱、是否有尚未儲存的變更，以及對應的 Drive 檔案與帳號（電子郵件與帳號識別碼）。未按「存到 Drive」時，筆記不會因為連結 Google 帳號而自動上傳。</p>
   <p>本機資料會保留至您清除網站資料或瀏覽器移除資料為止。清除瀏覽器資料、使用無痕模式或更換裝置可能使本機筆記無法取回。</p>
 
   <h2>2. Google Drive 授權與用途</h2>
   <p>連結 Google Drive 是選用功能。本網站使用 Google OAuth，申請 <code>https://www.googleapis.com/auth/drive.file</code> 權限，存取透過本應用程式建立或獲得授權的檔案，不要求讀取您整個硬碟的權限。</p>
   <ul>
-    <li>取得 Drive 帳號識別資訊（例如電子郵件、顯示名稱與帳號識別碼），用於顯示目前帳號及隔離不同帳號的版本；帳號資訊會快取在本機。</li>
-    <li>當您按「建立並備份到 Drive」或上傳／重試時，將目前本機筆記與必要的版本內容、圖片及版本中繼資料，上傳到所選帳號的「筆記 MVP 版本歷史」資料夾。</li>
-    <li>連線與讀取歷史時下載版本資訊；查看差異或還原時下載必要內容，並快取於目前瀏覽器。</li>
+    <li>取得 Drive 帳號識別資訊（例如電子郵件、顯示名稱與帳號識別碼），用於顯示目前帳號，並避免用其他帳號覆寫筆記本；帳號資訊會記錄在對應的本機筆記本。</li>
+    <li>當您按「存到 Drive」、「儲存到 Drive」或「另存副本到 Drive」時，將目前這本筆記本的頁面、內容與圖片打包成一個 zip 檔，上傳到所連結帳號的 Drive；儲存時會覆寫該筆記本對應的檔案。</li>
+    <li>按「從 Drive 開啟」時，列出本應用程式建立的筆記本檔案，並下載您選擇的檔案到目前瀏覽器。</li>
   </ul>
   <p>筆記由瀏覽器直接透過 HTTPS 傳輸至 Google Drive API；目前此 GitHub Pages 版本沒有用來接收筆記備份的開發者後端。網站不會自動將 Drive 備份公開或分享給其他人；檔案存取亦受您在 Google Drive 中設定的權限影響。</p>
 
   <h2>3. 授權憑證與資料使用限制</h2>
-  <p>Google 密碼由 Google 處理，本網站不會取得您的 Google 密碼。Drive 存取權杖只保存在目前網頁的記憶體中，不寫入本機版本或 Drive 備份；到期後需重新授權連線。</p>
-  <p>本網站僅為提供筆記備份、版本檢視與還原功能使用 Google 使用者資料，不販售這些資料、不用於廣告投放，也不用於訓練通用人工智慧或機器學習模型。對 Google API 資料的使用及轉移遵守 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>，包括 Limited Use 要求。</p>
+  <p>Google 密碼由 Google 處理，本網站不會取得您的 Google 密碼。Drive 存取權杖只保存在目前網頁的記憶體中，不寫入本機筆記或 Drive 檔案；到期後需重新授權連線。</p>
+  <p>本網站僅為提供筆記本的儲存、開啟與備份功能使用 Google 使用者資料，不販售這些資料、不用於廣告投放，也不用於訓練通用人工智慧或機器學習模型。對 Google API 資料的使用及轉移遵守 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>，包括 Limited Use 要求。</p>
 
   <h2>4. 第三方服務</h2>
   <p>本網站由 GitHub Pages 提供託管，Google 提供授權與 Drive 儲存服務。您開啟網站或使用 Google 功能時，相關服務商可能處理 IP 位址、瀏覽器資訊及服務請求紀錄，並適用其各自的政策：<a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub 隱私權聲明</a>、<a href="https://policies.google.com/privacy">Google 隱私權政策</a>。目前本網站未加入廣告或第三方流量分析工具。</p>
 
   <h2>5. 中斷連線、撤銷授權與刪除資料</h2>
   <ul>
-    <li><strong>中斷連線：</strong>在「版本 / Drive」按「中斷連結」，清除目前網頁持有的授權狀態；此操作不會刪除筆記、雲端檔案或撤銷 Google 帳號中的授權。</li>
+    <li><strong>中斷連線：</strong>點左上角的筆記本名稱，選「中斷 Google 連線」，清除目前網頁持有的授權狀態；此操作不會刪除筆記、雲端檔案或撤銷 Google 帳號中的授權。</li>
     <li><strong>撤銷 Google 授權：</strong>前往 <a href="https://myaccount.google.com/connections">Google 帳號的第三方連線管理</a>，選取本應用並移除存取權。</li>
-    <li><strong>刪除本機資料：</strong>在瀏覽器設定中清除本網站的網站資料，會移除本機筆記、快取版本及帳號設定，也可能影響同一來源下其他 GitHub Pages 網站的資料。請先備份要保留的內容。</li>
-    <li><strong>刪除 Drive 備份：</strong>在 Google Drive 刪除本應用的「筆記 MVP 版本歷史」資料夾及其內容；如需永久刪除，另依 Google Drive 流程清空垃圾桶。若有多個同名備份資料夾，請逐一確認。單獨刪除部分版本依賴檔案可能導致其他版本無法還原。</li>
+    <li><strong>刪除本機筆記本：</strong>在筆記本選單選「關閉筆記本」，會從目前瀏覽器移除該筆記本；清除本網站的網站資料則會移除全部本機筆記本，也可能影響同一來源下其他 GitHub Pages 網站的資料。請先備份要保留的內容。</li>
+    <li><strong>刪除 Drive 檔案：</strong>在 Google Drive 刪除對應的筆記本 zip 檔；如需永久刪除，另依 Google Drive 流程清空垃圾桶。Google Drive 可能依其政策保留檔案的舊版本，可在該檔案的「管理版本」中刪除。</li>
   </ul>
-  <p>本機與 Drive 是不同副本，刪除一方不會自動刪除另一方；其他裝置下載過的副本也需在各裝置清除。歷史版本目前不會自動到期或清理。若要完全停止使用，請撤銷授權並清除各處副本。</p>
+  <p>本機與 Drive 是不同副本，關閉本機筆記本不會刪除 Drive 檔案，刪除 Drive 檔案也不會刪除本機筆記本；其他裝置開啟過的筆記本也需在各裝置關閉。若要完全停止使用，請撤銷授權並清除各處副本。</p>
 
   <h2>6. 政策更新與聯絡</h2>
   <p>功能或資料處理方式改變時，我們會更新本頁及更新日期。如有隱私權問題或需要協助，可透過 <a href="https://github.com/JLJimmyH/note-mvp/issues">專案問題回報頁面</a>聯絡維護者。該頁面為公開討論區，請勿提交私人筆記、權杖、密碼或其他敏感資料。</p>

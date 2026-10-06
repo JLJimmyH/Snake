@@ -6,7 +6,7 @@ BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8030')
 def state(page):
     return page.evaluate("""async () => {
       const {db}=await import('./js/db.js');
-      return db.get('docs',await db.get('meta','lastPage'));
+      return db.get('docs',(await db.get('notebooks',sessionStorage.getItem('notebook'))).lastPage);
     }""")
 
 def saved(page):
@@ -30,7 +30,7 @@ with sync_playwright() as pw:
     expect(page.locator('#page-title')).to_have_value('歡迎使用')
     page.evaluate("""async () => {
       const {db}=await import('./js/db.js');
-      const id=await db.get('meta','lastPage');
+      const id=(await db.get('notebooks',sessionStorage.getItem('notebook'))).lastPage;
       const canvas=document.createElement('canvas');canvas.width=canvas.height=2;
       const blob=await new Promise(resolve=>canvas.toBlob(resolve));
       await db.put('blobs',blob,'pan-image');
@@ -115,7 +115,7 @@ with sync_playwright() as pw:
     # moves only that layer.
     page.evaluate("""async () => {
       const {db}=await import('./js/db.js');
-      const id=await db.get('meta','lastPage');
+      const id=(await db.get('notebooks',sessionStorage.getItem('notebook'))).lastPage;
       await db.put('docs',{pageId:id,view:{x:40,y:40,s:1},items:[
         {id:'label',type:'text',x:180,y:170,size:20,text:'Label'},
         {id:'back',type:'image',x:100,y:100,w:200,h:160,blobId:'pan-image'},

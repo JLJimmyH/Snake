@@ -44,7 +44,7 @@ with sync_playwright() as pw:
     # Content near the origin while the saved view is far away: the user is lost.
     page.evaluate("""async () => {
       const {db}=await import('./js/db.js');
-      const id=await db.get('meta','lastPage');
+      const id=(await db.get('notebooks',sessionStorage.getItem('notebook'))).lastPage;
       const canvas=document.createElement('canvas');canvas.width=canvas.height=4;
       const g=canvas.getContext('2d');g.fillStyle='#00f';g.fillRect(0,0,4,4);
       await db.put('blobs',await new Promise(resolve=>canvas.toBlob(resolve)),'nav-image');
