@@ -62,30 +62,36 @@
       </div>
 
       <div class="tb-group opts" data-for="pen">
-        <label class="brush-color" title="自訂顏色"><input type="color" value="#1f2937" aria-label="筆自訂顏色"></label>
-        <label class="brush-size"><span>大小</span><input type="range" min="0.5" max="100" step="any" value="3" aria-label="筆大小"><output>3</output></label>
         <span class="tb-sep"></span>
-        <button class="swatch active" data-color="#1f2937" style="--c:#1f2937"></button>
-        <button class="swatch" data-color="#2563eb" style="--c:#2563eb"></button>
-        <button class="swatch" data-color="#dc2626" style="--c:#dc2626"></button>
-        <button class="swatch" data-color="#16a34a" style="--c:#16a34a"></button>
-        <button class="swatch" data-color="#7719aa" style="--c:#7719aa"></button>
-        <button class="wbtn" data-width="1.5"><i style="--w:3px"></i></button>
-        <button class="wbtn active" data-width="3"><i style="--w:6px"></i></button>
-        <button class="wbtn" data-width="6"><i style="--w:10px"></i></button>
+        <button class="palette-toggle" style="--brush-color:#1f2937" aria-label="筆顏色" aria-expanded="false" aria-controls="pen-palette" title="筆顏色"><span class="current-color"></span><span class="palette-arrow">▾</span></button>
+        <div class="brush-palette" id="pen-palette" hidden role="group" aria-label="筆色盤">
+          <span class="palette-heading">常用顏色</span>
+          <div class="palette-swatches">
+            <button class="swatch active" data-color="#1f2937" style="--c:#1f2937" aria-label="黑色" aria-pressed="true"></button>
+            <button class="swatch" data-color="#2563eb" style="--c:#2563eb" aria-label="藍色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#dc2626" style="--c:#dc2626" aria-label="紅色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#16a34a" style="--c:#16a34a" aria-label="綠色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#7719aa" style="--c:#7719aa" aria-label="紫色" aria-pressed="false"></button>
+          </div>
+          <label class="brush-color">自訂顏色<input type="color" value="#1f2937" aria-label="筆自訂顏色"></label>
+        </div>
+        <label class="brush-size"><span>大小</span><input type="range" min="0.5" max="100" step="any" value="3" aria-label="筆大小"><output>3</output></label>
       </div>
 
       <div class="tb-group opts" data-for="hl">
-        <label class="brush-color" title="自訂顏色"><input type="color" value="#fde047" aria-label="螢光筆自訂顏色"></label>
-        <label class="brush-size"><span>大小</span><input type="range" min="0.5" max="100" step="any" value="20" aria-label="螢光筆大小"><output>20</output></label>
         <span class="tb-sep"></span>
-        <button class="swatch active" data-color="#fde047" style="--c:#fde047"></button>
-        <button class="swatch" data-color="#86efac" style="--c:#86efac"></button>
-        <button class="swatch" data-color="#f9a8d4" style="--c:#f9a8d4"></button>
-        <button class="swatch" data-color="#93c5fd" style="--c:#93c5fd"></button>
-        <button class="wbtn" data-width="12"><i style="--w:6px"></i></button>
-        <button class="wbtn active" data-width="20"><i style="--w:10px"></i></button>
-        <button class="wbtn" data-width="32"><i style="--w:14px"></i></button>
+        <button class="palette-toggle" style="--brush-color:#fde047" aria-label="螢光筆顏色" aria-expanded="false" aria-controls="hl-palette" title="螢光筆顏色"><span class="current-color"></span><span class="palette-arrow">▾</span></button>
+        <div class="brush-palette" id="hl-palette" hidden role="group" aria-label="螢光筆色盤">
+          <span class="palette-heading">常用顏色</span>
+          <div class="palette-swatches">
+            <button class="swatch active" data-color="#fde047" style="--c:#fde047" aria-label="黃色" aria-pressed="true"></button>
+            <button class="swatch" data-color="#86efac" style="--c:#86efac" aria-label="綠色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#f9a8d4" style="--c:#f9a8d4" aria-label="粉紅色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#93c5fd" style="--c:#93c5fd" aria-label="藍色" aria-pressed="false"></button>
+          </div>
+          <label class="brush-color">自訂顏色<input type="color" value="#fde047" aria-label="螢光筆自訂顏色"></label>
+        </div>
+        <label class="brush-size"><span>大小</span><input type="range" min="0.5" max="100" step="any" value="20" aria-label="螢光筆大小"><output>20</output></label>
       </div>
 
       <div class="tb-group opts" data-for="eraser">

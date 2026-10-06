@@ -356,6 +356,8 @@ $('#scrim').addEventListener('click', closeSidebar);
 
 // ---------- 工具列 ----------
 function setTool(t) {
+  closeBrushPalettes();
+  $('#brush-preview').hidden = true;
   board.setTool(t);
   $('#toolbar').dataset.tool = t;
   $$('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === t));
@@ -363,23 +365,64 @@ function setTool(t) {
 
 $$('.tool').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
 
+function closeBrushPalettes(restoreFocus = false) {
+  for (const panel of $$('.brush-palette')) {
+    if (panel.hidden) continue;
+    panel.hidden = true;
+    const toggle = panel.parentElement.querySelector('.palette-toggle');
+    toggle.setAttribute('aria-expanded', 'false');
+    if (restoreFocus) toggle.focus();
+  }
+}
+
+function updateBrushColor(group, value) {
+  board.style[group.dataset.for].color = value;
+  group.querySelector('input[type=color]').value = value;
+  group.querySelector('.palette-toggle').style.setProperty('--brush-color', value);
+  group.querySelectorAll('.swatch').forEach(button => {
+    const active = button.dataset.color === value;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+}
+
+document.addEventListener('pointerdown', event => {
+  if (!event.target.closest('.brush-palette, .palette-toggle')) closeBrushPalettes();
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape') closeBrushPalettes(true);
+});
+$('#toolbar').addEventListener('scroll', () => closeBrushPalettes());
+window.addEventListener('resize', () => closeBrushPalettes());
+
 $$('.opts').forEach(group => {
   const style = board.style[group.dataset.for];
   group.addEventListener('click', e => {
+    const toggle = e.target.closest('.palette-toggle');
     const sw = e.target.closest('.swatch');
     const wb = e.target.closest('.wbtn');
     const md = e.target.closest('[data-mode]');
-    if (md) {
+    if (toggle) {
+      $('#brush-preview').hidden = true;
+      const panel = group.querySelector('.brush-palette');
+      const opening = panel.hidden;
+      closeBrushPalettes();
+      if (opening) {
+        const rect = toggle.getBoundingClientRect();
+        panel.style.left = Math.max(8, Math.min(innerWidth - 248, rect.left)) + 'px';
+        panel.style.top = Math.min(innerHeight - 168, rect.bottom + 8) + 'px';
+        panel.hidden = false;
+        toggle.setAttribute('aria-expanded', 'true');
+      }
+    } else if (md) {
       style.mode = md.dataset.mode;
       group.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === md));
     } else if (sw) {
-      style.color = sw.dataset.color;
-      if (group.querySelector('input[type=color]')) group.querySelector('input[type=color]').value = style.color;
-      group.querySelectorAll('.swatch').forEach(x => x.classList.toggle('active', x === sw));
+      updateBrushColor(group, sw.dataset.color);
+      closeBrushPalettes(true);
     } else if (wb) {
+      // Eraser still uses size presets; drawing brushes use their sole slider.
       style.width = +wb.dataset.width;
-      const slider = group.querySelector('input[type=range]');
-      if (slider) { slider.value = style.width; group.querySelector('output').textContent = style.width; }
       group.querySelectorAll('.wbtn').forEach(x => x.classList.toggle('active', x === wb));
     }
   });
@@ -391,6 +434,7 @@ for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) {
   const slider = group.querySelector('input[type=range]');
   const preview = $('#brush-preview');
   const showPreview = () => {
+    closeBrushPalettes();
     const rect = slider.getBoundingClientRect();
     preview.style.left = Math.max(8, Math.min(innerWidth - 140, rect.left + rect.width / 2 - 66)) + 'px';
     preview.style.top = Math.min(innerHeight - 148, rect.bottom + 10) + 'px';
@@ -402,13 +446,11 @@ for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) {
     preview.hidden = false;
   };
   color.addEventListener('input', () => {
-    style.color = color.value;
-    group.querySelectorAll('.swatch').forEach(button => button.classList.toggle('active', button.dataset.color === style.color));
+    updateBrushColor(group, color.value);
   });
   slider.addEventListener('input', () => {
     style.width = Math.round(Number(slider.value) * 100) / 100;
     group.querySelector('output').textContent = style.width;
-    group.querySelectorAll('.wbtn').forEach(button => button.classList.toggle('active', Number(button.dataset.width) === style.width));
     showPreview();
   });
   slider.addEventListener('pointerdown', showPreview);

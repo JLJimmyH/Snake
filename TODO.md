@@ -101,3 +101,9 @@ python tests/browser_smoke.py
 - 本輪測試服務：Python port 8010（session 57003），Node demo port 8011（session 28936）。
 - 可重跑 NOTE_TEST_ORIGIN=http://127.0.0.1:8010 python tests/editor_smoke.py；協作測試用同一變數設為 port 8011。
 - 新增圖片貼上測試使用瀏覽器 canvas 產生有效 PNG 寫入系統 clipboard，再真實 Ctrl+V；不依賴固定 base64 範例圖。
+
+
+## 🚧 筆刷工具列整合（2026-10-06）
+- [x] 筆／螢光筆工具列改為單一顏色按鈕，展開色盤內含常用色與自訂色，選色狀態共用。
+- [x] 移除筆／螢光筆重複的粗細預設按鈕，大小只保留滑桿與筆點預覽；橡皮擦保留原有粗細選擇。
+- [x] 桌機 1280px／手機 390px 色盤、常用與自訂色同步、唯一大小滑桿及筆點預覽檢查通過；原 tests/editor_smoke.py 通過。色盤與大小預覽互斥，避免重疊。完成後推送 main。
