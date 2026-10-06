@@ -515,3 +515,25 @@ svg.ink path.remote-preview { opacity: .55; }
 .stroke-handle[data-transform=w] { left: 0; top: 50%; cursor: ew-resize; }
 .stroke-handle[data-transform=rotate] { left: 50%; top: calc(-28px * var(--inv, 1)); border-radius: 50%; cursor: grab; }
 #viewport:not([data-tool=select]):not([data-tool=lasso]) .stroke-handle, #viewport[data-readonly=true] .stroke-handle { display: none; }
+
+#history-dialog { width: min(850px, calc(100vw - 24px)); max-height: 90dvh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 20px; color: var(--text); }
+#history-dialog::backdrop { background: #0006; }
+#history-dialog label { display: block; margin: 12px 0 4px; }
+#history-dialog input, #history-dialog select { width: 100%; padding: 8px; font: inherit; border: 1px solid var(--border); border-radius: 6px; }
+#history-dialog button:disabled { opacity: .4; cursor: default; }
+#history-dialog details { padding: 12px; background: var(--sb-bg); border-radius: 8px; }
+.history-muted { color: var(--muted); font-size: 13px; line-height: 1.6; }
+.history-actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; margin: 10px 0; }
+#history-status { min-height: 1.5em; white-space: pre-wrap; }
+#history-status.error { color: #b91c1c; }
+.history-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.history-row small { display: block; color: var(--muted); margin-top: 4px; }
+.history-row strong { overflow-wrap: anywhere; }
+.history-columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.history-columns > div { min-width: 0; background: #f7f7f5; padding: 8px; border-radius: 6px; }
+.history-columns pre, .history-columns p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.history-columns img, .history-columns svg { display: block; max-width: 100%; width: auto; height: 100px; object-fit: contain; }
+.history-columns svg { width: 100%; }
+#history-branch-note { color: #92400e; }
+#history-restore-confirm { padding: 12px; margin-top: 12px; background: #fff7ed; border-radius: 8px; }
+@media(max-width:600px) { .history-columns { grid-template-columns: 1fr; } #history-dialog { padding: 12px; } }

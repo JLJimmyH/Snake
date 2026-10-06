@@ -33,6 +33,7 @@
       <span id="collab-state" role="status" aria-live="polite"></span>
       <span id="collab-presence" hidden></span>
       <button id="collab-leave" class="chip" hidden>回本機</button>
+      <button id="history-button" class="chip">版本 / Drive</button>
       <button id="collab-button" class="chip" hidden>協作</button>
     </header>
 
@@ -153,6 +154,33 @@
     <select id="share-role"><option value="editor">可編輯</option><option value="viewer">唯讀</option></select>
     <button id="share-submit" class="collab-primary" type="submit">儲存分享</button>
   </form>
+</dialog>
+<dialog id="history-dialog" aria-labelledby="history-heading">
+  <div class="collab-heading"><h2 id="history-heading">版本歷史與 Google Drive</h2><button id="history-close" class="icon-btn" data-history-action aria-label="關閉版本歷史">✕</button></div>
+  <p class="history-muted">手動保存全部本機筆記。版本不會覆寫；還原會先保護目前內容。這不是多人即時同步。</p>
+  <details id="drive-settings"><summary>Google Drive 連線設定</summary>
+    <p>尚未設定時，請先閱讀 <a href="docs/GOOGLE_DRIVE_SETUP.md" target="_blank" rel="noopener">Google Cloud 設定步驟</a>。只需公開的 Client ID，不需要 Client secret。</p>
+    <label for="drive-client-id">OAuth Client ID</label><input id="drive-client-id" placeholder="123456-xxxx.apps.googleusercontent.com" autocomplete="off" spellcheck="false">
+    <button id="drive-save-config" class="chip" data-history-action>儲存設定</button>
+  </details>
+  <p id="history-account"></p>
+  <div class="history-actions"><button id="drive-connect" class="chip" data-history-action>連結 Google Drive</button><button id="drive-disconnect" class="chip" data-history-action>中斷連結</button></div>
+  <label for="history-scope">版本所屬位置／帳號</label><select id="history-scope"></select>
+  <p class="history-muted">切換帳號不會自動上傳或替換筆記。「建立並備份」只會將目前本機筆記送到上方選定帳號。</p>
+  <label for="history-message">版本備註（選填）</label><input id="history-message" maxlength="200" placeholder="例如：完成今天的會議筆記">
+  <div class="history-actions">
+    <button id="history-create" class="collab-primary" data-history-action>建立版本（本機）</button>
+    <button id="drive-upload-current" class="collab-primary" data-history-action>建立並備份到 Drive</button>
+    <button id="drive-retry" class="chip" data-history-action>上傳目前分支／重試</button>
+    <button id="drive-refresh" class="chip" data-history-action>讀取雲端歷史</button>
+  </div>
+  <p id="history-status" role="status" aria-live="polite"></p><p id="history-branch-note"></p>
+  <div id="history-list"></div>
+  <div id="history-diff"></div>
+  <div id="history-restore-confirm" hidden>
+    <p>還原會替換此瀏覽器的全部本機頁面，並先建立保護版本。雲端檔案不會被覆寫。請先關閉其他正在編輯這份筆記的分頁。</p>
+    <button id="history-restore" class="collab-primary" data-history-action>保護目前內容並還原此版本</button>
+  </div>
 </dialog>
 <script type="module" src="js/main.js"></script>
 </body>

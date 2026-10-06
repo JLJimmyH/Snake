@@ -21,6 +21,22 @@ python server.py        # 預設 port 8000
 
 電腦開 `http://localhost:8000`，手機（同一個 Wi-Fi）開終端機印出的 `http://<電腦IP>:8000`。
 
+## Google Drive 版本歷史
+
+點「版本 / Drive」可手動保存全部本機頁面的不可變版本，預覽頁面／文字／筆跡／圖片的變更，並還原舊版本。還原會先建立保護版本，再產生新的還原版本。圖片和未修改內容以 SHA-256 去重，每十個版本保存完整快照。
+
+- 不連線也能建立本機版本；本機版本仍存在同一瀏覽器，清除網站資料會移除尚未備份的內容。
+- 連結 Google Drive 後，按「建立並備份」才上傳；連線／讀取歷史不會自動上傳或替換筆記。
+- 各 Google 帳號有自己的版本分支，離線可先選該帳號建立版本，再連線按「上傳目前分支／重試」。
+- 換裝置時，連結同一 Google 帳號，讀取歷史、預覽、再還原。若兩台裝置各自修改，會保留分歧，不會直接互相覆蓋。
+- 版本僅包含本機筆記，不包含協作快取、帳號設定、登入 token 或分享權限。這不是即時共同編輯。
+
+**網站管理者請先依 [Google Cloud OAuth 新手設定](docs/GOOGLE_DRIVE_SETUP.md) 建立公開 Client ID。** 可以先在介面測試，再填入 `js/drive-config.js` 供所有訪客使用。此功能使用 `drive.file`，不需要 Client secret 或 API key。
+
+目前支援手動版本、差異與還原；自動備份、分歧合併、舊版本／無引用檔案清理尚未實作。單個內容／圖片限制 20 MB，單份還原內容限制 100 MB、2000 頁／20000 物件；還原前請關閉其他編輯分頁。筆記在還原交易之前若被其他分頁修改，會拒絕覆蓋。
+
+本機與 Google API 模擬測試已通過；真實 Google OAuth／Drive 仍需要設定 Client ID 後驗收。瀏覽器測試：`NOTE_TEST_ORIGIN=http://127.0.0.1:8040 python tests/history_smoke.py`（需要 Python Playwright 與 Chromium；Google API 使用 mock，不會讀寫真實帳號）。
+
 ## 多人協作（第一版）
 
 保留原本的單機流程，另提供 Google 登入、指定 email 分享、多人筆跡／物件同步、圖片與離線補送。尚未建立 Supabase 時，可先用限定本機的 Alice/Bob 示範帳號測試。

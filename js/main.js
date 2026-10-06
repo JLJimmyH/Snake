@@ -1,5 +1,6 @@
 import { db, uid } from './db.js';
 import { Board } from './board.js';
+import { setupHistory } from './version-ui.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -491,7 +492,7 @@ $('#btn-finger').addEventListener('click', () => {
 const typing = el => el && (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
 
 document.addEventListener('keydown', e => {
-  if (typing(document.activeElement)) return;
+  if (typing(document.activeElement) || $('#history-dialog').open || $('#collab-dialog').open) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? board.redo() : board.undo(); return; }
@@ -503,7 +504,7 @@ document.addEventListener('keydown', e => {
 });
 
 document.addEventListener('paste', async e => {
-  if (typing(document.activeElement) || board.readOnly || $('#collab-dialog').open) return;
+  if (typing(document.activeElement) || board.readOnly || $('#collab-dialog').open || $('#history-dialog').open) return;
   const clipboard = e.clipboardData;
   if (!clipboard) return;
   const files = [...clipboard.files].filter(file => file.type.startsWith('image/'));
@@ -552,7 +553,7 @@ function toast(msg) {
 function showLocalCollaborationInfo() {
   const dialog = $('#collab-dialog');
   $('#collab-mode').textContent = '此網站目前使用本機儲存，多人協作尚未啟用。';
-  $('#collab-user').textContent = '筆記只存在目前裝置的瀏覽器，不會上傳，也不會與其他人同步。';
+  $('#collab-user').textContent = '筆記會先儲存在目前裝置；可透過「版本 / Drive」手動備份至自己的 Google Drive。多人即時同步尚未啟用。';
   $('#collab-pages').textContent = '你可以繼續新增頁面、書寫、插入圖片與使用復原／重做。帳號登入、分享及多人共同編輯需等協作服務啟用。';
   for (const id of ['collab-login', 'collab-logout', 'collab-copy', 'demo-accounts', 'collab-share']) $('#' + id).hidden = true;
   $('.collab-help').hidden = true;
@@ -571,6 +572,17 @@ async function init() {
   setTool('select');
   updateFinger();
   await openPage(byId(last) ? last : kids(null)[0].id);
+  await setupHistory({
+    beforeAction: async () => {
+      if (collaboration?.active) throw new Error('請先按「回本機」，版本功能目前只備份本機筆記');
+      await flush();
+    },
+    afterRestore: async () => {
+      clearTimeout(saveTimer); saveTimer = null; current = null;
+      pages = await db.getAll('pages');
+      await openPage((await db.get('meta', 'lastPage')) || pages[0].id);
+    },
+  });
   try {
     const response = await fetch(new URL('api/config', document.baseURI));
     if (response.ok) {

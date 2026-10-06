@@ -115,3 +115,21 @@ python tests/browser_smoke.py
 - [x] tests/pan_selection_smoke.py 驗證筆跡／文字／圖片未選與已選拖曳都只改 view、點選顯框、把手縮放／undo、真實觸控拖曳、文字工具編輯皆通過。tests/editor_smoke.py 回歸通過，build／diff check 通過，延續既有授權推送 main。
 
 - 此輪本機測試 port 8030（session 40184）；網路 sandbox 需要核准後才能啟動伺服器／執行瀏覽器測試。
+
+## 🚧 Google Drive 版本歷史（已授權實作，2026-10-06）
+- 目標：Pages 直接使用，本機先保存；手動建立不可變版本、查看差異、還原為新版本、Drive 個人長期備份。不做自動合併或即時多人編輯。
+- [x] 本機版本引擎：一致快照、SHA-256 內容去重、增量與定期快照、圖片完整性、原子還原。
+- [x] 帳號隔離：本機／各 Drive 帳號各有版本分支，連線不自動上傳本機內容，必須明確建立並備份。
+- [x] Drive：GIS token OAuth、drive.file、不可覆寫版本、上傳物件後發布版本、重試不重複、雲端分歧提示。
+- [x] UI：建立版本、歷史、文字與物件差異預覽、還原確認、狀態與錯誤。
+- [x] Google Cloud OAuth 新手逐步文件（origin、Client ID、測試帳號、常見錯誤、正式發布）。
+- [x] 單元／瀏覽器／Drive mock 失敗情境測試、編輯回歸與更新文件。
+- 發布：依既有授權將本次功能提交並推送 main；接手時以 git log 與 origin/main 確認發布狀態。
+- 真實 Google OAuth 與 Drive 驗收需要使用者建立 Cloud 專案與公開 Client ID；不可假稱已實測雲端。
+
+- 本機還原／保護版本／圖片完整性與跨分頁 revision 防護已通過 browser 測試；12 個 Node tests 通過。Google API mock 上傳／重試／跨裝置還原／分歧與帳號隔離皆通過。
+- 此輪 Python 測試網站 port 8040（session 54539），Drive 模擬測試 tests/history_smoke.py 不使用真實 Google 憑證。
+
+- 最終驗證：12 個 Node tests、6 組版本／Drive mock 瀏覽器情境、3 組編輯 smoke、9 組協作 smoke 全數通過；build 與 diff check 通過。
+- OAuth 教學：docs/GOOGLE_DRIVE_SETUP.md。公開 Client ID 尚未設定，可先從 UI 輸入驗證；真實 OAuth／Drive、Pages 上線仍待外部驗收。
+- 版本視窗在 390px 手機與 1280px 桌機檢查通過，無橫向溢出。
