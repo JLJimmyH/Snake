@@ -1,28 +1,19 @@
 # 📒 筆記 MVP
 
-手寫無限畫布 ＋ 無限層頁面
+手寫無限畫布 ＋ 無限層頁面　👉 **[打開就用](https://jljimmyh.github.io/note-mvp/)**
 
-### 👉 [打開就用](https://jljimmyh.github.io/note-mvp/)　手機・平板・電腦，免安裝
+<img src="docs/images/hero.png" width="640" alt="桌機與手機畫面">
 
-![](docs/images/hero.png)
+<table><tr>
+<td width="33%"><img src="docs/images/draw.gif" alt="寫"></td>
+<td width="33%"><img src="docs/images/select.gif" alt="選取・套索"></td>
+<td width="33%"><img src="docs/images/erase.gif" alt="擦"></td>
+</tr></table>
 
-<table>
-<tr><th width="50%">✏️ 寫</th><th width="50%">✋ 選取・套索</th></tr>
-<tr><td><img src="docs/images/draw.gif" alt="寫"></td><td><img src="docs/images/select.gif" alt="選取・套索"></td></tr>
-<tr><th>🧽 擦</th><th>🔍 縮放</th></tr>
-<tr><td><img src="docs/images/erase.gif" alt="擦"></td><td><img src="docs/images/zoom.gif" alt="縮放"></td></tr>
-<tr><th>📁 頁面</th><th>☁️ 備份</th></tr>
-<tr><td><img src="docs/images/pages.gif" alt="頁面"></td><td><img src="docs/images/backup.png" alt="備份"></td></tr>
-</table>
+> ⚠️ 筆記存在這台裝置的瀏覽器 → 點左上角筆記本名稱「存到 Drive」或「匯出 zip」
 
-<p align="center"><img src="docs/images/mobile.png" width="560" alt="手機"></p>
+✨ AI 整理：右上角 ✨ → 複製給 ChatGPT／Claude → 貼回回覆 → 確認後套用
 
-> ⚠️ 筆記只存在這台裝置的瀏覽器。換裝置、清除瀏覽器資料就看不到 → 點左上角筆記本名稱，「存到 Drive」或「匯出 zip」。
+<kbd>V</kbd> <kbd>L</kbd> <kbd>P</kbd> <kbd>H</kbd> <kbd>E</kbd> <kbd>T</kbd> 工具　<kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> 復原　<kbd>Ctrl</kbd>+<kbd>S</kbd> 存到 Drive　<kbd>M</kbd> 小地圖
 
-✨ **AI 整理**：右上角 ✨ →「複製給 AI」貼到 ChatGPT／Claude（有手寫就再附截圖）→ 把回覆貼回來 → 看過變更再套用，可以復原。
-
-<kbd>V</kbd> <kbd>L</kbd> <kbd>P</kbd> <kbd>H</kbd> <kbd>E</kbd> <kbd>T</kbd> 切工具　<kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> 復原／重做　<kbd>Ctrl</kbd>+<kbd>V</kbd> 貼上　<kbd>Ctrl</kbd>+滾輪 縮放　<kbd>M</kbd> 小地圖　<kbd>Ctrl</kbd>+<kbd>S</kbd> 存到 Drive
-
----
-
-開發：`python server.py` → http://localhost:8000 ・ [協作設定](collaboration/README.md) ・ [Google Drive 設定](docs/GOOGLE_DRIVE_SETUP.md)
+<sub>開發：`python server.py` ・ [協作設定](collaboration/README.md) ・ [Drive 設定](docs/GOOGLE_DRIVE_SETUP.md)</sub>
