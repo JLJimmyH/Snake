@@ -196,3 +196,38 @@ python tests/browser_smoke.py
 - [x] 新 token：--accent-fill（按鈕底色）、--selected（側欄目前頁面）、--danger、--shadow、--canvas-auto；套索／選取框底色改用 color-mix，不再寫死紫色 rgba。
 - [x] 側欄目前頁面改成中性底色＋左側主色細線；補上 :focus-visible 外框；Toast 改成跟主題的浮層樣式；theme-color meta 跟著主題的 --surface。
 - [x] 畫布上的選取色固定藍（淺色畫布 #0078d4、深色畫布 #4daafc），小地圖畫面框同色；筆的紫色色票改 #9333ea。
+
+## 🤖 AI 整理筆記（2026-10-07 決定）
+目標：讓 AI 協助整理目前這頁。AI 不直接改原始資料，而是回傳「操作清單」（ops），由 app 驗證後套用，可以復原。
+
+### 第 1 階段：複製 JSON 給 ChatGPT／Claude 貼上（不需要後端）
+- [ ] js/ai-core.js：精簡匯出（文字框完整；筆跡只給外框、顏色，不給座標；圖片只給外框）、提示詞、解析回覆（容許 ```json 包起來）、套用 ops（update／move／add／delete，有錯就整批不套用）。
+- [ ] 截圖：把內容範圍畫成 PNG（範圍＝JSON 的 area），複製到剪貼簿，失敗就下載；讓 AI 讀手寫。
+- [ ] 頂列「AI 整理」按鈕＋對話框：填要求 → 複製給 AI → 貼回回覆 → 顯示變更摘要 → 套用（一次復原就能還原）。
+- [ ] 複製之後這頁又被改過，套用前要確認；唯讀（協作 viewer）不能套用。
+- [ ] Node 單元測試＋smoke 測試。
+
+### 第 2 階段：網址／MCP 給 agent（等 Cloudflare 同步，見 docs/CLOUDFLARE_SYNC_PLAN.md）
+- [ ] 沿用訪客連結發「AI 權杖」：只限單頁、有期限、可撤銷，寫入計在建立者名下。
+- [ ] REST：`GET /api/ai/<token>`（精簡 JSON＋說明）、`POST /api/ai/<token>/ops`（同第 1 階段的 ops，經 Durable Object 即時推到開著的畫面）。給能跑 curl 的 agent（Claude Code 等）。
+- [ ] 遠端 MCP：同一個 Worker 用 Agents SDK `McpAgent`，網址 `/mcp/<token>`；工具 list_pages、get_page、get_page_image、apply_ops、create_page。給 ChatGPT connector／claude.ai custom connector。
+- [ ] 本機／Drive 筆記本的「暫時 MCP」：分頁開著時以 WebSocket 連到 Durable Object，MCP 呼叫轉給瀏覽器執行，關分頁就失效，資料不上傳保存。
+- [ ] 實作前再查：ChatGPT connector 開放的方案、是否接受不驗證／權杖放網址。
+- [ ] 安全：筆記內容可能夾帶提示詞注入；寫入一律驗證；刪除先標記、使用者確認才真刪。
+
+## 🚧 Cloudflare 即時同步（已規劃，待使用者確認開工）
+- 完整計畫：docs/CLOUDFLARE_SYNC_PLAN.md（架構、資料表、協定、上限、費用、階段與驗收）。**使用者確認前不要開始建置。**
+- 決定：真的同時寫＋分享給其他人；Cloudflare Workers＋Durable Objects（一本一個 DO，每頁一個 Y.Doc）＋D1＋R2；網站搬到 Cloudflare；圖片存 R2、每人 1 GB；個人筆記本照舊存 Drive，同步筆記本可另存備份到 Drive；移除 Supabase、Node 伺服器與單頁協作。
+- 訪客連結：不需帳號、只開放單頁、等候室預設關閉、可上傳圖片（每個連結 50 MB，計入建立者配額）、建立／停止分享時存保護快照可「還原到分享前」。
+- [x] 第 0 階段唯讀檢查：Workers Free、網域 g6n4f.com、R2 未啟用、D1 4 個、Workers 5 個（14f-api 是使用者的 Home Assistant 用途，不要動）。
+- [ ] 使用者：Dashboard 啟用 R2（需綁付款方式）。
+- [ ] 使用者：決定網址（建議 note.g6n4f.com）。
+- [ ] 第 1 階段：Worker＋靜態檔案、D1 schema、Sign in with Google、session cookie、允許名單；部署到測試網址。Google Console 加新來源。
+- [ ] 第 2 階段：NotebookRoom（每頁 Y.Doc、協定、驗證、分塊快照、Alarm 壓縮、Hibernation）。
+- [ ] 第 3 階段：前端同步筆記本（筆記本來源介面、同步客戶端、離線快取、在線名單、筆跡預覽）。
+- [ ] 第 4 階段：R2 圖片、1 GB 配額、去重、回收。
+- [ ] 第 5 階段：成員分享（email、權限、移除、分享給我的）。
+- [ ] 第 6 階段：訪客連結（期限、撤銷、單頁、等候室、50 MB、保護快照）。
+- [ ] 第 7 階段：開啟同步、另存備份到 Drive、下載為本機筆記本。
+- [ ] 第 8 階段：搬家與清理（移除 Supabase／Node／單頁協作、隱私權政策、GitHub Pages 搬家提示、升級 Paid 後正式開放）。
+- 工具：已安裝 Cloudflare Claude 外掛與 cf CLI（使用者這台電腦）；換電腦要重新 `claude plugin marketplace add cloudflare/skills`、`claude plugin install cloudflare@cloudflare`、`npm install -g cf`、`cf auth login`。專案有 wrangler 設定後改用 wrangler。
