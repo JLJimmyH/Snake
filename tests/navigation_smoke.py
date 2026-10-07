@@ -117,6 +117,36 @@ with sync_playwright() as pw:
     page.keyboard.down('Shift');before=view(page);page.mouse.wheel(0,100);page.wait_for_timeout(400)
     page.keyboard.up('Shift');assert moved(before)==(100,0),'shift+wheel scrolls sideways'
     print('PASS: wheel notches glide, high-resolution deltas follow at once')
+    # A real MX Master thumb-wheel nudge (ms, deltaX): the device itself keeps sending a decaying
+    # tail for about 1.5 s. The tail is trimmed, while a steady turn keeps its full distance.
+    NUDGE=[(0,.83),(18,2.5),(22,2.5),(35,2.5),(52,5.83),(71,7.5),(90,10.83),(91,11.67),(103,20),(119,23.33),
+      (136,30.83),(153,23.33),(155,26.67),(170,25.83),(186,15.83),(205,15),(221,15.83),(222,15),(235,15.83),
+      (250,15.83),(270,15),(286,15.83),(291,14.17),(302,13.33),(320,12.5),(336,10.83),(350,10),(355,9.17),
+      (369,8.33),(386,7.5),(404,6.67),(420,5.83),(423,5.83),(436,5),(454,5),(467,4.17),(484,4.17),(489,3.33),
+      (504,3.33),(520,2.5),(538,2.5),(553,2.5),(556,2.5),(570,1.67),(587,1.67),(605,1.67),(621,1.67),(623,1.67),
+      (637,.83),(654,1.67),(672,.83),(687,.83),(690,.83),(703,.83),(748,.83),(818,.83),(864,.83),(890,.83),
+      (942,.83),(991,.83),(1081,.83),(1201,.83),(1497,.83)]
+    def replay(events):
+        return page.evaluate('''async events => {
+          const vp=document.querySelector('#viewport'),r=vp.getBoundingClientRect(),t0=performance.now(),xs=[];
+          const x=()=>+document.querySelector('.world').style.transform.match(/translate\((.+?)px/)[1];
+          const start=x();
+          for (const [ms,dx] of events) {
+            await new Promise(res=>setTimeout(res,Math.max(0,t0+ms-performance.now())));
+            vp.dispatchEvent(new WheelEvent('wheel',{deltaX:dx,clientX:r.x+r.width/2,clientY:r.y+r.height/2,bubbles:true,cancelable:true}));
+            xs.push([ms,start-x()]);
+          }
+          return xs;
+        }''',events)
+    page.wait_for_timeout(300)
+    xs=replay(NUDGE);raw=sum(dx for _,dx in NUDGE);total=xs[-1][1]
+    after_peak=total-next(d for ms,d in xs if ms>=400)
+    assert total<raw*.75,(total,raw)
+    assert after_peak<10,('tail after 400 ms should be tiny',after_peak)
+    page.wait_for_timeout(300)
+    steady=[(i*15,15) for i in range(30)]
+    assert abs(replay(steady)[-1][1]-15*30)<1,'a steady turn keeps its full distance'
+    print(f'PASS: thumb-wheel momentum tail trimmed ({raw:.0f}px -> {total:.0f}px, {after_peak:.1f}px after 400 ms)')
     # Fit to content via Shift+1, the toolbar button and the lost hint.
     for trigger in ['Shift+1','#btn-fit','#back-to-content']:
         page.mouse.move(x,y);page.mouse.wheel(30000,30000)

@@ -10,6 +10,8 @@ const MIN_S = 0.1, MAX_S = 8, GRID = 24, HISTORY = 100;
 const WHEEL_ZOOM_MAX = 10;
 // 一次至少 WHEEL_NOTCH px 的滾動視為「一格一格」的滾輪，用時間常數 WHEEL_GLIDE 毫秒的動畫滑過去
 const WHEEL_NOTCH = 50, WHEEL_GLIDE = 40;
+// 橫向慣性尾巴：停頓超過 WHEEL_GAP 毫秒算新的一串；掉到最高點的 WHEEL_TAIL 倍以下開始縮小
+const WHEEL_GAP = 150, WHEEL_TAIL = 0.6;
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
 
 const r1 = n => Math.round(n * 10) / 10;
@@ -193,6 +195,7 @@ export class Board {
     this.mouseMode = false;   // 滑鼠模式：點到物件直接選取並拖動，空白處拖曳＝框選
     this.spacePan = false;    // 按住空白鍵：左鍵拖曳＝移動畫布
     this.glide = { x: 0, y: 0, frame: 0 }; // 滾輪還沒滑完的距離，見 _glide
+    this.tail = null;         // 橫向滾動的最高速度，見 _trimTail
     this.pointers = new Map();
     this.action = null;
     this.editing = null;
@@ -851,7 +854,23 @@ export class Board {
     // 一格一格的滾輪每格跳約 100px，補成短動畫，跟瀏覽器原生捲動一樣順；
     // 高解析度滾輪、觸控板本來就是連續的小數值，直接套用才跟手
     if (e.deltaMode === 1 || Math.max(Math.abs(dx), Math.abs(dy)) >= WHEEL_NOTCH) this._glide(dx, dy);
-    else this.setView(this.view.x - dx, this.view.y - dy, this.view.s);
+    else {
+      if (!dy) dx = this._trimTail(dx);
+      this.setView(this.view.x - dx, this.view.y - dy, this.view.s);
+    }
+  }
+
+  // 拇指滾輪（例如 Logitech MX Master）撥一下，裝置會自己送約 1.5 秒遞減的慣性，Excel 裡也一樣，
+  // 驅動關掉平滑捲動也關不掉。同一串滾動裡，數值掉到最高點的 WHEEL_TAIL 倍以下就按比例的平方縮小，
+  // 尾巴很快收掉；又轉快（回到門檻以上）就恢復原本的量。
+  _trimTail(dx) {
+    const now = performance.now(), a = Math.abs(dx);
+    let t = this.tail;
+    if (!t || now - t.at > WHEEL_GAP || Math.sign(dx) !== t.sign) t = this.tail = { peak: 0, sign: Math.sign(dx) };
+    t.at = now;
+    t.peak = Math.max(t.peak, a);
+    const edge = t.peak * WHEEL_TAIL;
+    return a < edge ? dx * (a / edge) ** 2 : dx;
   }
 
   // 把滾動距離累加起來，每個畫格走剩下距離的一部分（指數減速），連續滾動時會一直接續
