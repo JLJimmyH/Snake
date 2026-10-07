@@ -57,7 +57,7 @@ export class Minimap {
     const rx = (v.x0 + v.x1) / 2 * m.k + m.ox - rw / 2, ry = (v.y0 + v.y1) / 2 * m.k + m.oy - rh / 2;
     ctx.fillStyle = 'rgba(119, 25, 170, .08)';
     ctx.fillRect(rx, ry, rw, rh);
-    ctx.strokeStyle = '#7719aa';
+    ctx.strokeStyle = board.darkCanvas ? '#c08ae8' : '#7719aa';
     ctx.lineWidth = 1.5;
     ctx.strokeRect(rx, ry, rw, rh);
   }
@@ -83,7 +83,7 @@ export class Minimap {
         this.paths.set(it, p);
       }
       ctx.globalAlpha = it.tool === 'hl' ? .5 : 1;
-      ctx.strokeStyle = it.color;
+      ctx.strokeStyle = this.board.inkColor(it);
       ctx.lineWidth = Math.max(it.width, 1 / k); // 縮到很小也至少 1px
       ctx.stroke(p);
     } else if (it.type === 'image') {

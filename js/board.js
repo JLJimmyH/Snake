@@ -1,6 +1,7 @@
 // 無限畫布：手寫(SVG) / 文字框 / 圖片，雙指縮放平移，復原重做
 // 座標系：item 都存「世界座標」，畫面用 translate(x,y) scale(s) 呈現
 import { db, uid } from './db.js';
+import { isDark, readableInk } from './color.js';
 import { renderMarkdown, sourceOffset, toggleTask } from './markdown.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
@@ -172,6 +173,8 @@ export class Board {
       eraser: { mode: 'partial', width: 12 }, // width = 螢幕上的半徑
     };
     this.fingerDraws = true;  // 偵測到觸控筆後自動改成手指只負責移動
+    this.canvas = '#ffffff';  // 畫布底色，由 setCanvas 設定
+    this.darkCanvas = false;
     this.pointers = new Map();
     this.action = null;
     this.editing = null;
@@ -236,7 +239,7 @@ export class Board {
     const path = document.createElementNS(SVGNS, 'path');
     path.setAttribute('class', 'remote-preview');
     path.setAttribute('d', pathData(item.pts));
-    path.setAttribute('stroke', item.color);
+    path.setAttribute('stroke', this.inkColor(item));
     path.setAttribute('stroke-width', item.width);
     path.dataset.previewId = item.id;
     this.svg.append(path); this.previews.set(peerId, path);
@@ -245,6 +248,19 @@ export class Board {
   clearPreviews() {
     for (const path of this.previews?.values() ?? []) path.remove();
     this.previews?.clear();
+  }
+
+  // 換畫布底色：跟底色太接近的筆跡改用看得清楚的顏色重畫（只改顯示，不改資料）
+  setCanvas(color) {
+    this.canvas = color;
+    this.darkCanvas = isDark(color);
+    this.vp.classList.toggle('dark-canvas', this.darkCanvas);
+    for (const it of this.items) if (it.type === 'stroke') this.els.get(it.id)?.setAttribute('stroke', this.inkColor(it));
+  }
+
+  // 螢光筆是半透明的，什麼底色都看得到，保持原色
+  inkColor(item) {
+    return item.tool === 'hl' ? item.color : readableInk(item.color, this.canvas);
   }
 
   setTool(t) {
@@ -1130,7 +1146,7 @@ export class Board {
       for (const [peer, path] of this.previews ?? []) if (path.dataset.previewId === item.id) { path.remove(); this.previews.delete(peer); }
       el = document.createElementNS(SVGNS, 'path');
       el.setAttribute('d', pathData(item.pts));
-      el.setAttribute('stroke', item.color);
+      el.setAttribute('stroke', this.inkColor(item));
       el.setAttribute('stroke-width', item.width);
       if (item.tool === 'hl') el.setAttribute('class', 'hl');
       this.svg.insertBefore(el, beforeEl);

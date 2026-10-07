@@ -21,7 +21,7 @@
 ## 🟢 介面
 - [ ] 手機工具列太長（顏色/粗細要往右滑）→ 浮動工具列或收合
 - [ ] 紙張背景：點格／橫線／空白
-- [ ] 深色模式
+- [x] 深色模式、畫布顏色
 - [ ] 文字工具點空白一定新增文字框，想取消編輯時有點干擾
 
 ## ⚪ 長期
@@ -181,3 +181,11 @@ python tests/browser_smoke.py
 - collaboration.test.mjs 需要先 npm install（yjs／ws），本輪未執行。
 - [ ] 真實 Google 帳號驗收：存到 Drive、從 Drive 開啟、resumable upload 的 CORS（Location header）。
 - 本輪 Python 測試網站 port 8040；Playwright 裝在暫存 venv，以本機 Chrome 執行。
+
+## ✨ 深色模式與畫布顏色（2026-10-07）
+- [x] 頂列右側「外觀」按鈕（月亮圖示）：主題 跟隨系統／淺色／深色；畫布顏色 自動（跟著主題）／白／米黃／淺灰藍／深灰／黑板綠＋自訂顏色。存在這台裝置的 localStorage（theme、canvasColor），不寫進筆記本或 zip，其他分頁即時跟著換。
+- [x] index.html 開頭先套用 data-theme，避免深色模式載入時閃白。CSS 寫死的白底／灰色改成變數（--surface、--chip、--icon、--press、--on-accent）。
+- [x] 畫布上的文字、格點、選取框顏色跟著「畫布」深淺，不跟主題（深色介面也能配白紙）。
+- [x] js/color.js：深色畫布上對比不到 3 的筆跡（黑筆、深紫等）以反轉 HSL 明度顯示，淺色畫布上幾乎看不到的（白筆）也反轉；只改顯示，資料不變。螢光筆保持原色，深色畫布改用 screen 混色。小地圖、筆刷大小預覽同步。
+- [x] tests/appearance_smoke.py：主題切換、畫布顏色、筆跡顯示色、自訂色、重新整理保留、跟隨系統。navigation／pan_selection／notebook smoke 與 notebook-core 8 個 Node tests 回歸通過。
+- [x] 文字框 Markdown 的 `.md-code` 背景在深色畫布改用淺色半透明。

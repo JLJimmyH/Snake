@@ -1,4 +1,5 @@
 import { db, uid, newNotebook, pagesOf } from './db.js';
+import { setupAppearance } from './appearance.js';
 import { Board } from './board.js';
 import { Minimap } from './minimap.js';
 import { cleanName } from './notebook-core.js';
@@ -468,7 +469,8 @@ for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) {
     preview.style.top = Math.min(innerHeight - 148, rect.bottom + 10) + 'px';
     const dot = preview.querySelector('.brush-dot');
     dot.style.width = dot.style.height = style.width + 'px';
-    dot.style.backgroundColor = style.color;
+    // 預覽底色＝畫布底色，筆點顏色跟畫在畫布上一樣
+    dot.style.backgroundColor = board.inkColor({ tool: group.dataset.for, color: style.color });
     dot.style.opacity = group.dataset.for === 'hl' ? '.5' : '1';
     preview.querySelector('.brush-caption').textContent = style.width + ' px';
     preview.hidden = false;
@@ -678,6 +680,7 @@ async function init() {
   let map = null;
   try { map = localStorage.getItem('minimap'); } catch { /* ignore */ }
   setMinimap(map ? map === '1' : !isMobile());
+  setupAppearance({ board, button: $('#btn-appearance'), panel: $('#appearance-panel'), onCanvas: refreshNav });
   setTool('select');
   updateFinger();
   notebooks = setupNotebooks({
