@@ -2,6 +2,7 @@
 // AI 回傳一組「新元件」（文字框、筆跡），使用者在畫布上 Ctrl+V 貼到想要的位置。原本的內容一律不動，方便對照。
 // 右鍵「複製」也用同一套 {"items":[…]} 格式，所以可以貼到別頁，也可以直接貼給 AI。
 import { uid } from './db.js';
+import { validCrop } from './notebook-core.js';
 
 export const FORMAT = 'snake-note-ai';
 const MAX_ITEMS = 20000;
@@ -60,7 +61,7 @@ export function exportRegion({ title, items, area, selected = false }) {
     items: items.map(it => {
       if (it.type === 'text') {
         const [x, y] = at(it.x, it.y);
-        return { type: 'text', x, y, ...(it.w && { w: r1(it.w) }), size: it.size, text: it.text };
+        return { type: 'text', x, y, ...(it.w && { w: r1(it.w) }), size: it.size, ...textLook(it), text: it.text };
       }
       if (it.type === 'stroke') {
         const pts = strokes[s++];
@@ -85,8 +86,8 @@ export function copyText(items, area) {
     items: items.map(it => {
       if (it.type === 'stroke') return { type: 'stroke', color: it.color, width: it.width, ...(it.tool === 'hl' && { highlighter: true }), pts: it.pts.map(([x, y]) => at(x, y)) };
       const [x, y] = at(it.x, it.y);
-      if (it.type === 'text') return { type: 'text', x, y, ...(it.w && { w: it.w }), size: it.size, text: it.text };
-      return { type: 'image', x, y, w: it.w, h: it.h, blob: it.blobId };
+      if (it.type === 'text') return { type: 'text', x, y, ...(it.w && { w: it.w }), size: it.size, ...textLook(it), text: it.text };
+      return { type: 'image', x, y, w: it.w, h: it.h, ...(it.rot && { rot: it.rot }), ...(it.crop && { crop: it.crop }), blob: it.blobId };
     }),
   });
 }
@@ -107,7 +108,7 @@ export function buildPrompt(exported, request = '') {
 
 ## 筆記格式
 - 座標：以這塊區域的左上角為 (0,0)，x 往右、y 往下，單位是畫布像素。area 是區域大小。
-- text：文字框，x、y 是左上角。text 是 Markdown（# 標題、**粗體**、*斜體*、- 清單、- [ ] 待辦、- [x] 已完成、[文字](網址)、\`程式碼\`）。size 是字級，w 是固定寬度（沒有 w 就自動寬度，最寬約 32 個字）。
+- text：文字框，x、y 是左上角。text 是 Markdown（# 標題、**粗體**、*斜體*、- 清單、- [ ] 待辦、- [x] 已完成、[文字](網址)、\`程式碼\`）。size 是字級，w 是固定寬度（沒有 w 就自動寬度，最寬約 32 個字）。color（#rrggbb）、bold、italic 是整個文字框的顏色、粗體、斜體。
 - stroke：手寫筆跡。${strokesHavePts ? 'pts 是筆畫經過的點（已簡化）。' : '只提供外框 x/y/w/h，看不到寫了什麼。'}width 是筆寬，highlighter 表示螢光筆。
 - image：圖片，只提供外框。
 - 如果我附上截圖，截圖範圍就是這塊區域，可以依比例對照座標。
@@ -117,7 +118,7 @@ export function buildPrompt(exported, request = '') {
   {"type":"text","x":0,"y":0,"text":"# 標題\\n- 重點","size":18},
   {"type":"stroke","pts":[[0,0],[40,0],[40,30]],"color":"#1f2937","width":3}
 ]}
-- text 必填 x、y、text；size、w 可省略。
+- text 必填 x、y、text；size、w、color、bold、italic 可省略。
 - stroke 必填 pts（至少 2 個點）；color（#rrggbb）、width、highlighter 可省略。可以用來畫底線、框線、箭頭、圖表。
 - 不能新增圖片。
 - 新內容之間不要互相重疊；整體位置不重要，使用者會自己選地方放。
@@ -164,11 +165,12 @@ export function toItems(raw, { newId = uid, defaultSize = 18 } = {}) {
       : `不認得的類型 ${JSON.stringify(it.type)}`;
     if (bad) return errors.push(`第 ${i + 1} 個：${bad}`);
     if (it.type === 'text') {
-      const item = { id: newId(), type: 'text', x: r1(it.x), y: r1(it.y), size: it.size ?? defaultSize, text: it.text };
+      const item = { id: newId(), type: 'text', x: r1(it.x), y: r1(it.y), size: it.size ?? defaultSize, ...textLook(it), text: it.text };
       if (it.w) item.w = r1(it.w);
       items.push(item);
     } else if (it.type === 'image') {
-      items.push({ id: newId(), type: 'image', blobId: it.blob, x: r1(it.x), y: r1(it.y), w: r1(it.w), h: r1(it.h) });
+      items.push({ id: newId(), type: 'image', blobId: it.blob, x: r1(it.x), y: r1(it.y), w: r1(it.w), h: r1(it.h),
+        ...(it.rot && { rot: it.rot }), ...(it.crop && { crop: { x: it.crop.x, y: it.crop.y, w: it.crop.w, h: it.crop.h } }) });
     } else {
       const look = it.highlighter ? HL : PEN;
       items.push({
@@ -189,13 +191,26 @@ function checkText(it) {
   if (!it.text.trim()) return '文字是空的';
   if (it.size !== undefined && !(num(it.size) && it.size > 0 && it.size <= 1000)) return '字級不合法';
   if (it.w !== undefined && it.w !== null && !(num(it.w) && it.w >= 0)) return '寬度不合法';
+  if (it.color !== undefined && !/^#[0-9a-f]{6}$/i.test(it.color)) return '文字顏色不合法';
   return null;
+}
+
+// 文字框的格式：粗體、斜體、顏色、字體（不合法的字體名稱畫面上會用預設字體）
+function textLook(it) {
+  return {
+    ...(it.bold === true && { bold: true }),
+    ...(it.italic === true && { italic: true }),
+    ...(typeof it.color === 'string' && { color: it.color.toLowerCase() }),
+    ...(typeof it.font === 'string' && /^[a-z]{1,20}$/.test(it.font) && { font: it.font }),
+  };
 }
 
 // 圖片只能從這個 app 複製過來（帶著本機的 blob id），AI 不能新增圖片
 function checkImage(it) {
   if (typeof it.blob !== 'string' || !/^[\w-]{1,100}$/.test(it.blob)) return '不能新增圖片';
   if (![it.x, it.y, it.w, it.h].every(num) || !(it.w > 0 && it.h > 0)) return '圖片位置不合法';
+  if (it.rot !== undefined && !(num(it.rot) && Math.abs(it.rot) <= 360)) return '圖片角度不合法';
+  if (it.crop !== undefined && !validCrop(it.crop)) return '圖片裁切不合法';
   return null;
 }
 

@@ -70,8 +70,8 @@ with sync_playwright() as pw:
                 page.locator('#btn-undo').click();saved(page)
                 assert state(page)['items']==original
         print('PASS: tap selects, unselected drag pans, selected drag moves:',selector)
-    # Image resize is available only via the selected object's handle.
-    before=state(page);handle=page.locator('.img-item .handle');x,y=center(handle)
+    # Image resize is available only via the selection's corner handle.
+    before=state(page);handle=page.locator('[data-transform=se]');x,y=center(handle)
     page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+50,y+30,steps=5);page.mouse.up();saved(page)
     after=state(page)
     assert after['view']==before['view']

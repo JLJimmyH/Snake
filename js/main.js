@@ -2,7 +2,7 @@ import { db, uid, newNotebook, pagesOf } from './db.js';
 import { setupAppearance } from './appearance.js';
 import { setupShortcuts } from './shortcuts.js';
 import { setupInputMode } from './input-mode.js';
-import { Board } from './board.js';
+import { Board, FONTS } from './board.js';
 import { Minimap } from './minimap.js';
 import { cleanName } from './notebook-core.js';
 import { setupNotebooks } from './notebook-ui.js';
@@ -21,6 +21,7 @@ let contentChanged = false;
 let collaboration = null;
 let ai = null;
 let lastLocalPage = null;
+let contextReady = false; // Board 建構時就會通知，等工具列的元素都準備好再更新
 
 const board = new Board($('#viewport'), {
   onChange: () => { contentChanged = true; scheduleSave(); refreshNav(); },
@@ -32,6 +33,7 @@ const board = new Board($('#viewport'), {
   },
   onSelect: count => { $('#btn-del').disabled = !count; },
   onTool: t => setTool(t),
+  onContext: () => { if (contextReady) refreshContext(); },
   onHistory: (canUndo, canRedo) => {
     $('#btn-undo').disabled = !canUndo;
     $('#btn-redo').disabled = !canRedo;
@@ -424,7 +426,7 @@ function closeBrushPalettes(restoreFocus = false) {
   for (const panel of $$('.brush-palette')) {
     if (panel.hidden) continue;
     panel.hidden = true;
-    const toggle = panel.parentElement.querySelector('.palette-toggle');
+    const toggle = $(`[aria-controls="${panel.id}"]`);
     toggle.setAttribute('aria-expanded', 'false');
     if (restoreFocus) toggle.focus();
   }
@@ -450,6 +452,19 @@ document.addEventListener('keydown', event => {
 $('#toolbar').addEventListener('scroll', () => closeBrushPalettes());
 window.addEventListener('resize', () => closeBrushPalettes());
 
+function togglePalette(toggle) {
+  $('#brush-preview').hidden = true;
+  const panel = $('#' + toggle.getAttribute('aria-controls'));
+  const opening = panel.hidden;
+  closeBrushPalettes();
+  if (!opening) return;
+  const rect = toggle.getBoundingClientRect();
+  panel.style.left = Math.max(8, Math.min(innerWidth - 248, rect.left)) + 'px';
+  panel.style.top = Math.min(innerHeight - 168, rect.bottom + 8) + 'px';
+  panel.hidden = false;
+  toggle.setAttribute('aria-expanded', 'true');
+}
+
 $$('.opts').forEach(group => {
   const style = board.style[group.dataset.for];
   group.addEventListener('click', e => {
@@ -458,17 +473,7 @@ $$('.opts').forEach(group => {
     const wb = e.target.closest('.wbtn');
     const md = e.target.closest('[data-mode]');
     if (toggle) {
-      $('#brush-preview').hidden = true;
-      const panel = group.querySelector('.brush-palette');
-      const opening = panel.hidden;
-      closeBrushPalettes();
-      if (opening) {
-        const rect = toggle.getBoundingClientRect();
-        panel.style.left = Math.max(8, Math.min(innerWidth - 248, rect.left)) + 'px';
-        panel.style.top = Math.min(innerHeight - 168, rect.bottom + 8) + 'px';
-        panel.hidden = false;
-        toggle.setAttribute('aria-expanded', 'true');
-      }
+      togglePalette(toggle);
     } else if (md) {
       style.mode = md.dataset.mode;
       group.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === md));
@@ -494,7 +499,8 @@ for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) {
     preview.style.left = Math.max(8, Math.min(innerWidth - 140, rect.left + rect.width / 2 - 66)) + 'px';
     preview.style.top = Math.min(innerHeight - 148, rect.bottom + 10) + 'px';
     const dot = preview.querySelector('.brush-dot');
-    dot.style.width = dot.style.height = style.width + 'px';
+    // 筆寬是畫布上的大小，預覽畫成目前縮放下實際看到的粗細
+    dot.style.width = dot.style.height = style.width * board.view.s + 'px';
     // 預覽底色＝畫布底色，筆點顏色跟畫在畫布上一樣
     dot.style.backgroundColor = board.inkColor({ tool: group.dataset.for, color: style.color });
     dot.style.opacity = group.dataset.for === 'hl' ? '.5' : '1';
@@ -525,6 +531,58 @@ $('#file').addEventListener('change', async e => {
   for (const f of files) {
     try { await board.addImage(f); } catch (err) { toast(err.message); }
   }
+});
+
+// ---------- 文字格式、圖片：跟著選取的物件出現 ----------
+const textGroup = $('.ctx[data-ctx=text]');
+const imageGroup = $('.ctx[data-ctx=image]');
+for (const b of $$('.font-opt')) b.style.fontFamily = FONTS[b.dataset.font] ?? '';
+contextReady = true;
+refreshContext();
+
+function refreshContext() {
+  const format = board.textFormat();
+  const types = board.selectedTypes();
+  const images = !board.readOnly && (board.tool === 'select' || board.tool === 'lasso') && types.size === 1 && types.has('image');
+  $('#toolbar').dataset.ctx = [format && 'text', images && 'image'].filter(Boolean).join(' ');
+  if (!format && !images) closeBrushPalettes();
+  if (format) {
+    const press = (el, on) => el.setAttribute('aria-pressed', String(on));
+    press(textGroup.querySelector('[data-fmt=bold]'), format.bold);
+    press(textGroup.querySelector('[data-fmt=italic]'), format.italic);
+    textGroup.querySelector('.palette-toggle').style.setProperty('--brush-color', format.color ?? 'var(--text)');
+    for (const sw of textGroup.querySelectorAll('.swatch')) press(sw, sw.dataset.color === (format.color ?? ''));
+    if (format.color) textGroup.querySelector('input[type=color]').value = format.color;
+    for (const b of $$('.font-opt')) press(b, b.dataset.font === (format.font ?? ''));
+    const font = $(`.font-opt[data-font="${format.font ?? ''}"]`) ?? $('.font-opt[data-font=""]');
+    textGroup.querySelector('.font-name').textContent = font.textContent.split(' ')[0];
+  }
+  const crop = imageGroup.querySelector('[data-img=crop]');
+  crop.disabled = board.sel.size !== 1;
+  crop.setAttribute('aria-pressed', String(!!board.cropping));
+  crop.classList.toggle('active', !!board.cropping);
+}
+
+// 按格式按鈕時不要把焦點從編輯中的文字框搶走（自訂顏色除外，見 Board._focusOut）
+textGroup.addEventListener('pointerdown', e => { if (e.target.closest('button')) e.preventDefault(); });
+textGroup.addEventListener('click', e => {
+  const fmt = e.target.closest('[data-fmt]');
+  const toggle = e.target.closest('.palette-toggle');
+  const sw = e.target.closest('.swatch');
+  const font = e.target.closest('.font-opt');
+  if (toggle) togglePalette(toggle);
+  else if (fmt?.dataset.fmt === 'bigger' || fmt?.dataset.fmt === 'smaller') board.stepTextSize(fmt.dataset.fmt === 'bigger' ? 1 : -1);
+  else if (fmt) board.toggleMark(fmt.dataset.fmt);
+  else if (sw) { board.setTextStyle('color', sw.dataset.color); closeBrushPalettes(); }
+  else if (font) { board.setTextStyle('font', font.dataset.font); closeBrushPalettes(); }
+});
+// 拖色盤時 input 會一直觸發，選定（change）才存，復原才不會一格一格
+textGroup.querySelector('input[type=color]').addEventListener('change', e => board.setTextStyle('color', e.target.value));
+
+imageGroup.addEventListener('click', e => {
+  const b = e.target.closest('[data-img]');
+  if (b?.dataset.img === 'rotate') board.rotateImages(90);
+  else if (b?.dataset.img === 'crop') board.cropping ? board.endCrop() : board.startCrop();
 });
 
 $('#btn-undo').addEventListener('click', () => board.undo());
@@ -585,7 +643,9 @@ document.addEventListener('keydown', e => {
   const k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? board.redo() : board.undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); board.redo(); return; }
+  if (mod && (k === 'b' || k === 'i') && board.textFormat()) { e.preventDefault(); board.toggleMark(k === 'b' ? 'bold' : 'italic'); return; }
   if (mod) return;
+  if (e.key === 'Enter' && board.cropping) { e.preventDefault(); board.endCrop(); return; }
   if (e.shiftKey && e.code === 'Digit1') { board.fitContent(); return; }
   if (e.shiftKey && e.code === 'Digit0') { board.zoomTo(1); return; }
   if (k === 'm') { setMinimap($('#minimap').hidden); return; }

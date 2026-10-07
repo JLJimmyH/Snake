@@ -20,6 +20,9 @@ const ENTRY = /^(?:[^/]+\/)?(?:manifest\.json|pages\.json|docs\/[^/]+\.json|imag
 
 export function ensure(test, message = '筆記本格式錯誤') { if (!test) throw new Error(message); }
 const validId = id => typeof id === 'string' && ID.test(id) && !RESERVED.includes(id);
+// 圖片裁切範圍：原圖上的比例 0～1
+export const validCrop = c => !!c && ['x', 'y', 'w', 'h'].every(k => Number.isFinite(c[k]) && c[k] >= 0 && c[k] <= 1)
+  && c.w > 0 && c.h > 0 && c.x + c.w <= 1.0001 && c.y + c.h <= 1.0001;
 export const cleanName = name => String(name ?? '').trim().slice(0, 100) || '未命名筆記本';
 // Drive 檔名 = 筆記本名稱 + .zip
 export const fileName = name => cleanName(name) + '.zip';
@@ -44,14 +47,19 @@ export function validateNotebook({ pages, docs, blobs }) {
     for (const item of doc.items) {
       ensure(item && ++count <= 20000 && validId(item.id) && !ids.has(item.id), '物件數量或 ID 不合法'); ids.add(item.id);
       ensure(['stroke', 'text', 'image'].includes(item.type), '不支援的物件類型');
-      for (const key of ['x', 'y', 'w', 'h', 'size', 'width']) if (item[key] !== undefined) ensure(Number.isFinite(item[key]) && Math.abs(item[key]) <= 1e7, '物件座標不合法');
+      for (const key of ['x', 'y', 'w', 'h', 'size', 'width', 'rot']) if (item[key] !== undefined) ensure(Number.isFinite(item[key]) && Math.abs(item[key]) <= 1e7, '物件座標不合法');
       if (item.type === 'stroke') {
         ensure(Array.isArray(item.pts) && item.pts.length > 0 && item.pts.length <= 100000 && item.pts.every(p => Array.isArray(p) && p.length === 2 && p.every(n => Number.isFinite(n) && Math.abs(n) <= 1e7)), '筆跡資料不合法');
         ensure(/^#[0-9a-f]{6}$/i.test(item.color) && item.width > 0 && ['pen', 'hl'].includes(item.tool), '筆跡資料不合法');
       } else {
         ensure(Number.isFinite(item.x) && Number.isFinite(item.y), '物件座標不合法');
-        if (item.type === 'text') ensure(typeof item.text === 'string' && item.text.length <= 100000 && item.size > 0, '文字資料不合法');
-        else ensure(item.w > 0 && item.h > 0 && validId(item.blobId) && blobs.has(item.blobId), '圖片遺失');
+        if (item.type === 'text') {
+          ensure(typeof item.text === 'string' && item.text.length <= 100000 && item.size > 0, '文字資料不合法');
+          ensure(item.color === undefined || /^#[0-9a-f]{6}$/i.test(item.color), '文字資料不合法');
+        } else {
+          ensure(item.w > 0 && item.h > 0 && validId(item.blobId) && blobs.has(item.blobId), '圖片遺失');
+          ensure(item.crop === undefined || validCrop(item.crop), '圖片裁切不合法');
+        }
       }
     }
   }

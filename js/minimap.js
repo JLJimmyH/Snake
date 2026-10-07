@@ -92,10 +92,8 @@ export class Minimap {
       ctx.lineWidth = Math.max(it.width, 1 / k); // 縮到很小也至少 1px
       ctx.stroke(p);
     } else if (it.type === 'image') {
-      const img = this.board.els.get(it.id)?.querySelector('img');
       ctx.globalAlpha = 1;
-      if (img?.complete && img.naturalWidth) ctx.drawImage(img, it.x, it.y, it.w, it.h);
-      else {
+      if (!this.board.drawImageItem(ctx, it)) {
         ctx.fillStyle = '#e5e5e5';
         ctx.fillRect(it.x, it.y, it.w, it.h);
       }

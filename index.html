@@ -134,6 +134,47 @@
         <button class="wbtn" data-width="24"><i style="--w:16px"></i></button>
       </div>
 
+      <!-- 選取或編輯文字框時：格式；文字工具下沒在編輯時是新文字框的格式 -->
+      <div class="tb-group ctx" data-ctx="text" data-keep-text>
+        <span class="tb-sep"></span>
+        <button class="tbtn fmt-btn" data-fmt="smaller" title="縮小文字" aria-label="縮小文字"><span class="fmt-a">A<small>−</small></span></button>
+        <button class="tbtn fmt-btn" data-fmt="bigger" title="放大文字" aria-label="放大文字"><span class="fmt-a big">A<small>+</small></span></button>
+        <button class="tbtn fmt-btn" data-fmt="bold" title="粗體 (Ctrl+B)" aria-label="粗體" aria-pressed="false"><b class="fmt-b">B</b></button>
+        <button class="tbtn fmt-btn" data-fmt="italic" title="斜體 (Ctrl+I)" aria-label="斜體" aria-pressed="false"><i class="fmt-i">I</i></button>
+        <button class="palette-toggle" style="--brush-color:var(--text)" aria-label="文字顏色" aria-expanded="false" aria-controls="text-palette" title="文字顏色"><span class="current-color"></span><span class="palette-arrow">▾</span></button>
+        <div class="brush-palette" id="text-palette" hidden role="group" aria-label="文字色盤">
+          <span class="palette-heading">文字顏色</span>
+          <div class="palette-swatches">
+            <button class="swatch" data-color="" style="--c:linear-gradient(135deg, #1f2937 50%, #e5e7eb 50%)" aria-label="預設（跟著主題）" title="預設（跟著主題）" aria-pressed="true"></button>
+            <button class="swatch" data-color="#1f2937" style="--c:#1f2937" aria-label="黑色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#2563eb" style="--c:#2563eb" aria-label="藍色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#dc2626" style="--c:#dc2626" aria-label="紅色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#16a34a" style="--c:#16a34a" aria-label="綠色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#ea580c" style="--c:#ea580c" aria-label="橘色" aria-pressed="false"></button>
+          </div>
+          <label class="brush-color">自訂顏色<input type="color" value="#1f2937" aria-label="文字自訂顏色"></label>
+        </div>
+        <button class="palette-toggle font-toggle" aria-label="字體" aria-expanded="false" aria-controls="font-menu" title="字體"><span class="font-name">預設</span><span class="palette-arrow">▾</span></button>
+        <div class="brush-palette font-menu" id="font-menu" hidden role="group" aria-label="字體">
+          <span class="palette-heading">字體</span>
+          <button class="font-opt" data-font="" aria-pressed="true">預設</button>
+          <button class="font-opt" data-font="serif" aria-pressed="false">明體</button>
+          <button class="font-opt" data-font="kai" aria-pressed="false">楷體</button>
+          <button class="font-opt" data-font="mono" aria-pressed="false">等寬 Mono</button>
+        </div>
+      </div>
+
+      <!-- 選取圖片時：旋轉、裁切 -->
+      <div class="tb-group ctx" data-ctx="image">
+        <span class="tb-sep"></span>
+        <button class="tbtn" data-img="rotate" title="向右轉 90°" aria-label="向右轉 90°">
+          <svg class="i" viewBox="0 0 24 24"><path d="M21 12a9 9 0 11-3-6.7L21 8"/><path d="M21 3v5h-5"/></svg>
+        </button>
+        <button class="tbtn" data-img="crop" title="裁切（也可以雙擊圖片）" aria-label="裁切" aria-pressed="false">
+          <svg class="i" viewBox="0 0 24 24"><path d="M6 2v14a2 2 0 002 2h14"/><path d="M18 22V8a2 2 0 00-2-2H2"/></svg>
+        </button>
+      </div>
+
       <div class="tb-group">
         <span class="tb-sep"></span>
         <button class="tbtn" id="btn-undo" title="復原 (Ctrl+Z)" disabled>
@@ -220,6 +261,9 @@
     <dt><kbd>Ctrl</kbd>+<kbd>V</kbd></dt><dd>貼上圖片或文字</dd>
     <dt><kbd>Ctrl</kbd>+<kbd>S</kbd></dt><dd>存到 Drive</dd>
     <dt>雙擊文字框</dt><dd>編輯文字</dd>
+    <dt><kbd>Ctrl</kbd>+<kbd>B</kbd></dt><dd>粗體</dd>
+    <dt><kbd>Ctrl</kbd>+<kbd>I</kbd></dt><dd>斜體</dd>
+    <dt>雙擊圖片</dt><dd>裁切（<kbd>Enter</kbd> 完成）</dd>
     <dt>拖曳空白處</dt><dd>框選</dd>
     <dt><kbd>Shift</kbd>+點選</dt><dd>加選／取消</dd>
   </dl>

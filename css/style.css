@@ -306,7 +306,22 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
 .tb-sep { flex: none; width: 1px; height: 24px; margin: 0 6px; background: var(--border); }
 #toolbar:not([data-tool="pen"]) .opts[data-for="pen"],
 #toolbar:not([data-tool="hl"]) .opts[data-for="hl"],
-#toolbar:not([data-tool="eraser"]) .opts[data-for="eraser"] { display: none; }
+#toolbar:not([data-tool="eraser"]) .opts[data-for="eraser"],
+#toolbar:not([data-ctx~="text"]) .ctx[data-ctx="text"],
+#toolbar:not([data-ctx~="image"]) .ctx[data-ctx="image"] { display: none; }
+/* 文字格式按鈕 */
+.fmt-btn { font-size: 17px; color: var(--icon); }
+.fmt-btn[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
+.fmt-a { font-weight: 600; font-size: 14px; }
+.fmt-a.big { font-size: 19px; }
+.fmt-a small { font-size: 11px; }
+.fmt-b { font-weight: 800; }
+.fmt-i { font-style: italic; font-family: Georgia, serif; }
+.font-toggle .font-name { font-size: 13px; }
+.font-menu { width: 160px; }
+.font-opt { display: block; width: 100%; padding: 7px 8px; border-radius: 6px; font-size: 15px; text-align: left; }
+.font-opt:hover { background: var(--hover); }
+.font-opt[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
 
 .tbtn {
   flex: none;
@@ -408,10 +423,11 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
 #viewport[data-tool="lasso"] .item,
 #viewport[data-tool="text"] .img-item { pointer-events: none; }
 
+.img-clip { position: absolute; inset: 0; overflow: hidden; }
 .img-item img {
+  position: absolute;
   display: block;
-  width: 100%;
-  height: 100%;
+  max-width: none;
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
@@ -473,31 +489,13 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
   pointer-events: none;
 }
 
-.handle {
-  display: none;
-  position: absolute;
-  right: calc(-12px * var(--inv, 1));
-  bottom: calc(-12px * var(--inv, 1));
-  width: calc(24px * var(--inv, 1));
-  height: calc(24px * var(--inv, 1));
-  border: calc(3px * var(--inv, 1)) solid var(--accent);
-  border-radius: 50%;
-  background: #fff;
-  cursor: nwse-resize;
-}
-/* 文字框右側的寬度把手 */
-.w-handle {
-  top: 50%;
-  bottom: auto;
-  right: calc(-9px * var(--inv, 1));
-  width: calc(14px * var(--inv, 1));
-  height: calc(32px * var(--inv, 1));
-  margin-top: calc(-16px * var(--inv, 1));
-  border-radius: calc(7px * var(--inv, 1));
-  cursor: ew-resize;
-}
-#viewport[data-tool="select"] .item.selected .handle { display: block; }
 #viewport[data-tool="select"] .item.selected { cursor: move; }
+
+/* 裁切：顯示整張原圖，範圍外變暗；框和把手不會被圖片範圍切掉 */
+.img-item.cropping .img-clip { overflow: visible; }
+.crop-area { position: absolute; overflow: hidden; pointer-events: none; }
+.crop-shade { position: absolute; box-shadow: 0 0 0 100000px rgba(0, 0, 0, .5); }
+.crop-frame { position: absolute; outline: calc(1.5px * var(--inv, 1)) solid #fff; box-shadow: 0 0 0 calc(2.5px * var(--inv, 1)) var(--accent); cursor: move; touch-action: none; }
 
 /* 橡皮擦範圍圈（螢幕座標） */
 .eraser-cursor {
@@ -715,17 +713,54 @@ svg.ink path.remote-preview { opacity: .55; }
 #brush-preview { position: fixed; z-index: 70; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 132px; height: 140px; border: 1px solid var(--border); border-radius: 12px; background: var(--board); box-shadow: 0 4px 16px var(--shadow); pointer-events: none; }
 .brush-dot { display: block; border-radius: 50%; flex: none; }
 .brush-caption { font-size: 12px; color: var(--muted); }
-.stroke-handle { position: absolute; width: calc(14px * var(--inv, 1)); height: calc(14px * var(--inv, 1)); background: white; border: calc(2px * var(--inv, 1)) solid var(--accent); border-radius: calc(3px * var(--inv, 1)); pointer-events: auto; transform: translate(-50%, -50%); touch-action: none; }
-.stroke-handle[data-transform=nw] { left: 0; top: 0; cursor: nwse-resize; }
-.stroke-handle[data-transform=n] { left: 50%; top: 0; cursor: ns-resize; }
-.stroke-handle[data-transform=ne] { left: 100%; top: 0; cursor: nesw-resize; }
-.stroke-handle[data-transform=e] { left: 100%; top: 50%; cursor: ew-resize; }
-.stroke-handle[data-transform=se] { left: 100%; top: 100%; cursor: nwse-resize; }
-.stroke-handle[data-transform=s] { left: 50%; top: 100%; cursor: ns-resize; }
-.stroke-handle[data-transform=sw] { left: 0; top: 100%; cursor: nesw-resize; }
-.stroke-handle[data-transform=w] { left: 0; top: 50%; cursor: ew-resize; }
-.stroke-handle[data-transform=rotate] { left: 50%; top: calc(-28px * var(--inv, 1)); border-radius: 50%; cursor: grab; }
-#viewport:not([data-tool=select]):not([data-tool=lasso]) .stroke-handle, #viewport[data-readonly=true] .stroke-handle { display: none; }
+/* 選取把手：看得到的點很小，免得擋到內容；可以按的範圍用透明的 ::after 另外撐開。
+   尺寸都乘 --inv，螢幕上的大小不受縮放影響 */
+.sel-handle, .crop-handle {
+  --hit: 26px;
+  position: absolute;
+  width: calc(10px * var(--inv, 1));
+  height: calc(10px * var(--inv, 1));
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+  /* 外圈用 box-shadow 畫：小於 1px 的 border 會被進位，放大時把手會變粗 */
+  box-shadow: inset 0 0 0 calc(1.5px * var(--inv, 1)) var(--accent), 0 0 0 calc(1px * var(--inv, 1)) rgb(0 0 0 / .15);
+  pointer-events: auto;
+  transform: translate(-50%, -50%);
+  touch-action: none;
+}
+/* 熱區往框外偏，小框中間還留得下拖曳移動的地方 */
+.sel-handle::after, .crop-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--hit) * var(--inv, 1));
+  height: calc(var(--hit) * var(--inv, 1));
+  transform: translate(calc(-50% + var(--ox, 0) * var(--hit) * var(--inv, 1) / 4), calc(-50% + var(--oy, 0) * var(--hit) * var(--inv, 1) / 4));
+}
+@media (pointer: coarse) {
+  .sel-handle, .crop-handle { --hit: 44px; }
+}
+/* 邊中把手是貼著虛線的細條 */
+.sel-handle:is([data-transform=e], [data-transform=w]), .crop-handle:is([data-crop=e], [data-crop=w]) { width: calc(4px * var(--inv, 1)); height: calc(16px * var(--inv, 1)); border-radius: calc(2px * var(--inv, 1)); }
+.sel-handle:is([data-transform=n], [data-transform=s]), .crop-handle:is([data-crop=n], [data-crop=s]) { width: calc(16px * var(--inv, 1)); height: calc(4px * var(--inv, 1)); border-radius: calc(2px * var(--inv, 1)); }
+.sel-handle[data-transform=nw], .crop-handle[data-crop=nw] { left: 0; top: 0; cursor: nwse-resize; --ox: -1; --oy: -1; }
+.sel-handle[data-transform=n], .crop-handle[data-crop=n] { left: 50%; top: 0; cursor: ns-resize; --oy: -1; }
+.sel-handle[data-transform=ne], .crop-handle[data-crop=ne] { left: 100%; top: 0; cursor: nesw-resize; --ox: 1; --oy: -1; }
+.sel-handle[data-transform=e], .crop-handle[data-crop=e] { left: 100%; top: 50%; cursor: ew-resize; --ox: 1; }
+.sel-handle[data-transform=se], .crop-handle[data-crop=se] { left: 100%; top: 100%; cursor: nwse-resize; --ox: 1; --oy: 1; }
+.sel-handle[data-transform=s], .crop-handle[data-crop=s] { left: 50%; top: 100%; cursor: ns-resize; --oy: 1; }
+.sel-handle[data-transform=sw], .crop-handle[data-crop=sw] { left: 0; top: 100%; cursor: nesw-resize; --ox: -1; --oy: 1; }
+.sel-handle[data-transform=w], .crop-handle[data-crop=w] { left: 0; top: 50%; cursor: ew-resize; --ox: -1; }
+.sel-handle[data-transform=rotate] { left: 50%; top: calc(-24px * var(--inv, 1)); cursor: grab; }
+/* 框太窄／太矮時藏掉那個方向的邊中把手，只留四角 */
+.sel-box[data-narrow] .sel-handle:is([data-transform=e], [data-transform=w]),
+.sel-box[data-short] .sel-handle:is([data-transform=n], [data-transform=s]) { display: none; }
+/* 拖曳把手時只留正在拉的那一個 */
+.sel-box[data-dragging] .sel-handle:not(.dragging) { display: none; }
+#viewport:not([data-tool=select]):not([data-tool=lasso]) .sel-handle, #viewport[data-readonly=true] .sel-handle { display: none; }
 
 #drive-dialog { width: min(520px, calc(100vw - 24px)); max-height: 85dvh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 20px; color: var(--text); background: var(--surface); }
 #drive-dialog::backdrop { background: rgba(0,0,0,.35); }

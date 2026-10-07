@@ -16,8 +16,20 @@ const WHEEL_NOTCH = 50, WHEEL_GLIDE = 40, WHEEL_GLIDE_BOTH = 100, WHEEL_BOTH = 2
 const WHEEL_SWAPPED = 32;
 const WIN_CHROMIUM = /Windows/.test(navigator.userAgent) && /Chrome\//.test(navigator.userAgent);
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
+const DIRS = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
+const FULL = { x: 0, y: 0, w: 1, h: 1 }; // 圖片沒裁切
+// 文字框可選的字體；沒設定＝跟介面一樣的字體
+export const FONTS = {
+  serif: '"Noto Serif TC", "PMingLiU", "新細明體", "Songti TC", serif',
+  kai: '"BiauKai", "DFKai-SB", "標楷體", "Kaiti TC", "KaiTi", serif',
+  mono: 'ui-monospace, Consolas, "Courier New", monospace',
+};
 
 const r1 = n => Math.round(n * 10) / 10;
+const r2 = n => Math.round(n * 100) / 100;
+const RAD = Math.PI / 180;
+// 角度換到 -180～180
+const normDeg = d => r1(((d + 180) % 360 + 360) % 360 - 180);
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const mid = (a, b) => ({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 });
@@ -87,6 +99,12 @@ function strokeHit(it, p, r) {
   if (pts.length === 1) return Math.hypot(p.x - pts[0][0], p.y - pts[0][1]) <= rr;
   for (let i = 1; i < pts.length; i++) if (segDist(p, pts[i - 1], pts[i]) <= rr) return true;
   return false;
+}
+
+// 世界座標 → 圖片自己的座標（以中心為原點、沒旋轉）
+function imageLocal(it, p) {
+  const r = -(it.rot ?? 0) * RAD, dx = p.x - (it.x + it.w / 2), dy = p.y - (it.y + it.h / 2);
+  return { x: dx * Math.cos(r) - dy * Math.sin(r), y: dx * Math.sin(r) + dy * Math.cos(r) };
 }
 
 function inPoly(x, y, poly) {
@@ -170,11 +188,11 @@ export class Board {
     this.uiLayer = h('div', 'layer');
     this.selBox = h('div', 'sel-box');
     this.selBox.hidden = true;
-    for (const direction of ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'rotate']) {
-      const handle = h('button', 'stroke-handle');
+    for (const direction of [...DIRS, 'rotate']) {
+      const handle = h('button', 'sel-handle');
       handle.dataset.transform = direction;
-      handle.title = direction === 'rotate' ? '拖曳旋轉筆跡' : '拖曳縮放筆跡（不固定比例）';
-      handle.setAttribute('aria-label', direction === 'rotate' ? '旋轉筆跡' : '縮放筆跡 ' + direction);
+      handle.title = direction === 'rotate' ? '拖曳旋轉' : '拖曳縮放';
+      handle.setAttribute('aria-label', direction === 'rotate' ? '旋轉' : '縮放 ' + direction);
       this.selBox.append(handle);
     }
     this.uiLayer.append(this.selBox);
@@ -192,7 +210,9 @@ export class Board {
       pen: { color: '#1f2937', width: 3 },
       hl: { color: '#fde047', width: 20 },
       eraser: { mode: 'partial', width: 12 }, // width = 螢幕上的半徑
+      text: { size: 18 },                      // 新文字框的字級與格式（bold、italic、color、font）
     };
+    this.cropping = null;     // 裁切中的圖片：{ id, crop }，crop 是還沒套用的裁切範圍
     this.canvas = '#ffffff';  // 畫布底色，由 setCanvas 設定
     this.darkCanvas = false;
     this.mouseMode = false;   // 滑鼠模式：點到物件直接選取並拖動，空白處拖曳＝框選
@@ -224,6 +244,8 @@ export class Board {
     this.action = null;
     this.pointers.clear();
     this.editing = null;
+    this.cropping = null;
+    this._dragHandle(null);
     this.sel = new Set();
     this.items = doc?.items ?? [];
     this.undoStack = [];
@@ -238,10 +260,14 @@ export class Board {
     this.readOnly = value;
     this.vp.dataset.readonly = String(value);
     for (const body of this.textLayer.querySelectorAll('.text-body')) body.contentEditable = String(!value);
+    if (value) this._cancelCrop();
+    this._updateSelBox();
+    this.cb.onContext?.();
   }
 
   // Apply committed remote objects without resetting view, history or a gesture.
   applyRemote(items) {
+    this._cancelCrop();
     const next = new Map(items.map(item => [item.id, item]));
     for (const item of this.items) if (!next.has(item.id)) this._unmount(item.id);
     for (const item of items) {
@@ -286,7 +312,10 @@ export class Board {
     this.canvas = color;
     this.darkCanvas = isDark(color);
     this.vp.classList.toggle('dark-canvas', this.darkCanvas);
-    for (const it of this.items) if (it.type === 'stroke') this.els.get(it.id)?.setAttribute('stroke', this.inkColor(it));
+    for (const it of this.items) {
+      if (it.type === 'stroke') this.els.get(it.id)?.setAttribute('stroke', this.inkColor(it));
+      else if (it.type === 'text' && it.color) this._place(it);
+    }
   }
 
   // 螢光筆是半透明的，什麼底色都看得到，保持原色
@@ -296,11 +325,13 @@ export class Board {
 
   setTool(t) {
     this.commitText();
+    this.endCrop();
     this.tool = t;
     if (t === 'pen' || t === 'hl') this.lastBrush = t;
     this.vp.dataset.tool = t;
     this.cursor.hidden = true;
     if (t !== 'select' && t !== 'lasso') this.setSelection([]);
+    this.cb.onContext?.();
   }
 
   // 'touch'：先點選物件才能拖動，空白處拖曳＝移動畫布，比較不會誤觸
@@ -411,12 +442,210 @@ export class Board {
   }
 
   setSelection(ids) {
+    if (this.cropping && !(ids.length === 1 && ids[0] === this.cropping.id)) this.endCrop();
     for (const id of this.sel) this.els.get(id)?.classList.remove('selected');
     this.sel = new Set(ids);
-    // 只有單選時顯示縮放把手
     if (this.sel.size === 1) this.els.get(ids[0])?.classList.add('selected');
     this._updateSelBox();
     this.cb.onSelect?.(this.sel.size);
+    this.cb.onContext?.();
+  }
+
+  // 選取中的物件類型
+  selectedTypes() {
+    return new Set([...this.sel].map(id => this._item(id)?.type).filter(Boolean));
+  }
+
+  // ---------- 文字格式 ----------
+  // 要套用格式的文字框：正在編輯的那個，不然是選取中的文字框
+  textTargets() {
+    if (this.editing) return [this.editing.id];
+    return [...this.sel].filter(id => this._item(id)?.type === 'text');
+  }
+
+  // 第一個目標文字框的格式；文字工具下沒有目標時是新文字框的預設格式；都沒有回傳 null
+  textFormat() {
+    if (this.readOnly) return null;
+    const id = this.textTargets()[0];
+    const it = id ? this._item(id) : this.tool === 'text' ? this.style.text : null;
+    return it && { bold: !!it.bold, italic: !!it.italic, color: it.color ?? null, font: it.font ?? null };
+  }
+
+  setTextStyle(key, value) {
+    this._styleText(it => { if (value) it[key] = value; else delete it[key]; });
+  }
+
+  // 放大／縮小字級，固定寬度的文字框寬度跟著等比例縮放
+  stepTextSize(dir) {
+    const f = dir > 0 ? 1.25 : 0.8;
+    this._styleText(it => {
+      it.size = clamp(r2(it.size * f), 1, 2000);
+      if (it.w) it.w = r1(it.w * f);
+    });
+  }
+
+  // 粗體／斜體：編輯中有反白文字就用 Markdown 包起來（已經包著就拿掉），不然整個文字框切換
+  toggleMark(key) {
+    const body = document.activeElement, sel = getSelection();
+    if (this.editing && body?.classList?.contains('text-body') && sel.rangeCount && !sel.isCollapsed && body.contains(sel.anchorNode)) {
+      const mark = key === 'bold' ? '**' : '*', s = sel.toString();
+      const wrapped = s.length > mark.length * 2 && s.startsWith(mark) && s.endsWith(mark);
+      document.execCommand('insertText', false, wrapped ? s.slice(mark.length, -mark.length) : mark + s + mark);
+      return;
+    }
+    this.setTextStyle(key, !this.textFormat()?.[key]);
+  }
+
+  _styleText(fn) {
+    if (this.readOnly) return;
+    const ids = this.textTargets();
+    if (!ids.length) {
+      if (this.tool === 'text') fn(this.style.text);
+      this.cb.onContext?.();
+      return;
+    }
+    const ed = this.editing, before = this._snap();
+    for (const id of ids) {
+      const item = ed ? ed.item : this._own(id);
+      fn(item);
+      this._place(item);
+    }
+    // 編輯中的文字框等編輯結束時連同文字一起存成一步
+    if (ed) { ed.styled = true; this.cb.onChange?.(); } else this._commit(before);
+    this._updateSelBox();
+    this.cb.onContext?.();
+  }
+
+  // ---------- 圖片 ----------
+  rotateImages(deg) {
+    if (this.readOnly) return;
+    this.endCrop();
+    const ids = [...this.sel].filter(id => this._item(id)?.type === 'image');
+    if (!ids.length) return;
+    const before = this._snap();
+    for (const id of ids) {
+      const item = this._own(id);
+      item.rot = normDeg((item.rot ?? 0) + deg);
+      if (!item.rot) delete item.rot;
+      this._place(item);
+    }
+    this._commit(before);
+    this._updateSelBox();
+  }
+
+  // 裁切：顯示整張原圖，拖曳框或八個把手調整範圍；endCrop 才套用
+  startCrop() {
+    if (this.readOnly || this.cropping || this.sel.size !== 1) return;
+    const id = [...this.sel][0], it = this._item(id);
+    if (it?.type !== 'image') return;
+    this.commitText();
+    const el = this.els.get(id);
+    const area = h('div', 'crop-area'), frame = h('div', 'crop-frame');
+    area.append(h('div', 'crop-shade'));
+    frame.dataset.crop = 'move';
+    for (const d of DIRS) {
+      const k = h('div', 'crop-handle');
+      k.dataset.crop = d;
+      frame.append(k);
+    }
+    el.append(area, frame);
+    el.classList.add('cropping');
+    this.cropping = { id, crop: { ...(it.crop ?? FULL) } };
+    this._placeCrop();
+    this._updateSelBox();
+    this.cb.onContext?.();
+  }
+
+  endCrop() {
+    const cr = this.cropping;
+    if (!cr) return;
+    this._cancelCrop();
+    const it = this._item(cr.id);
+    const c = it?.crop ?? FULL, n = cr.crop;
+    if (it && ['x', 'y', 'w', 'h'].some(k => Math.abs(n[k] - c[k]) > 1e-4)) {
+      const before = this._snap(), item = this._own(cr.id);
+      const fw = it.w / c.w, fh = it.h / c.h; // 整張原圖在世界座標的大小
+      // 新範圍中心相對舊範圍中心（圖片自己的座標），轉回世界座標
+      const lx = (n.x + n.w / 2 - c.x - c.w / 2) * fw, ly = (n.y + n.h / 2 - c.y - c.h / 2) * fh;
+      const r = (it.rot ?? 0) * RAD;
+      const cx = it.x + it.w / 2 + lx * Math.cos(r) - ly * Math.sin(r);
+      const cy = it.y + it.h / 2 + lx * Math.sin(r) + ly * Math.cos(r);
+      item.w = r1(n.w * fw);
+      item.h = r1(n.h * fh);
+      item.x = r1(cx - item.w / 2);
+      item.y = r1(cy - item.h / 2);
+      const round = v => Math.round(v * 1e4) / 1e4;
+      if (n.w > .9999 && n.h > .9999) delete item.crop;
+      else item.crop = { x: round(n.x), y: round(n.y), w: round(n.w), h: round(n.h) };
+      this._place(item);
+      this._commit(before);
+    }
+    this._updateSelBox();
+    this.cb.onContext?.();
+  }
+
+  // 收掉裁切畫面，不套用
+  _cancelCrop() {
+    const cr = this.cropping;
+    if (!cr) return;
+    this.cropping = null;
+    if (this.action?.kind === 'crop') this.action = null;
+    const el = this.els.get(cr.id);
+    el?.classList.remove('cropping');
+    el?.querySelectorAll('.crop-area, .crop-frame').forEach(x => x.remove());
+  }
+
+  _placeCrop() {
+    const { id, crop: n } = this.cropping, it = this._item(id), c = it.crop ?? FULL, el = this.els.get(id);
+    const fw = it.w / c.w, fh = it.h / c.h, fx = -c.x * fw, fy = -c.y * fh;
+    const px = v => v + 'px';
+    const box = { left: px(n.x * fw), top: px(n.y * fh), width: px(n.w * fw), height: px(n.h * fh) };
+    Object.assign(el.querySelector('.crop-area').style, { left: px(fx), top: px(fy), width: px(fw), height: px(fh) });
+    Object.assign(el.querySelector('.crop-shade').style, box);
+    Object.assign(el.querySelector('.crop-frame').style, { ...box, left: px(fx + n.x * fw), top: px(fy + n.y * fh) });
+  }
+
+  _startCropDrag(base, w, dir) {
+    const it = this._item(this.cropping.id);
+    this.action = { ...base, kind: 'crop', dir, start: this._cropFrac(it, w), crop0: { ...this.cropping.crop } };
+  }
+
+  // 世界座標 → 在整張原圖上的比例位置（0～1）
+  _cropFrac(it, p) {
+    const c = it.crop ?? FULL, l = imageLocal(it, p);
+    return { x: c.x + c.w / 2 + l.x / it.w * c.w, y: c.y + c.h / 2 + l.y / it.h * c.h };
+  }
+
+  _cropDrag(a, w) {
+    const it = this._item(this.cropping.id), p = this._cropFrac(it, w), o = a.crop0, d = a.dir;
+    const c = it.crop ?? FULL, dx = p.x - a.start.x, dy = p.y - a.start.y;
+    // 裁切範圍在螢幕上至少 16px
+    const mw = Math.min(o.w, 16 / this.view.s / (it.w / c.w)), mh = Math.min(o.h, 16 / this.view.s / (it.h / c.h));
+    let x0 = o.x, y0 = o.y, x1 = o.x + o.w, y1 = o.y + o.h;
+    if (d === 'move') {
+      const mx = clamp(dx, -x0, 1 - x1), my = clamp(dy, -y0, 1 - y1);
+      x0 += mx; x1 += mx; y0 += my; y1 += my;
+    } else {
+      if (d.includes('w')) x0 = clamp(x0 + dx, 0, x1 - mw);
+      if (d.includes('e')) x1 = clamp(x1 + dx, x0 + mw, 1);
+      if (d.includes('n')) y0 = clamp(y0 + dy, 0, y1 - mh);
+      if (d.includes('s')) y1 = clamp(y1 + dy, y0 + mh, 1);
+    }
+    this.cropping.crop = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    this._placeCrop();
+  }
+
+  // 圖片畫到 canvas，旋轉、裁切跟畫面一樣；圖還沒載好回傳 false
+  drawImageItem(ctx, it) {
+    const img = this.els.get(it.id)?.querySelector('img');
+    if (!img?.complete || !img.naturalWidth) return false;
+    const c = it.crop ?? FULL, nw = img.naturalWidth, nh = img.naturalHeight;
+    ctx.save();
+    ctx.translate(it.x + it.w / 2, it.y + it.h / 2);
+    if (it.rot) ctx.rotate(it.rot * RAD);
+    ctx.drawImage(img, c.x * nw, c.y * nh, c.w * nw, c.h * nh, -it.w / 2, -it.h / 2, it.w, it.h);
+    ctx.restore();
+    return true;
   }
 
   deleteSelected() {
@@ -435,6 +664,7 @@ export class Board {
 
   undo() {
     if (this.readOnly) return;
+    this.endCrop();
     if (this.historyDelegate) return this.historyDelegate.undo();
     this.commitText();
     if (!this.undoStack.length) return;
@@ -447,6 +677,7 @@ export class Board {
 
   redo() {
     if (this.readOnly) return;
+    this.endCrop();
     if (this.historyDelegate) return this.historyDelegate.redo();
     this.commitText();
     if (!this.redoStack.length) return;
@@ -468,7 +699,7 @@ export class Board {
     if (this.readOnly || !text) return;
     this.commitText();
     const before = this._snap();
-    const item = { id: uid(), type: 'text', x: r1(position.x), y: r1(position.y), size: r1(18 / this.view.s), text };
+    const item = { id: uid(), type: 'text', x: r1(position.x), y: r1(position.y), size: this.style.text.size, text };
     this.items.push(item); this._mount(item); this._commit(before); this.setSelection([item.id]);
   }
 
@@ -544,8 +775,7 @@ export class Board {
         ctx.lineWidth = it.width;
         ctx.stroke(new Path2D(pathData(it.pts)));
       } else if (it.type === 'image') {
-        const img = this.els.get(it.id)?.querySelector('img');
-        if (img?.complete && img.naturalWidth) ctx.drawImage(img, it.x, it.y, it.w, it.h);
+        this.drawImageItem(ctx, it);
       } else if (it.type === 'text') {
         // 畫顯示出來的文字（沒有 Markdown 符號），超出文字框的部分裁掉，避免疊到下一個框
         const el = this.els.get(it.id), lh = it.size * 1.45;
@@ -554,8 +784,8 @@ export class Board {
         ctx.beginPath();
         ctx.rect(it.x, it.y, el.offsetWidth, el.offsetHeight);
         ctx.clip();
-        ctx.font = `${it.size}px ${css.fontFamily}`;
-        ctx.fillStyle = css.color;
+        ctx.font = `${it.italic ? 'italic ' : ''}${it.bold ? 'bold ' : ''}${it.size}px ${FONTS[it.font] ?? css.fontFamily}`;
+        ctx.fillStyle = it.color ? readableInk(it.color, this.canvas) : css.color;
         ctx.textBaseline = 'middle';
         let y = it.y + 2 + lh / 2;
         for (const line of wrapText(ctx, el.querySelector('.text-body').innerText, el.offsetWidth - 8)) { ctx.fillText(line, it.x + 4, y); y += lh; }
@@ -608,6 +838,13 @@ export class Board {
     this.textLayer.addEventListener('focusin', e => this._focusIn(e));
     this.textLayer.addEventListener('focusout', e => this._focusOut(e));
     this.textLayer.addEventListener('input', () => this._input());
+    // Ctrl+B／Ctrl+I：瀏覽器預設會插入 <b>／<i>，改成 Markdown 或整個文字框的格式
+    this.textLayer.addEventListener('keydown', e => {
+      const k = (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase();
+      if (k !== 'b' && k !== 'i') return;
+      e.preventDefault();
+      this.toggleMark(k === 'b' ? 'bold' : 'italic');
+    });
     this.textLayer.addEventListener('paste', e => {
       e.preventDefault();
       e.stopPropagation();
@@ -700,7 +937,6 @@ export class Board {
     if (this.action) return;
 
     const itemEl = e.target.closest('.item');
-    const handle = e.target.closest('.handle');
     const textEl = e.target.closest('.text-item');
     const editingText = textEl?.contains(document.activeElement);
     const check = e.target.closest('.md-check');
@@ -711,7 +947,7 @@ export class Board {
     }
     // 文字工具，或點在正在編輯的文字框裡：交給瀏覽器放游標。
     // 不能先 blur 再讓瀏覽器 focus 回來，手機鍵盤會收起又跳出。
-    if (!handle && textEl && (this.tool === 'text' || editingText)) return;
+    if (textEl && (this.tool === 'text' || editingText)) return;
 
     e.preventDefault();
     this.commitText();
@@ -720,6 +956,12 @@ export class Board {
 
     const w = this.toWorld(e.clientX, e.clientY);
     const base = { id: e.pointerId, ptype: e.pointerType };
+    // 裁切中：拖曳裁切框或把手調整範圍；其他地方拖曳＝移動畫布，點一下＝完成裁切
+    if (this.cropping) {
+      const crop = e.target.closest('[data-crop]');
+      if (crop) return this._startCropDrag(base, w, crop.dataset.crop);
+      return this._startPan(e, w);
+    }
     // 觸控筆的橡皮擦端＝這一筆用橡皮擦。有的瀏覽器只給 button 5、沒給 buttons 32，兩個都看。
     // Chrome 懸停時看不出筆尾，輕碰也可能還沒標成橡皮擦；翻轉筆一定會離開感應範圍，
     // 所以擦過一次就記著，到筆離開前的每一筆都是橡皮擦
@@ -729,8 +971,8 @@ export class Board {
     if (isPen && t !== 'eraser' && (e.buttons & 2 || e.button === 2)) return this._startLasso({ ...base, barrel: true }, w);
     const transform = e.target.closest('[data-transform]');
     if (transform && (t === 'select' || t === 'lasso')) return this._startTransform(base, w, transform.dataset.transform);
-    // 選取工具下筆尖照樣用最後用過的畫筆寫，選取交給手指和滑鼠；縮放把手例外
-    if (isPen && t === 'select' && !(handle && itemEl)) t = this.lastBrush;
+    // 選取工具下筆尖照樣用最後用過的畫筆寫，選取交給手指和滑鼠（把手、裁切在上面已經處理）
+    if (isPen && t === 'select') t = this.lastBrush;
 
     if (t === 'pen' || t === 'hl' || t === 'eraser') {
       if (t === 'eraser') {
@@ -744,7 +986,6 @@ export class Board {
     }
 
     if (t === 'select' || t === 'lasso') {
-      if (handle && itemEl) return this._startResize(base, w, itemEl.dataset.id);
       if (this.mouseMode) return this._mouseDown(e, base, w);
       // 拖曳已選取的物件（選取框內）＝移動物件；未選取的物件或空白處＝移動畫布。
       // 選取只在放開時（點一下）發生，不在按下時。
@@ -813,13 +1054,8 @@ export class Board {
       this._applyMove(a, dx, dy);
     } else if (a.kind === 'transform') {
       this._transform(a, this.toWorld(e.clientX, e.clientY));
-    } else if (a.kind === 'resize') {
-      const w = this.toWorld(e.clientX, e.clientY);
-      const nw = Math.max(a.min, a.ow + w.x - a.start.x);
-      a.item.w = r1(nw);
-      if (a.item.type === 'image') a.item.h = r1(nw * a.ratio);
-      this._place(a.item);
-      this._updateSelBox();
+    } else if (a.kind === 'crop') {
+      this._cropDrag(a, this.toWorld(e.clientX, e.clientY));
     }
   }
 
@@ -861,16 +1097,14 @@ export class Board {
         else if (!a.picked) this._tapSelect(a.start);
         break;
       case 'transform':
+        this._dragHandle(null);
         if (a.changed) this._commit(a.before);
-        this._updateSelBox();
-        break;
-      case 'resize':
-        this._commit(a.before);
         this._updateSelBox();
         break;
       case 'pan':
         if (a.moved || !a.at) break;
-        if (this.tool === 'text') this._newText(a.at);
+        if (this.cropping) this.endCrop();
+        else if (this.tool === 'text') this._newText(a.at);
         else if (this.tool === 'select' || this.tool === 'lasso') this._tapSelect(a.at);
         break;
     }
@@ -881,9 +1115,10 @@ export class Board {
     const a = this.action;
     this.action = null;
     if (!a) return;
+    if (a.kind === 'transform') this._dragHandle(null);
     if (a.kind === 'draw' || a.kind === 'lasso' || a.kind === 'marquee') a.path.remove();
     else if (a.kind === 'move' && a.moved) this._finishMove(a);
-    else if (a.kind === 'resize' || (a.kind === 'transform' && a.changed) || (a.kind === 'erase' && a.hit)) this._commit(a.before);
+    else if ((a.kind === 'transform' && a.changed) || (a.kind === 'erase' && a.hit)) this._commit(a.before);
     this.cursor.hidden = true;
   }
 
@@ -979,7 +1214,7 @@ export class Board {
     const st = this.style[tool];
     const item = {
       id: uid(), type: 'stroke', tool, color: st.color,
-      width: Math.round(st.width / this.view.s * 100) / 100, // 粗細以「螢幕上看起來」為準
+      width: st.width, // 粗細固定，不隨畫面縮放改變
       pts: [[r1(w.x), r1(w.y)]],
     };
     const path = this._mount(item);
@@ -1063,14 +1298,21 @@ export class Board {
       const b = bbox(it), p = it.width / 2;
       return { x: b[0] - p, y: b[1] - p, w: b[2] - b[0] + 2 * p, h: b[3] - b[1] + 2 * p };
     }
-    if (it.type === 'image') return { x: it.x, y: it.y, w: it.w, h: it.h };
+    if (it.type === 'image') {
+      if (!it.rot) return { x: it.x, y: it.y, w: it.w, h: it.h };
+      // 旋轉後的外框
+      const c = Math.abs(Math.cos(it.rot * RAD)), s = Math.abs(Math.sin(it.rot * RAD));
+      const w = it.w * c + it.h * s, ht = it.w * s + it.h * c;
+      return { x: it.x + (it.w - w) / 2, y: it.y + (it.h - ht) / 2, w, h: ht };
+    }
     const el = this.els.get(it.id);
     return { x: it.x, y: it.y, w: el?.offsetWidth ?? 0, h: el?.offsetHeight ?? 0 };
   }
 
   _updateSelBox() {
-    const strokesOnly = this.sel.size > 0 && [...this.sel].every(id => this._item(id)?.type === 'stroke');
-    for (const handle of this.selBox.children) handle.hidden = !strokesOnly || this.readOnly;
+    // 文字框不能旋轉，選取裡有文字就不給旋轉把手
+    const text = [...this.sel].some(id => this._item(id)?.type === 'text');
+    for (const handle of this.selBox.children) handle.hidden = this.readOnly || (text && handle.dataset.transform === 'rotate');
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const id of this.sel) {
       const it = this._item(id);
@@ -1088,8 +1330,11 @@ export class Board {
     const pad = 6 / this.view.s, min = 44 / this.view.s;
     const px = Math.max(pad, (min - (x1 - x0)) / 2), py = Math.max(pad, (min - (y1 - y0)) / 2);
     this.selBounds = { x0: x0 - px, y0: y0 - py, x1: x1 + px, y1: y1 + py };
+    // 框在螢幕上太窄／太矮時，那個方向的邊中把手會跟角落擠在一起，CSS 把它藏掉
+    this.selBox.toggleAttribute('data-narrow', (x1 - x0 + 2 * px) * this.view.s < 100);
+    this.selBox.toggleAttribute('data-short', (y1 - y0 + 2 * py) * this.view.s < 100);
     this._placeSelBox(0, 0);
-    this.selBox.hidden = false;
+    this.selBox.hidden = !!this.cropping;
   }
 
   _placeSelBox(dx, dy) {
@@ -1113,6 +1358,10 @@ export class Board {
     const hits = this.items.filter(it => {
       if (!this.els.has(it.id)) return false;
       if (it.type === 'stroke') return strokeHit(it, w, r);
+      if (it.type === 'image') {
+        const l = imageLocal(it, w);
+        return Math.abs(l.x) <= it.w / 2 && Math.abs(l.y) <= it.h / 2;
+      }
       const b = this._box(it);
       return w.x >= b.x && w.x <= b.x + b.w && w.y >= b.y && w.y <= b.y + b.h;
     });
@@ -1128,17 +1377,20 @@ export class Board {
     this.setSelection(hit ? [hit.id] : []);
   }
 
-  // 選取工具雙擊文字框＝進入編輯（就算已經選取）。
+  // 選取工具雙擊文字框＝進入編輯（就算已經選取），雙擊圖片＝裁切。
   // pointerdown 有 setPointerCapture，dblclick 的 target 不可靠，改用座標找文字框。
   _dblEdit(e) {
     if (this.readOnly || this.action || !(this.tool === 'select' || this.tool === 'lasso')) return;
     if (this.downType === 'pen') return; // 筆尖在選取工具下是寫字，連點兩下不是要編輯文字
     if (document.activeElement?.closest?.('.text-item')) return;
     this.rect = this.vp.getBoundingClientRect();
-    const hit = this._hitsAt(this.toWorld(e.clientX, e.clientY)).find(it => it.type === 'text');
+    const hits = this._hitsAt(this.toWorld(e.clientX, e.clientY));
+    const hit = hits.find(it => it.type === 'text') ?? (hits[0]?.type === 'image' ? hits[0] : null);
     if (!hit) return;
     e.preventDefault();
+    if (this.cropping?.id === hit.id) return this.endCrop();
     this.setSelection([hit.id]);
+    if (hit.type === 'image') return this.startCrop();
     this.els.get(hit.id)?.querySelector('.text-body')?.focus({ preventScroll: true });
   }
 
@@ -1263,60 +1515,99 @@ export class Board {
   }
 
   _startTransform(base, w, direction) {
-    if (this.readOnly || !this.selBounds || ![...this.sel].every(id => this._item(id)?.type === 'stroke')) return;
+    if (this.readOnly || !this.selBounds) return;
+    const originals = [...this.sel].map(id => this._item(id)).filter(Boolean).map(it => structuredClone(it));
+    if (direction === 'rotate' && originals.some(it => it.type === 'text')) return;
+    // 自動寬度的文字框，拖左右把手時從目前的寬度開始改
+    const widths = new Map(originals.filter(it => it.type === 'text').map(it => [it.id, it.w ?? this.els.get(it.id)?.offsetWidth ?? 0]));
     this.action = { ...base, kind: 'transform', direction, start: w, bounds: { ...this.selBounds }, before: this._snap(), changed: false,
-      originals: [...this.sel].map(id => structuredClone(this._item(id))) };
+      originals, widths, keepRatio: originals.some(it => it.type !== 'stroke') };
+    this._dragHandle(direction);
+  }
+
+  // 拖曳把手時只顯示正在拉的那一個；null＝恢復
+  _dragHandle(direction) {
+    this.selBox.toggleAttribute('data-dragging', !!direction);
+    for (const handle of this.selBox.children) handle.classList.toggle('dragging', handle.dataset.transform === direction);
   }
 
   _transform(a, point) {
-    const b = a.bounds, cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2;
+    const b = a.bounds, cx = (b.x0 + b.x1) / 2, cy = (b.y0 + b.y1) / 2, d = a.direction;
     let sx = 1, sy = 1, angle = 0, ox = cx, oy = cy;
-    if (a.direction === 'rotate') {
+    if (d === 'rotate') {
       angle = Math.atan2(point.y - cy, point.x - cx) - Math.atan2(a.start.y - cy, a.start.x - cx);
+      // 單張圖片轉到接近水平、垂直時吸過去
+      const only = a.originals.length === 1 && a.originals[0];
+      if (only?.type === 'image') {
+        const deg = (only.rot ?? 0) + angle / RAD, snap = Math.round(deg / 90) * 90;
+        if (Math.abs(deg - snap) < 4) angle += (snap - deg) * RAD;
+      }
     } else {
-      const d = a.direction;
       ox = d.includes('w') ? b.x1 : b.x0;
       oy = d.includes('n') ? b.y1 : b.y0;
-      const safeScale = value => Math.sign(value || 1) * Math.max(.05, Math.min(100, Math.abs(value)));
+      // 有圖片或文字時不翻面
+      const safeScale = value => a.keepRatio ? Math.max(.05, Math.min(100, value))
+        : Math.sign(value || 1) * Math.max(.05, Math.min(100, Math.abs(value)));
       if (d.includes('w') || d.includes('e')) sx = safeScale(1 + (point.x - a.start.x) / (d.includes('w') ? b.x0 - b.x1 : b.x1 - b.x0));
       if (d.includes('n') || d.includes('s')) sy = safeScale(1 + (point.y - a.start.y) / (d.includes('n') ? b.y0 - b.y1 : b.y1 - b.y0));
+      // 有圖片或文字時拖角落固定比例，以拉動比較多的那一軸為準；只有筆跡時兩軸各自縮放
+      if (a.keepRatio && d.length === 2) sx = sy = Math.abs(sx - 1) > Math.abs(sy - 1) ? sx : sy;
     }
     if (!a.changed && Math.hypot(point.x - a.start.x, point.y - a.start.y) * this.view.s < 2) return;
     a.changed = true;
-    for (const original of a.originals) {
-      const item = this._own(original.id);
-      item.pts = original.pts.map(([x, y]) => {
-        if (a.direction === 'rotate') return [r1(cx + (x - cx) * Math.cos(angle) - (y - cy) * Math.sin(angle)), r1(cy + (x - cx) * Math.sin(angle) + (y - cy) * Math.cos(angle))];
-        return [r1(ox + (x - ox) * sx), r1(oy + (y - oy) * sy)];
-      });
-      item.width = Math.max(.1, Math.round(original.width * Math.sqrt(Math.abs(sx * sy)) * 100) / 100);
-      const path = this.els.get(item.id);
-      path.setAttribute('d', pathData(item.pts)); path.setAttribute('stroke-width', item.width);
+    const cos = Math.cos(angle), sin = Math.sin(angle);
+    const map = d === 'rotate'
+      ? (x, y) => [cx + (x - cx) * cos - (y - cy) * sin, cy + (x - cx) * sin + (y - cy) * cos]
+      : (x, y) => [ox + (x - ox) * sx, oy + (y - oy) * sy];
+    for (const o of a.originals) {
+      const item = this._own(o.id);
+      if (o.type === 'stroke') {
+        item.pts = o.pts.map(([x, y]) => map(x, y).map(r1));
+        item.width = Math.max(.1, r2(o.width * Math.sqrt(Math.abs(sx * sy))));
+        const path = this.els.get(item.id);
+        path.setAttribute('d', pathData(item.pts)); path.setAttribute('stroke-width', item.width);
+        continue;
+      }
+      if (o.type === 'image') {
+        const [ncx, ncy] = map(o.x + o.w / 2, o.y + o.h / 2);
+        let w = o.w, ht = o.h;
+        if (d === 'rotate') {
+          item.rot = normDeg((o.rot ?? 0) + angle / RAD);
+          if (!item.rot) delete item.rot;
+        } else {
+          // 旋轉過的圖片：沿著圖片自己的兩個邊各自縮放，保持長方形
+          const r = (o.rot ?? 0) * RAD;
+          w = o.w * Math.hypot(sx * Math.cos(r), sy * Math.sin(r));
+          ht = o.h * Math.hypot(sx * Math.sin(r), sy * Math.cos(r));
+        }
+        item.w = r1(w); item.h = r1(ht);
+        item.x = r1(ncx - w / 2); item.y = r1(ncy - ht / 2);
+      } else {
+        // 文字：左右把手改換行寬度；上下、角落把手連字一起縮放（比例會稍微不同，沒關係）
+        [item.x, item.y] = map(o.x, o.y).map(r1);
+        if (d === 'e' || d === 'w') item.w = r1(Math.max(o.size * 2, a.widths.get(o.id) * sx));
+        else {
+          const k = d === 'n' || d === 's' ? sy : sx;
+          item.size = clamp(r2(o.size * k), 1, 2000);
+          if (o.w) item.w = r1(o.w * k);
+        }
+      }
+      this._place(item);
     }
     this._updateSelBox();
   }
 
-  _startResize(base, w, id) {
-    const before = this._snap();
-    const item = this._own(id);
-    const isText = item.type === 'text';
-    this.action = {
-      ...base, kind: 'resize', item, before, start: w,
-      ow: isText ? (item.w ?? this.els.get(id).offsetWidth) : item.w,
-      ratio: isText ? 0 : item.h / item.w,
-      min: isText ? item.size * 2 : 24 / this.view.s,
-    };
-  }
-
   // ---------- text ----------
   _newText(w) {
-    const size = r1(18 / this.view.s);
-    const item = { id: uid(), type: 'text', x: r1(w.x), y: r1(w.y - size * 0.8), size, text: '' };
+    // 字級固定，不隨畫面縮放改變；格式用文字工具目前的設定
+    const { size, ...look } = this.style.text;
+    const item = { id: uid(), type: 'text', x: r1(w.x), y: r1(w.y - size * 0.8), size, ...look, text: '' };
     const before = this._snap();
     this.items.push(item);
     this._mount(item);
     this.editing = { id: item.id, item, before, orig: '', created: true };
     this._focusText(item.id);
+    this.cb.onContext?.();
   }
 
   _focusText(id) {
@@ -1393,6 +1684,7 @@ export class Board {
     const before = this._snap();
     const item = this._own(id);
     this.editing = { id, item, before, orig: item.text, created: false };
+    this.cb.onContext?.();
     // 換成原始 markdown 編輯，游標放回點到的字；瀏覽器之後可能再依新版面放一次，所以下一輪再放一次
     const body = e.target;
     const at = this._tapOffset(body);
@@ -1428,8 +1720,11 @@ export class Board {
       else this._commit(ed.before);
     } else {
       this._renderText(ed.id);
-      if (ed.created || text !== ed.orig) this._commit(ed.before);
+      if (ed.created || ed.styled || text !== ed.orig) this._commit(ed.before);
+      // 焦點移到文字格式的選項（例如自訂顏色）：選取這個文字框，格式才套得到它
+      if (e.relatedTarget?.closest?.('[data-keep-text]') && !this.sel.has(ed.id)) this.setSelection([ed.id]);
     }
+    this.cb.onContext?.();
   }
 
   // ---------- render ----------
@@ -1449,15 +1744,15 @@ export class Board {
       body.contentEditable = String(!this.readOnly);
       body.spellcheck = false;
       sources.set(body, renderMarkdown(body, item.text));
-      el.append(body, h('div', 'handle w-handle'));
-      el.style.fontSize = item.size + 'px';
+      el.append(body);
       this.textLayer.append(el);
     } else if (item.type === 'image') {
       el = h('div', 'item img-item');
-      const img = new Image();
+      const clip = h('div', 'img-clip'), img = new Image();
       img.alt = '';
       img.draggable = false;
-      el.append(img, h('div', 'handle'));
+      clip.append(img);
+      el.append(clip);
       this._url(item.blobId).then(u => { if (u) img.src = u; });
       this.imgLayer.append(el);
     } else {
@@ -1480,15 +1775,29 @@ export class Board {
     el.style.left = item.x + 'px';
     el.style.top = item.y + 'px';
     if (item.type === 'image') {
+      // x、y、w、h 是裁切後、旋轉前的範圍，繞中心旋轉；img 放整張原圖，超出範圍的裁掉
+      const c = item.crop ?? FULL;
       el.style.width = item.w + 'px';
       el.style.height = item.h + 'px';
+      el.style.transform = item.rot ? `rotate(${item.rot}deg)` : '';
+      Object.assign(el.querySelector('img').style, {
+        width: 100 / c.w + '%', height: 100 / c.h + '%', left: -c.x / c.w * 100 + '%', top: -c.y / c.h * 100 + '%',
+      });
     } else {
-      el.style.width = item.w ? item.w + 'px' : '';
       el.classList.toggle('fixed-w', !!item.w);
+      Object.assign(el.style, {
+        width: item.w ? item.w + 'px' : '',
+        fontSize: item.size + 'px',
+        fontWeight: item.bold ? '700' : '',
+        fontStyle: item.italic ? 'italic' : '',
+        fontFamily: FONTS[item.font] ?? '',
+        color: item.color ? readableInk(item.color, this.canvas) : '',
+      });
     }
   }
 
   _renderAll() {
+    this._cancelCrop();
     for (const layer of [this.svg, this.imgLayer, this.textLayer]) layer.replaceChildren();
     this.els.clear();
     for (const it of this.items) this._mount(it);
