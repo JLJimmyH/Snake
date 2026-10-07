@@ -1,6 +1,6 @@
 # 📒 筆記 MVP
 
-手寫無限畫布 ＋ 無限層頁面　👉 **[打開就用](https://jljimmyh.github.io/snake/)**
+手寫無限畫布 ＋ 無限層頁面　👉 **[打開就用](https://jljimmyh.github.io/Snake/)**
 
 <img src="docs/images/hero.png" width="640" alt="桌機與手機畫面">
 

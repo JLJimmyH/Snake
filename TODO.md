@@ -141,7 +141,7 @@ python tests/browser_smoke.py
 
 ## 隱私權政策頁面
 - [x] 新增 privacy.html，說明本機與 Drive 資料、授權用途、保留與刪除、第三方服務及聯絡管道；版本視窗加入連結。
-- Google 品牌設定政策網址：https://jljimmyh.github.io/snake/privacy.html
+- Google 品牌設定政策網址：https://jljimmyh.github.io/Snake/privacy.html
 - 發布後由使用者填入 Google Console；正式發布及 Google 驗證狀態以控制台為準。
 
 ## 🐛 已選取物件可拖曳移動（2026-10-06）
