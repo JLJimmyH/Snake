@@ -70,7 +70,7 @@ with sync_playwright() as pw:
     frame=page.evaluate("""() => {
       const c=document.querySelector('#minimap canvas'),d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
       let x0=1e9,y0=1e9,x1=-1,y1=-1;
-      for (let i=0;i<d.length;i+=4) if (d[i]>100&&d[i]<140&&d[i+1]<40&&d[i+2]>150) {
+      for (let i=0;i<d.length;i+=4) if (d[i]<40&&d[i+1]>100&&d[i+1]<140&&d[i+2]>190) { // 畫面框 #0078d4
         const p=i/4,x=p%c.width,y=Math.floor(p/c.width);
         x0=Math.min(x0,x);y0=Math.min(y0,y);x1=Math.max(x1,x);y1=Math.max(y1,y);
       }

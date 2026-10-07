@@ -1,4 +1,4 @@
-"""Verify the theme switch, canvas colors, readable ink on dark canvases and that settings persist."""
+"""Verify the theme switch, palettes, canvas colors, readable ink on dark canvases and that settings persist."""
 import os
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8050')
@@ -10,6 +10,7 @@ def state(page):
       const path=[...document.querySelectorAll('svg.ink path:not(.lasso)')].at(-1); // 剛畫的那條
       return {
         theme:root.dataset.theme,
+        palette:root.dataset.palette,
         board:root.style.getPropertyValue('--board'),
         bg:getComputedStyle(vp).backgroundColor,
         ink:getComputedStyle(vp).color,
@@ -33,9 +34,9 @@ with sync_playwright() as pw:
     page.goto(BASE+'/')
     page.wait_for_selector('.row.active')
 
-    # 預設跟隨系統（淺色），畫布白色
+    # 預設跟隨系統（淺色、VS Code 主題），畫布白色
     s=state(page)
-    assert s['theme']=='light' and s['bg']=='rgb(255, 255, 255)' and not s['dark'],s
+    assert s['theme']=='light' and s['palette']=='vscode-light' and s['bg']=='rgb(255, 255, 255)' and not s['dark'],s
 
     # 畫一條黑色筆跡
     page.keyboard.press('p')
@@ -56,19 +57,40 @@ with sync_playwright() as pw:
     page.keyboard.press('Escape')
     expect(page.locator('#appearance-panel')).to_be_hidden()
 
-    # 深色模式：自動畫布變深，黑筆改用亮色顯示
+    # 深色模式：預設 ATOM 主題，自動畫布變深，黑筆改用亮色顯示
     pick(page,'[data-theme-option=dark]')
     s=state(page)
-    assert s['theme']=='dark' and s['bg']=='rgb(30, 30, 30)' and s['dark'],s
-    assert s['topbar']=='rgb(37, 37, 37)',s
+    assert s['theme']=='dark' and s['palette']=='atom' and s['bg']=='rgb(40, 44, 52)' and s['dark'],s
+    assert s['topbar']=='rgb(44, 49, 60)',s
     assert s['stroke']!='#1f2937' and int(s['stroke'][1:3],16)>0xc0,s
+    expect(page.locator('.theme-card[data-palette=atom]')).to_have_attribute('aria-pressed','true')
+    expect(page.locator('meta[name=theme-color]')).to_have_attribute('content','#2c313c')
     if SHOTS: page.screenshot(path=os.path.join(SHOTS,'appearance-dark.png'))
+
+    # 換成 VS Code 深色主題，自動畫布跟著換
+    pick(page,'.theme-card[data-palette=vscode-dark]')
+    s=state(page)
+    assert s['theme']=='dark' and s['palette']=='vscode-dark' and s['bg']=='rgb(31, 31, 31)' and s['topbar']=='rgb(31, 31, 31)',s
+    expect(page.locator('.theme-card[data-palette=vscode-dark]')).to_have_attribute('aria-pressed','true')
+    expect(page.locator('.theme-card[data-palette=atom]')).to_have_attribute('aria-pressed','false')
+    expect(page.locator('meta[name=theme-color]')).to_have_attribute('content','#1f1f1f')
+
+    # 深色模式下選淺色主題：直接切到淺色
+    pick(page,'.theme-card[data-palette=one-light]')
+    s=state(page)
+    assert s['theme']=='light' and s['palette']=='one-light' and s['bg']=='rgb(250, 250, 250)',s
+    expect(page.locator('[data-theme-option=light]')).to_have_attribute('aria-pressed','true')
+    if SHOTS: page.screenshot(path=os.path.join(SHOTS,'appearance-one-light.png'))
+
+    # 切回深色，記得剛才選的深色主題
+    pick(page,'[data-theme-option=dark]')
+    assert state(page)['palette']=='vscode-dark',state(page)
 
     # 深色介面配白紙：筆跡回原色，畫布文字用深色
     pick(page,'[data-canvas="#ffffff"]')
     s=state(page)
     assert s['theme']=='dark' and s['bg']=='rgb(255, 255, 255)' and not s['dark'],s
-    assert s['stroke']=='#1f2937' and s['ink']=='rgb(55, 53, 47)',s
+    assert s['stroke']=='#1f2937' and s['ink']=='rgb(59, 59, 59)',s
     if SHOTS: page.screenshot(path=os.path.join(SHOTS,'appearance-dark-ui-white-canvas.png'))
 
     # 淺色介面配黑板綠
@@ -76,7 +98,7 @@ with sync_playwright() as pw:
     pick(page,'[data-canvas="#23302a"]')
     s=state(page)
     assert s['theme']=='light' and s['bg']=='rgb(35, 48, 42)' and s['dark'],s
-    assert s['ink']=='rgb(230, 228, 223)' and s['stroke']!='#1f2937',s
+    assert s['palette']=='one-light' and s['ink']=='rgb(220, 223, 228)' and s['stroke']!='#1f2937',s
     if SHOTS: page.screenshot(path=os.path.join(SHOTS,'appearance-light-ui-board.png'))
 
     # 自訂顏色
@@ -94,7 +116,7 @@ with sync_playwright() as pw:
     page.reload()
     page.wait_for_selector('.row.active')
     s=state(page)
-    assert s['theme']=='light' and s['bg']=='rgb(255, 238, 204)' and s['stroke']=='#1f2937',s
+    assert s['theme']=='light' and s['palette']=='one-light' and s['bg']=='rgb(255, 238, 204)' and s['stroke']=='#1f2937',s
 
     # 跟隨系統：系統切到深色就跟著變
     pick(page,'[data-theme-option=system]')
@@ -102,7 +124,7 @@ with sync_playwright() as pw:
     page.emulate_media(color_scheme='dark')
     expect(page.locator('html')).to_have_attribute('data-theme','dark')
     s=state(page)
-    assert s['bg']=='rgb(30, 30, 30)' and s['dark'],s
+    assert s['palette']=='vscode-dark' and s['bg']=='rgb(31, 31, 31)' and s['dark'],s
     page.emulate_media(color_scheme='light')
     expect(page.locator('html')).to_have_attribute('data-theme','light')
 

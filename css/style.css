@@ -1,39 +1,87 @@
+/* 主題：<html data-theme> 是淺色／深色，data-palette 是該模式下選的主題，由 js/appearance.js 設定。
+   淺色預設 VS Code，深色預設 ATOM；新增主題＝加一段覆寫，再到 index.html 的外觀面板加一張卡片 */
 :root {
-  --accent: #7719aa;
-  --accent-soft: #f3e8fb;
-  --sb-bg: #f7f7f5;
-  --hover: #ebebea;
-  --border: #e6e6e3;
-  --text: #37352f;
-  --muted: #8a8780;
-  --board: #ffffff;   /* 畫布底色、畫布上的文字與格點，由 js/appearance.js 依畫布顏色設定 */
-  --ink: #37352f;
-  --dot: rgba(0, 0, 0, .16);
-  --surface: #ffffff;
-  --chip: #f1f1ef;
-  --icon: #444;
-  --press: rgba(0, 0, 0, .08);
+  /* VS Code Light Modern */
+  --accent: #005fb8;       /* 文字、圖示 */
+  --accent-fill: #005fb8;  /* 按鈕底色，配 --on-accent */
+  --accent-soft: #dcebf9;  /* 目前工具的底色 */
   --on-accent: #fff;
+  --sb-bg: #f8f8f8;
+  --surface: #ffffff;
+  --canvas-auto: #ffffff;  /* 畫布選「自動」時的顏色 */
+  --hover: #ececec;
+  --selected: #e4e6f1;     /* 側欄目前的頁面 */
+  --border: #e5e5e5;
+  --text: #3b3b3b;
+  --muted: #6e6e6e;
+  --chip: #f0f0f0;
+  --icon: #424242;
+  --press: rgba(0, 0, 0, .08);
+  --danger: #c72e2e;
+  --shadow: rgba(0, 0, 0, .14);
+  --board: #ffffff;   /* 畫布底色、畫布上的文字與格點，由 js/appearance.js 依畫布顏色設定 */
+  --ink: #3b3b3b;
+  --dot: rgba(0, 0, 0, .16);
   --sb-w: 260px;
 }
 
+/* Atom One Light */
+:root[data-theme=light][data-palette=one-light] {
+  --accent: #2c5fd6;
+  --accent-fill: #2c5fd6;
+  --accent-soft: #dde6fb;
+  --sb-bg: #eaeaeb;
+  --surface: #fafafa;
+  --canvas-auto: #fafafa;
+  --hover: #dfdfe1;
+  --selected: #d5d9e3;
+  --border: #d8d8da;
+  --text: #383a42;
+  --muted: #696c77;
+  --chip: #e8e8ea;
+  --icon: #4f525d;
+  --danger: #ca1243;
+}
+
+/* ATOM（UARTPro 的配色，主色換成 One Dark 的藍） */
 :root[data-theme=dark] {
   color-scheme: dark;
-  --accent: #b47ae0;
-  --accent-soft: #3a2a47;
-  --sb-bg: #202020;
-  --hover: #2f2f2f;
-  --border: #353535;
-  --text: #e6e4df;
-  --muted: #9b9993;
-  --board: #1e1e1e;
-  --ink: #e6e4df;
-  --dot: rgba(255, 255, 255, .16);
-  --surface: #252525;
-  --chip: #333;
-  --icon: #cfcfcf;
+  --accent: #61afef;
+  --accent-fill: #4d78cc;
+  --accent-soft: #34465e;
+  --on-accent: #fff;
+  --sb-bg: #21252b;
+  --surface: #2c313c;
+  --canvas-auto: #282c34;
+  --hover: rgba(255, 255, 255, .07);
+  --selected: #3a404c;
+  --border: #3a404c;
+  --text: #dcdfe4;
+  --muted: #9aa2b3;
+  --chip: #363c48;
+  --icon: #c8ccd4;
   --press: rgba(255, 255, 255, .1);
-  --on-accent: #1c1222;
+  --danger: #ff7b86;
+  --shadow: rgba(0, 0, 0, .4);
+}
+
+/* VS Code Dark Modern */
+:root[data-theme=dark][data-palette=vscode-dark] {
+  --accent: #4daafc;
+  --accent-fill: #0078d4;
+  --accent-soft: #04395e;
+  --sb-bg: #181818;
+  --surface: #1f1f1f;
+  --canvas-auto: #1f1f1f;
+  --hover: rgba(255, 255, 255, .06);
+  --selected: #37373d;
+  --border: #2b2b2b;
+  --text: #cccccc;
+  --muted: #9d9d9d;
+  --chip: #313131;
+  --icon: #c5c5c5;
+  --danger: #f48771;
+  --shadow: rgba(0, 0, 0, .36);
 }
 
 * { box-sizing: border-box; }
@@ -57,6 +105,12 @@ button {
   border: 0;
   padding: 0;
   cursor: pointer;
+}
+
+/* 鍵盤操作時看得到焦點在哪（VS Code 的 focusBorder） */
+button:focus-visible, a:focus-visible, select:focus-visible, input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 svg.i {
@@ -113,6 +167,7 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
 }
 
 .row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -124,7 +179,18 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
   -webkit-user-select: none;
 }
 .row:hover { background: var(--hover); }
-.row.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+/* 目前的頁面：中性底色＋左側主色細線 */
+.row.active { background: var(--selected); }
+.row.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 7px;
+  bottom: 7px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--accent);
+}
 
 .caret {
   flex: none;
@@ -306,9 +372,9 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
   color: var(--ink);
   cursor: crosshair;
   /* 畫布上的選取框、把手跟著畫布深淺，不跟著主題 */
-  --accent: #7719aa;
+  --accent: #0078d4;
 }
-#viewport.dark-canvas { --accent: #c08ae8; }
+#viewport.dark-canvas { --accent: #4daafc; }
 #viewport.no-grid { background-image: none; }
 #viewport[data-tool="select"] { cursor: grab; }
 #viewport[data-tool="text"] { cursor: text; }
@@ -328,7 +394,7 @@ svg.ink {
 svg.ink path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 svg.ink path.hl { opacity: .5; mix-blend-mode: multiply; }
 .dark-canvas svg.ink path.hl { mix-blend-mode: screen; }
-svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
+svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); stroke: var(--accent); }
 
 .item { position: absolute; }
 
@@ -397,7 +463,7 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
   position: absolute;
   border: calc(1.5px * var(--inv, 1)) dashed var(--accent);
   border-radius: calc(4px * var(--inv, 1));
-  background: rgba(119, 25, 170, .04);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
   pointer-events: none;
 }
 
@@ -459,7 +525,7 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--surface);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, .08);
+  box-shadow: 0 2px 10px var(--shadow);
 }
 .nav-btn {
   width: 34px;
@@ -487,7 +553,7 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--board);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, .12);
+  box-shadow: 0 4px 16px var(--shadow);
 }
 #minimap canvas { display: block; width: 100%; height: 100%; cursor: pointer; touch-action: none; }
 #minimap canvas.dragging { cursor: grabbing; }
@@ -506,7 +572,7 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
   border-radius: 18px;
   background: var(--surface);
   color: var(--accent);
-  box-shadow: 0 2px 10px rgba(0, 0, 0, .1);
+  box-shadow: 0 2px 10px var(--shadow);
   transform: translateX(-50%);
 }
 #back-to-content svg.i { width: 16px; height: 16px; }
@@ -529,7 +595,7 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface);
-  box-shadow: 0 8px 24px rgba(0, 0, 0, .15);
+  box-shadow: 0 8px 24px var(--shadow);
 }
 #menu[hidden] { display: none; }
 #menu button {
@@ -545,7 +611,7 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
 }
 #menu button:hover { background: var(--hover); }
 #menu button:disabled { opacity: .35; background: none; cursor: default; }
-#menu .danger { color: #dc2626; }
+#menu .danger { color: var(--danger); }
 #menu .menu-head { padding: 6px 12px; font-size: 12px; color: var(--muted); }
 
 #toast {
@@ -555,9 +621,11 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
   bottom: 24px;
   max-width: calc(100vw - 32px);
   padding: 10px 16px;
+  border: 1px solid var(--border);
   border-radius: 8px;
-  background: rgba(30, 30, 30, .9);
-  color: #fff;
+  background: var(--surface);
+  color: var(--text);
+  box-shadow: 0 6px 20px var(--shadow);
   font-size: 14px;
   transform: translate(-50%, 20px);
   opacity: 0;
@@ -588,7 +656,7 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
     width: min(82vw, 300px);
     transform: translateX(-100%);
   }
-  body.sb-open #sidebar { transform: none; box-shadow: 4px 0 24px rgba(0, 0, 0, .12); }
+  body.sb-open #sidebar { transform: none; box-shadow: 4px 0 24px var(--shadow); }
   body.sb-open #scrim {
     display: block;
     position: fixed;
@@ -606,7 +674,7 @@ svg.ink path.lasso { fill: rgba(119, 25, 170, .06); stroke: var(--accent); }
 #collab-dialog::backdrop { background: rgba(0,0,0,.35); }
 .collab-heading { display: flex; align-items: center; justify-content: space-between; }
 .collab-heading h2 { margin: 0; font-size: 20px; }
-.collab-primary { background: var(--accent); color: var(--on-accent); border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
+.collab-primary { background: var(--accent-fill); color: var(--on-accent); border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
 .collab-primary:disabled { opacity: .4; cursor: default; }
 .collab-help { font-size: 13px; color: var(--muted); line-height: 1.6; }
 .collab-page { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
@@ -629,7 +697,7 @@ svg.ink path.remote-preview { opacity: .55; }
 .palette-toggle:hover, .palette-toggle[aria-expanded=true] { background: var(--accent-soft); }
 .current-color { width: 23px; height: 23px; border-radius: 50%; background: var(--brush-color); box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .35); }
 .palette-arrow { font-size: 11px; color: var(--muted); }
-.brush-palette, .popover { position: fixed; z-index: 65; width: 240px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 6px 24px #0002; }
+.brush-palette, .popover { position: fixed; z-index: 65; width: 240px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); box-shadow: 0 6px 24px var(--shadow); }
 .palette-heading { display: block; margin-bottom: 8px; font-size: 12px; color: var(--muted); }
 .palette-swatches { display: flex; gap: 6px; margin-bottom: 12px; }
 .brush-color { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 10px; font-size: 13px; }
@@ -637,7 +705,7 @@ svg.ink path.remote-preview { opacity: .55; }
 .brush-size { display: flex; align-items: center; gap: 6px; font-size: 12px; }
 .brush-size input { width: 110px; accent-color: var(--accent); }
 .brush-size output { min-width: 44px; font-variant-numeric: tabular-nums; }
-#brush-preview { position: fixed; z-index: 70; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 132px; height: 140px; border: 1px solid var(--border); border-radius: 12px; background: var(--board); box-shadow: 0 4px 16px #0002; pointer-events: none; }
+#brush-preview { position: fixed; z-index: 70; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 132px; height: 140px; border: 1px solid var(--border); border-radius: 12px; background: var(--board); box-shadow: 0 4px 16px var(--shadow); pointer-events: none; }
 .brush-dot { display: block; border-radius: 50%; flex: none; }
 .brush-caption { font-size: 12px; color: var(--muted); }
 .stroke-handle { position: absolute; width: calc(14px * var(--inv, 1)); height: calc(14px * var(--inv, 1)); background: white; border: calc(2px * var(--inv, 1)) solid var(--accent); border-radius: calc(3px * var(--inv, 1)); pointer-events: auto; transform: translate(-50%, -50%); touch-action: none; }
@@ -661,8 +729,22 @@ svg.ink path.remote-preview { opacity: .55; }
 .drive-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
 #drive-save:disabled, #drive-sync:disabled { opacity: .5; cursor: default; }
 
-/* 外觀面板：主題、畫布顏色 */
+/* 外觀面板：模式、主題、畫布顏色 */
 .segmented { display: flex; gap: 2px; padding: 2px; margin-bottom: 12px; border-radius: 8px; background: var(--chip); }
 .segmented button { flex: 1; height: 30px; border-radius: 6px; font-size: 13px; }
 .segmented button[aria-pressed=true] { background: var(--surface); color: var(--accent); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
 .popover-note { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.theme-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
+.theme-card { display: flex; flex-direction: column; gap: 5px; padding: 5px 5px 6px; border-radius: 8px; font-size: 12px; text-align: left; }
+.theme-card:hover { background: var(--hover); }
+.theme-card[aria-pressed=true] { box-shadow: inset 0 0 0 2px var(--accent); }
+/* 縮圖：左邊側欄、右邊內容、底下一條主色 */
+.theme-card i {
+  display: block;
+  height: 34px;
+  border-radius: 5px;
+  background:
+    linear-gradient(var(--p-ac), var(--p-ac)) 40% 70% / 40% 4px no-repeat,
+    linear-gradient(90deg, var(--p-sb) 28%, var(--p-bg) 28%);
+  box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .35);
+}

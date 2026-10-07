@@ -1,6 +1,10 @@
 // 小地圖：縮圖顯示整頁內容與目前畫面的位置，點一下或拖曳就能移動畫布
 // 地圖範圍＝全部內容＋目前畫面，所以就算畫面移到很遠的空白處，也看得到「我在這、內容在那」
 
+// 跟 css/style.css 裡 #viewport 的 --accent 一致：跟著畫布深淺，不跟著主題
+const FRAME = { light: '#0078d4', dark: '#4daafc' };
+const GRAY = '#8b8f97';
+
 export class Minimap {
   constructor(board, canvas) {
     this.board = board;
@@ -33,9 +37,9 @@ export class Minimap {
     if (c && Math.max(c.x1 - c.x0, c.y1 - c.y0) * m.k < 12) {
       ctx.beginPath();
       ctx.arc((c.x0 + c.x1) / 2 * m.k + m.ox, (c.y0 + c.y1) / 2 * m.k + m.oy, 8, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(55, 53, 47, .12)';
+      ctx.fillStyle = 'rgba(128, 128, 128, .2)';
       ctx.fill();
-      ctx.strokeStyle = '#8a8780';
+      ctx.strokeStyle = GRAY;
       ctx.lineWidth = 1;
       ctx.stroke();
     }
@@ -47,7 +51,7 @@ export class Minimap {
     ctx.restore();
 
     if (!board.items.length) {
-      ctx.fillStyle = '#8a8780';
+      ctx.fillStyle = GRAY;
       ctx.font = '12px sans-serif';
       ctx.textAlign = 'center';
       ctx.fillText('這頁還沒有內容', w / 2, h / 2 + 4);
@@ -55,9 +59,10 @@ export class Minimap {
     // 目前畫面的框，放很大時也至少 6px 才點得到
     const rw = Math.max(6, (v.x1 - v.x0) * m.k), rh = Math.max(6, (v.y1 - v.y0) * m.k);
     const rx = (v.x0 + v.x1) / 2 * m.k + m.ox - rw / 2, ry = (v.y0 + v.y1) / 2 * m.k + m.oy - rh / 2;
-    ctx.fillStyle = 'rgba(119, 25, 170, .08)';
+    const frame = FRAME[board.darkCanvas ? 'dark' : 'light'];
+    ctx.fillStyle = frame + '14'; // 8% 不透明
     ctx.fillRect(rx, ry, rw, rh);
-    ctx.strokeStyle = board.darkCanvas ? '#c08ae8' : '#7719aa';
+    ctx.strokeStyle = frame;
     ctx.lineWidth = 1.5;
     ctx.strokeRect(rx, ry, rw, rh);
   }
@@ -91,7 +96,7 @@ export class Minimap {
       ctx.globalAlpha = 1;
       if (img?.complete && img.naturalWidth) ctx.drawImage(img, it.x, it.y, it.w, it.h);
       else {
-        ctx.fillStyle = '#e6e6e3';
+        ctx.fillStyle = '#e5e5e5';
         ctx.fillRect(it.x, it.y, it.w, it.h);
       }
     } else if (it.type === 'text') {
@@ -100,7 +105,7 @@ export class Minimap {
       const lh = it.size * 1.45, tw = el?.offsetWidth ?? 0;
       const rows = Math.max(1, Math.round((el?.offsetHeight ?? lh) / lh));
       ctx.globalAlpha = 1;
-      ctx.fillStyle = '#b4b2ac';
+      ctx.fillStyle = '#a9adb4';
       for (let i = 0; i < rows; i++) {
         const last = rows > 1 && i === rows - 1;
         ctx.fillRect(it.x, it.y + i * lh + lh * .25, last ? tw * .6 : tw, Math.max(lh * .5, 1 / k));

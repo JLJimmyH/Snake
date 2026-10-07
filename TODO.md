@@ -163,7 +163,7 @@ python tests/browser_smoke.py
 ## ✨ 縮放手感與畫面導覽（2026-10-06）
 - [x] Ctrl+滾輪：滑鼠一格（deltaY≈100）原本一次跳到 272%／37%，改成每次事件最多約 10%；觸控板捏合的小 delta 仍照原比例跟手。
 - [x] 縮放控制從工具列移到畫布右下角浮動導覽列：－／百分比（回到 100%）／＋（整數比例）、顯示全部內容、小地圖開關。工具列因此短一點。
-- [x] 小地圖（js/minimap.js）：範圍＝內容＋目前畫面；筆跡、圖片縮圖、文字灰條；內容太小時畫圓點標記；點一下跳過去、拖紫框平移（拖曳中比例尺固定）。桌機預設開、手機預設收，記在 localStorage。
+- [x] 小地圖（js/minimap.js）：範圍＝內容＋目前畫面；筆跡、圖片縮圖、文字灰條；內容太小時畫圓點標記；點一下跳過去、拖畫面框平移（拖曳中比例尺固定）。桌機預設開、手機預設收，記在 localStorage。
 - [x] 畫面裡看不到任何物件時顯示「回到內容」，點擊或 Shift+1 以 300ms 動畫縮放到全部內容（最多 100%，尊重 prefers-reduced-motion）；Shift+0 回到 100%、M 開關小地圖。
 - [x] tests/navigation_smoke.py：滾輪縮放幅度、按鈕比例、小地圖點擊／拖曳、顯示全部、提示出現與消失、開關記憶。
 - [x] 本機 Chrome headless 以 CDP 在 1280×900 與 390×844 驗證同樣情境通過；本機沒有 Python Playwright，navigation_smoke.py 尚未實際執行。
@@ -189,3 +189,10 @@ python tests/browser_smoke.py
 - [x] js/color.js：深色畫布上對比不到 3 的筆跡（黑筆、深紫等）以反轉 HSL 明度顯示，淺色畫布上幾乎看不到的（白筆）也反轉；只改顯示，資料不變。螢光筆保持原色，深色畫布改用 screen 混色。小地圖、筆刷大小預覽同步。
 - [x] tests/appearance_smoke.py：主題切換、畫布顏色、筆跡顯示色、自訂色、重新整理保留、跟隨系統。navigation／pan_selection／notebook smoke 與 notebook-core 8 個 Node tests 回歸通過。
 - [x] 文字框 Markdown 的 `.md-code` 背景在深色畫布改用淺色半透明。
+
+## 🎨 配色改成 VS Code／ATOM 風格（2026-10-07）
+- [x] 拿掉 OneNote 紫：淺色預設 VS Code Light Modern，深色預設 ATOM（UARTPro 的配色，主色用 One Dark 藍），另有 One Light、VS Code Dark Modern 可選。
+- [x] 外觀面板：模式（跟隨系統／淺色／深色）＋淺色主題、深色主題各選一個，存在 localStorage（lightPalette、darkPalette）；在深色模式點淺色主題會直接切到淺色。畫布「自動」用主題的 --canvas-auto。
+- [x] 新 token：--accent-fill（按鈕底色）、--selected（側欄目前頁面）、--danger、--shadow、--canvas-auto；套索／選取框底色改用 color-mix，不再寫死紫色 rgba。
+- [x] 側欄目前頁面改成中性底色＋左側主色細線；補上 :focus-visible 外框；Toast 改成跟主題的浮層樣式；theme-color meta 跟著主題的 --surface。
+- [x] 畫布上的選取色固定藍（淺色畫布 #0078d4、深色畫布 #4daafc），小地圖畫面框同色；筆的紫色色票改 #9333ea。

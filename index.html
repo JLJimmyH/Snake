@@ -3,17 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<meta name="theme-color" content="#7719aa">
+<meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>筆記 MVP</title>
 <link rel="stylesheet" href="css/style.css">
 <script>
-  // 在畫面出來前套用深色模式，避免先閃一下白色；之後由 js/appearance.js 接手
+  // 在畫面出來前套用深色模式與主題，避免先閃一下別的顏色；之後由 js/appearance.js 接手
+  // 不認得的主題名稱 CSS 對不到，自然會用該模式的預設主題
   (function () {
-    var t = null;
-    try { t = localStorage.getItem('theme'); } catch (e) { /* ignore */ }
-    var dark = t === 'dark' || (t !== 'light' && matchMedia('(prefers-color-scheme: dark)').matches);
+    var t = null, p = null;
+    var dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    try {
+      t = localStorage.getItem('theme');
+      dark = t === 'dark' || (t !== 'light' && dark);
+      p = localStorage.getItem(dark ? 'darkPalette' : 'lightPalette');
+    } catch (e) { /* ignore */ }
     document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+    document.documentElement.dataset.palette = p || (dark ? 'atom' : 'vscode-light');
   })();
 </script>
 </head>
@@ -45,7 +51,7 @@
       <button id="drive-sync" class="chip" title="從 Google Drive 載入其他裝置存的最新內容" hidden>⟳ 同步</button>
       <button id="drive-save" class="chip" title="把目前的筆記本存到 Google Drive (Ctrl+S)">☁ 存到 Drive</button>
       <button id="collab-button" class="chip" hidden>協作</button>
-      <button id="btn-appearance" class="icon-btn" title="外觀：深色模式、畫布顏色" aria-label="外觀" aria-expanded="false" aria-controls="appearance-panel">
+      <button id="btn-appearance" class="icon-btn" title="外觀：主題、畫布顏色" aria-label="外觀" aria-expanded="false" aria-controls="appearance-panel">
         <svg class="i" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z"/></svg>
       </button>
     </header>
@@ -85,7 +91,7 @@
             <button class="swatch" data-color="#2563eb" style="--c:#2563eb" aria-label="藍色" aria-pressed="false"></button>
             <button class="swatch" data-color="#dc2626" style="--c:#dc2626" aria-label="紅色" aria-pressed="false"></button>
             <button class="swatch" data-color="#16a34a" style="--c:#16a34a" aria-label="綠色" aria-pressed="false"></button>
-            <button class="swatch" data-color="#7719aa" style="--c:#7719aa" aria-label="紫色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#9333ea" style="--c:#9333ea" aria-label="紫色" aria-pressed="false"></button>
           </div>
           <label class="brush-color">自訂顏色<input type="color" value="#1f2937" aria-label="筆自訂顏色"></label>
         </div>
@@ -165,15 +171,25 @@
 <div id="toast"></div>
 <div id="brush-preview" hidden role="status"><span class="brush-dot"></span><span class="brush-caption"></span></div>
 <div id="appearance-panel" class="popover" hidden role="group" aria-label="外觀">
-  <span class="palette-heading">主題</span>
+  <span class="palette-heading">模式</span>
   <div class="segmented">
     <button data-theme-option="system" aria-pressed="false">跟隨系統</button>
     <button data-theme-option="light" aria-pressed="false">淺色</button>
     <button data-theme-option="dark" aria-pressed="false">深色</button>
   </div>
+  <span class="palette-heading">淺色主題</span>
+  <div class="theme-cards">
+    <button class="theme-card" data-palette="vscode-light" data-mode="light" style="--p-sb:#f8f8f8;--p-bg:#ffffff;--p-ac:#005fb8" aria-pressed="false"><i></i>VS Code</button>
+    <button class="theme-card" data-palette="one-light" data-mode="light" style="--p-sb:#eaeaeb;--p-bg:#fafafa;--p-ac:#2c5fd6" aria-pressed="false"><i></i>One Light</button>
+  </div>
+  <span class="palette-heading">深色主題</span>
+  <div class="theme-cards">
+    <button class="theme-card" data-palette="atom" data-mode="dark" style="--p-sb:#21252b;--p-bg:#2c313c;--p-ac:#61afef" aria-pressed="false"><i></i>ATOM</button>
+    <button class="theme-card" data-palette="vscode-dark" data-mode="dark" style="--p-sb:#181818;--p-bg:#1f1f1f;--p-ac:#4daafc" aria-pressed="false"><i></i>VS Code</button>
+  </div>
   <span class="palette-heading">畫布顏色</span>
   <div class="palette-swatches">
-    <button class="swatch" data-canvas="auto" style="--c:linear-gradient(135deg, #fff 50%, #1e1e1e 50%)" title="自動（跟著主題）" aria-label="自動（跟著主題）" aria-pressed="false"></button>
+    <button class="swatch" data-canvas="auto" style="--c:linear-gradient(135deg, #fff 50%, #282c34 50%)" title="自動（跟著主題）" aria-label="自動（跟著主題）" aria-pressed="false"></button>
     <button class="swatch" data-canvas="#ffffff" style="--c:#ffffff" title="白色" aria-label="白色" aria-pressed="false"></button>
     <button class="swatch" data-canvas="#f8f3e6" style="--c:#f8f3e6" title="米黃" aria-label="米黃" aria-pressed="false"></button>
     <button class="swatch" data-canvas="#eef1f4" style="--c:#eef1f4" title="淺灰藍" aria-label="淺灰藍" aria-pressed="false"></button>
