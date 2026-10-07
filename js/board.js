@@ -11,8 +11,9 @@ const WHEEL_ZOOM_MAX = 10;
 // 一次至少 WHEEL_NOTCH px 的滾動視為「一格一格」的滾輪，用時間常數 WHEEL_GLIDE 毫秒的動畫滑過去；
 // 拇指滾輪 WHEEL_BOTH 毫秒內也在滾（兩個滾輪一起用）時改用 WHEEL_GLIDE_BOTH，讓相鄰兩格接得起來
 const WHEEL_NOTCH = 50, WHEEL_GLIDE = 40, WHEEL_GLIDE_BOTH = 100, WHEEL_BOTH = 200;
-// Chrome 改判的那一格，會在拇指滾輪事件之後 WHEEL_SWAPPED 毫秒內出現
+// Chrome 改判的那一格，會在拇指滾輪事件之後 WHEEL_SWAPPED 毫秒內出現。這個改判只有 Windows 版 Chromium 有
 const WHEEL_SWAPPED = 32;
+const WIN_CHROMIUM = /Windows/.test(navigator.userAgent) && /Chrome\//.test(navigator.userAgent);
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
 
 const r1 = n => Math.round(n * 10) / 10;
@@ -197,6 +198,7 @@ export class Board {
     this.spacePan = false;    // 按住空白鍵：左鍵拖曳＝移動畫布
     this.glide = { x: 0, y: 0, frame: 0, tau: WHEEL_GLIDE }; // 滾輪還沒滑完的距離，見 _glide
     this.thumbAt = -Infinity; // 最近一次高解析度橫向滾動（拇指滾輪）的時間
+    this.thumbTicks = 0;      // 那一次滾了幾格（拇指滾輪只有零點幾格）
     this.lineY = 0;           // 直向滾輪一格幾 px，從真正的直向格學來
     this.pointers = new Map();
     this.action = null;
@@ -884,7 +886,7 @@ export class Board {
       return;
     }
     let dx = e.deltaX * k, dy = e.deltaY * k;
-    if (e.deltaMode === 0 && !e.shiftKey) [dx, dy] = this._unswap(e, dx, dy);
+    if (WIN_CHROMIUM && e.deltaMode === 0 && !e.shiftKey) [dx, dy] = this._unswap(e, dx, dy);
     // 只有直向滾輪的滑鼠：Shift+滾輪＝橫向（有些瀏覽器已經自己轉好）
     if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
     // 一格一格的滾輪每格跳約 100px，補成短動畫，跟瀏覽器原生捲動一樣順；
@@ -899,20 +901,25 @@ export class Board {
   // 當成橫向（ui/views/win/hwnd_message_handler.cc）。拇指滾輪和直向滾輪一起滾時，
   // 往下那一格就會變成往左一格（deltaX -100），畫面往反方向跳。認出這種整格的橫向事件，還原成直向。
   // wheelDelta 是「格數 × 120 ÷ devicePixelRatio」：整數格＝滾輪的一格，拇指滾輪只有零點幾格。
+  // 觸控板（精確式觸控板、Mac）的 wheelDelta 跟 delta 一比一（取整數），不是滾輪，整段都不處理。
   _unswap(e, dx, dy) {
+    const wx = e.wheelDeltaX ?? 0, wy = e.wheelDeltaY ?? 0;
+    if ((dx && Math.abs(wx) === Math.trunc(Math.abs(e.deltaX))) || (dy && Math.abs(wy) === Math.trunc(Math.abs(e.deltaY)))) return [dx, dy];
     const dpr = devicePixelRatio || 1;
-    const ticksX = (e.wheelDeltaX ?? 0) * dpr / 120, ticksY = (e.wheelDeltaY ?? 0) * dpr / 120;
+    const ticksX = wx * dpr / 120, ticksY = wy * dpr / 120;
     const whole = t => Math.abs(t) >= .95 && Math.abs(t - Math.round(t)) < .05;
-    if (!dx && dy && whole(ticksY)) this.lineY = Math.abs(dy / ticksY);
+    if (!dx && dy && whole(ticksY)) this.lineY = Math.abs(dy / Math.round(ticksY));
     if (dy || !dx) return [dx, dy];
     if (!whole(ticksX)) {
       this.thumbAt = e.timeStamp;
+      this.thumbTicks = Math.abs(ticksX);
       return [dx, dy];
     }
-    if (e.timeStamp - this.thumbAt > WHEEL_SWAPPED) return [dx, dy];
+    // 被改判的那一格前面是很小的拇指滾輪事件；拇指滾輪本身用力撥到接近一格時不算
+    if (e.timeStamp - this.thumbAt > WHEEL_SWAPPED || this.thumbTicks >= .5) return [dx, dy];
     // 往下一格：wheelDeltaY -120 → 改判後 wheelDeltaX +120、deltaX -100；還原成 deltaY +100
     const ticks = Math.round(ticksX);
-    return [0, ticks * (this.lineY || Math.abs(dx / ticksX))];
+    return [0, ticks * (this.lineY || Math.abs(dx / ticks))];
   }
 
   // 把滾動距離累加起來，每個畫格走剩下距離的一部分（指數減速），連續滾動時會一直接續

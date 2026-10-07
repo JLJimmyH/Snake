@@ -132,11 +132,13 @@ with sync_playwright() as pw:
       (1947,19.17,0),(1994,23.33,0),(2028,20,0),(2058,21.67,0),(2094,21.67,0),(2135,23.33,0),(2167,19.17,0),(2200,17.5,0),
       (2237,17.5,0),(2280,16.67,0),(2314,15.83,0),(2345,13.33,0),(2355,-100,0),(2386,12.5,0),(2394,0,100),(2419,12.5,0),
       (2426,0,100),(2458,12.5,0),(2496,13.33,0),(2533,12.5,0)]
-    def wheel_init(dx,dy):
-        # wheelDelta = ticks * 120: a notch is 120, the thumb wheel sends 1/120-tick units (deltaX 0.8333 each)
-        if dy: return {'deltaX':0,'deltaY':dy,'wheelDeltaX':0,'wheelDeltaY':-round(dy*1.2)}
-        return {'deltaX':dx,'deltaY':0,'wheelDeltaX':-round(dx*1.2),'wheelDeltaY':0}
-    def replay(events,settle=500):
+    def wheel_init(dx,dy,pad=False):
+        # Mouse: wheelDelta = ticks * 120, a notch is 120 and the thumb wheel sends 1/120-tick units (deltaX 0.8333).
+        # Touchpad: Chrome sets ticks = delta / 120, so wheelDelta equals the truncated delta.
+        k=1 if pad else 1.2
+        if dy: return {'deltaX':0,'deltaY':dy,'wheelDeltaX':0,'wheelDeltaY':-int(dy*k)}
+        return {'deltaX':dx,'deltaY':0,'wheelDeltaX':-int(dx*k),'wheelDeltaY':0}
+    def replay(events,settle=500,pad=False):
         return page.evaluate('''async ([events,settle]) => {
           const vp=document.querySelector('#viewport'),r=vp.getBoundingClientRect(),t0=performance.now();
           const at=()=>document.querySelector('.world').style.transform.match(/translate\((.+?)px, (.+?)px/).slice(1).map(Number);
@@ -149,7 +151,7 @@ with sync_playwright() as pw:
           await new Promise(res=>setTimeout(res,settle));
           const [x,y]=at();track.push([x0-x,y0-y]);
           return track;
-        }''',[[[ms,wheel_init(dx,dy)] for ms,dx,dy in events],settle])
+        }''',[[[ms,wheel_init(dx,dy,pad)] for ms,dx,dy in events],settle])
     page.wait_for_timeout(300)
     track=replay(BOTH)
     thumb=sum(dx for _,dx,dy in BOTH if abs(dx)<50 and not dy)
@@ -162,14 +164,22 @@ with sync_playwright() as pw:
     end=replay([(0,-100,0)],900)[-1];assert (round(end[0],2),round(end[1],2))==(-100,0),end
     # Scrolling up while the thumb wheel moves comes back as deltaX +100; it is restored to a notch up.
     end=replay([(0,5,0),(8,100,0)],900)[-1];assert (round(end[0],2),round(end[1],2))==(5,-100),end
+    # A thumb wheel flicked hard enough to send a whole tick right after a big step stays horizontal.
+    end=replay([(0,60,0),(10,100,0)],900)[-1];assert (round(end[0],2),round(end[1],2))==(160,0),end
+    # A fast touchpad swipe (pure horizontal, decaying, wheelDelta = delta) passes through whole-tick sizes
+    # but must never turn into a vertical step.
+    swipe=[];d=300.0
+    for i in range(40): swipe.append((i*8,round(d,2),0));d*=.93
+    end=replay(swipe,900,pad=True)[-1]
+    assert abs(end[1])<.01 and abs(end[0]-sum(dx for _,dx,_ in swipe))<1,end
     print('PASS: notches Chrome swaps to horizontal during two-wheel scrolling are restored')
     # With both wheels moving, a notch glides longer (tau 100 ms) so consecutive notches join up;
     # alone it keeps the short glide (tau 40 ms).
     def after(events,ms):
         return replay(events,settle=ms)[-1][1]
-    page.wait_for_timeout(300);alone=after([(0,0,100)],60)
-    page.wait_for_timeout(600);both=after([(0,5,0),(10,0,100)],60)
-    assert alone>70 and both<60,(alone,both)
+    page.wait_for_timeout(300);alone=after([(0,0,100)],100)
+    page.wait_for_timeout(600);both=after([(0,5,0),(10,0,100)],100)
+    assert alone>74 and both<70,(alone,both)
     page.wait_for_timeout(600)
     print('PASS: notches glide longer only while both wheels move')
     # Fit to content via Shift+1, the toolbar button and the lost hint.
