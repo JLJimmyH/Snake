@@ -5,6 +5,8 @@ const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/';
 const APP = 'snake-note-notebook-v1';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const FIELDS = 'id,name,modifiedTime,size,headRevisionId';
+const FOLDER = 'SnakeNote';
+const FOLDER_TYPE = 'application/vnd.google-apps.folder';
 let scriptPromise;
 export function loadGoogleIdentity() {
   if (globalThis.google?.accounts?.oauth2) return Promise.resolve();
@@ -19,7 +21,7 @@ export function loadGoogleIdentity() {
   return scriptPromise;
 }
 
-// 一本筆記本 = Drive 上一個 zip 檔。drive.file 權限只看得到這個 app 建立的檔案。
+// 一本筆記本 = Drive 上 SnakeNote 資料夾裡的一個 zip 檔。drive.file 權限只看得到這個 app 建立的資料夾與檔案。
 export class DriveClient {
   constructor(clientId, { request = (...args) => fetch(...args) } = {}) {
     this.clientId = clientId; this.request = request;
@@ -64,10 +66,25 @@ export class DriveClient {
     return response;
   }
   async json(url, options) { return (await this.api(url, options)).json(); }
+  // 本網站建立的 SnakeNote 資料夾，舊的在前。兩台裝置同時第一次存檔可能各建一個，讀取時都要看。
+  async folders() {
+    const params = new URLSearchParams({ q: `name = '${FOLDER}' and mimeType = '${FOLDER_TYPE}' and trashed = false`, fields: 'files(id)', orderBy: 'createdTime', pageSize: '10' });
+    return ((await this.json('files?' + params)).files ?? []).map(folder => folder.id);
+  }
+  async folder() {
+    const [id] = await this.folders();
+    if (id) return id;
+    return (await this.json('files?fields=id', {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ name: FOLDER, mimeType: FOLDER_TYPE }),
+    })).id;
+  }
   async list() {
+    const folders = await this.folders();
+    if (!folders.length) return [];
     const result = []; let pageToken;
+    const parents = folders.map(id => `'${id}' in parents`).join(' or ');
     do {
-      const params = new URLSearchParams({ q: `trashed = false and appProperties has { key='app' and value='${APP}' }`, fields: `nextPageToken,files(${FIELDS})`, orderBy: 'modifiedTime desc', pageSize: '100' });
+      const params = new URLSearchParams({ q: `(${parents}) and trashed = false and appProperties has { key='app' and value='${APP}' }`, fields: `nextPageToken,files(${FIELDS})`, orderBy: 'modifiedTime desc', pageSize: '100' });
       if (pageToken) params.set('pageToken', pageToken);
       const page = await this.json('files?' + params);
       result.push(...(page.files ?? [])); pageToken = page.nextPageToken;
@@ -83,9 +100,9 @@ export class DriveClient {
     const data = await (await this.api(`files/${encodeURIComponent(id)}?alt=media`, {}, 600000)).blob();
     return { file, data };
   }
-  // 省略 id = 建立新檔；有 id = 覆寫內容並同步檔名。用 resumable upload，大檔也能傳。
+  // 省略 id = 在 SnakeNote 資料夾建立新檔；有 id = 覆寫內容並同步檔名。用 resumable upload，大檔也能傳。
   async upload({ id, name, blob }) {
-    const metadata = id ? { name } : { name, mimeType: 'application/zip', appProperties: { app: APP } };
+    const metadata = id ? { name } : { name, mimeType: 'application/zip', appProperties: { app: APP }, parents: [await this.folder()] };
     const session = await this.api(`${UPLOAD}files${id ? '/' + encodeURIComponent(id) : ''}?uploadType=resumable&fields=${FIELDS}`, {
       method: id ? 'PATCH' : 'POST',
       headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/zip' },

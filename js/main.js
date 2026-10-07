@@ -611,6 +611,8 @@ let toastTimer;
 function toast(msg) {
   const t = $('#toast');
   t.textContent = msg;
+  // 每次重新 showPopover 才會疊在最新開啟的 <dialog> 上面
+  if (t.showPopover) { if (t.matches(':popover-open')) t.hidePopover(); t.showPopover(); }
   t.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 2800);

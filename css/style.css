@@ -620,8 +620,9 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
 #toast {
   position: fixed;
   z-index: 60;
-  left: 50%;
-  bottom: 24px;
+  inset: auto auto 24px 50%;
+  margin: 0;
+  overflow: visible;
   max-width: calc(100vw - 32px);
   padding: 10px 16px;
   border: 1px solid var(--border);

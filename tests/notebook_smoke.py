@@ -8,7 +8,7 @@ CORS = {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'aut
 
 class FakeDrive:
     def __init__(self):
-        self.files = {}; self.sessions = {}; self.next = 0; self.uploads = 0
+        self.files = {}; self.folders = {}; self.sessions = {}; self.next = 0; self.uploads = 0; self.fail_list = False
     def fields(self, file):
         return {k: v for k, v in file.items() if k != 'data'}
     def route(self, route):
@@ -17,7 +17,7 @@ class FakeDrive:
             route.fulfill(status=status, content_type='application/json', headers={**CORS, **headers}, body=json.dumps(data))
         if req.method == 'OPTIONS': return reply(200, {})
         account = req.headers.get('authorization', '').removeprefix('Bearer token-')
-        files = self.files.setdefault(account, {})
+        files = self.files.setdefault(account, {}); folders = self.folders.setdefault(account, {})
         if url.path.startswith('/upload/drive/v3/files'):
             if 'upload_id' in q:
                 session = self.sessions.pop(q['upload_id'][0])
@@ -33,9 +33,21 @@ class FakeDrive:
             return reply(200, {}, {'Location': 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=' + sid})
         path = url.path.split('/drive/v3/')[-1]
         if path == 'about': return reply(200, {'user': {'permissionId': account, 'emailAddress': account + '@example.test'}})
+        if path == 'files' and req.method == 'POST':
+            self.next += 1; folder = {'id': 'folder-' + str(self.next), **json.loads(req.post_data)}
+            assert folder['mimeType'] == 'application/vnd.google-apps.folder', folder
+            folders[folder['id']] = folder
+            return reply(200, {'id': folder['id']})
         if path == 'files':
-            app = re.search(r"key='app' and value='([^']+)'", q['q'][0]).group(1)
-            return reply(200, {'files': [self.fields(f) for f in files.values() if f.get('appProperties', {}).get('app') == app]})
+            query = q['q'][0]
+            if 'vnd.google-apps.folder' in query:
+                name = re.search(r"name = '([^']+)'", query).group(1)
+                return reply(200, {'files': [{'id': f['id']} for f in folders.values() if f['name'] == name]})
+            if self.fail_list: return reply(500, {'error': 'boom'})
+            app = re.search(r"key='app' and value='([^']+)'", query).group(1)
+            parents = set(re.findall(r"'([^']+)' in parents", query))
+            return reply(200, {'files': [self.fields(f) for f in files.values()
+                                         if f.get('appProperties', {}).get('app') == app and parents & set(f.get('parents', []))]})
         file = files.get(unquote(path[len('files/'):]))
         if not file: return reply(404, {'error': 'missing'})
         if q.get('alt') == ['media']: return route.fulfill(status=200, content_type='application/zip', headers=CORS, body=file['data'])
@@ -137,6 +149,9 @@ with sync_playwright() as pw:
     expect(page.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
     assert [f['name'] for f in fake.files['alice'].values()] == ['專案 A.zip']
     file_id = next(iter(fake.files['alice']))
+    assert [f['name'] for f in fake.folders['alice'].values()] == ['SnakeNote'], fake.folders
+    folder_id = next(iter(fake.folders['alice']))
+    assert fake.files['alice'][file_id]['parents'] == [folder_id]
     draw(page, 60)
     expect(page.locator('#drive-save')).to_have_text('☁ 儲存到 Drive')
     expect(page.locator('#nb-dirty')).to_be_visible()
@@ -157,13 +172,19 @@ with sync_playwright() as pw:
     # 4. Another device opens it from Drive, edits and saves.
     other = new_context(browser, fake); device = other.new_page(); device.on('pageerror', lambda e: errors.append(str(e))); Dialogs(device)
     device.goto(BASE); expect(device.locator('#nb-name')).to_have_text('我的筆記')
+    fake.fail_list = True; menu(device, '從 Drive 開啟')
+    expect(device.locator('#drive-files')).to_contain_text('Drive 請求失敗 (500)')
+    device.locator('#drive-close').click(); fake.fail_list = False
+    fake.files['alice']['stray'] = {**fake.files['alice'][file_id], 'id': 'stray', 'name': '資料夾外.zip', 'parents': ['root']}
     menu(device, '從 Drive 開啟')
+    expect(device.locator('.drive-file')).to_have_count(1)
     expect(device.locator('#drive-account')).to_contain_text('alice@example.test')
     row = device.locator('.drive-file', has_text='專案 A 改名'); row.locator('button').click()
     expect(device.locator('#nb-name')).to_have_text('專案 A 改名')
     expect(device.locator('#page-title')).to_have_value('A 的頁面')
     expect(device.locator('#viewport img')).to_be_visible()
     expect(device.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    del fake.files['alice']['stray']
     menu(device, '從 Drive 開啟'); device.locator('.drive-file', has_text='專案 A 改名').locator('button', has_text='切換').click()
     expect(device.locator('#drive-dialog')).not_to_be_visible()
     assert len(notebooks(device)) == 2, 'opening an already open file switches instead of duplicating'
@@ -200,6 +221,7 @@ with sync_playwright() as pw:
     # 6. Save a copy: new file, current notebook still bound to the original.
     dialogs.answers = ['備份一']; menu(page, '另存副本到 Drive'); toast(page, '已在 alice@example.test 的 Drive 建立「備份一」')
     assert sorted(f['name'] for f in fake.files['alice'].values()) == ['備份一.zip', '專案 A 改名.zip']
+    assert len(fake.folders['alice']) == 1 and all(f['parents'] == [folder_id] for f in fake.files['alice'].values())
     assert notebooks(page)[1]['drive']['fileId'] == file_id
 
     # 7. A different Google account cannot overwrite alice's file.

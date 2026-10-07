@@ -118,10 +118,12 @@ export function setupNotebooks({ current, switchTo, reload, create, flush, showM
     const list = $('#drive-files');
     list.replaceChildren(el('p', '讀取中…', 'drive-muted'));
     dialog.showModal();
-    const files = await drive.list();
+    let files;
+    try { files = await drive.list(); }
+    catch (error) { list.replaceChildren(el('p', error.message, 'drive-muted')); return; }
     const open = await db.getAll('notebooks');
     list.replaceChildren();
-    if (!files.length) list.append(el('p', '這個帳號的 Drive 還沒有筆記本。先用「存到 Drive」儲存一本吧。', 'drive-muted'));
+    if (!files.length) list.append(el('p', '這個帳號 Drive 的 SnakeNote 資料夾還沒有筆記本。先用「存到 Drive」儲存一本吧。', 'drive-muted'));
     for (const file of files) {
       const row = el('div', undefined, 'drive-file');
       const info = el('div');
