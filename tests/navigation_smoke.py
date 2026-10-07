@@ -91,7 +91,7 @@ with sync_playwright() as pw:
         s=view(page)['s'];page.mouse.wheel(0,delta);page.wait_for_timeout(50)
         assert abs(view(page)['s']/s-expected)<1e-3,(delta,s,view(page)['s'])
     page.keyboard.up('Control')
-    before=view(page);page.mouse.wheel(0,100);page.wait_for_timeout(50);after=view(page)
+    before=view(page);page.mouse.wheel(0,100);page.wait_for_timeout(400);after=view(page)
     assert after['s']==before['s'] and abs(after['y']-(before['y']-100))<.01
     expect(page.locator('#zoom')).to_have_text(f"{round(after['s']*100)}%")
     # Zoom buttons step through round percentages.
@@ -99,24 +99,24 @@ with sync_playwright() as pw:
     for button,expected in [('#zoom-in',1.25),('#zoom-in',1.5),('#zoom-out',1.25),('#zoom-out',1),('#zoom-out',.75)]:
         page.locator(button).click();assert abs(view(page)['s']-expected)<1e-6,(button,view(page))
     print('PASS: Ctrl+wheel steps about 10% and zoom buttons')
-    # Wheel axis lock: a horizontal scroll ignores stray vertical deltas until a pause,
-    # switches after several events on the other axis, and diagonal trackpad swipes stay free.
-    def wheel(dx,dy):
-        before=view(page);page.mouse.wheel(dx,dy);page.wait_for_timeout(20);after=view(page)
-        return round(before['x']-after['x'],2),round(before['y']-after['y'],2)
-    page.mouse.move(x,y);page.wait_for_timeout(300)
-    assert wheel(100,0)==(100,0)
-    assert wheel(0,100)==(0,0),'stray vertical delta during a horizontal scroll'
-    assert wheel(100,30)==(100,0)
-    assert wheel(0,100)==(0,0) and wheel(0,100)==(0,0) and wheel(0,100)==(0,100),'should switch to vertical'
-    page.wait_for_timeout(300)
-    assert wheel(0,100)==(0,100) and wheel(40,0)==(0,0)
-    page.wait_for_timeout(300)
-    assert wheel(30,25)==(30,25) and wheel(20,30)==(20,30),'diagonal swipe should stay free'
-    page.wait_for_timeout(300)
-    page.keyboard.down('Shift');assert wheel(0,100)==(100,0),'shift+wheel scrolls sideways';page.keyboard.up('Shift')
-    page.wait_for_timeout(300)
-    print('PASS: wheel locks to the starting axis')
+    # Wheel panning: a notch (100px) glides instead of jumping; small high-resolution deltas
+    # (thumb wheels, trackpads) apply at once, on both axes together; Shift+wheel scrolls sideways.
+    def moved(before):
+        after=view(page);return round(before['x']-after['x'],2),round(before['y']-after['y'],2)
+    page.mouse.move(x,y)
+    before=view(page);page.mouse.wheel(0,100)
+    page.evaluate('new Promise(r=>requestAnimationFrame(r))');first=moved(before)
+    assert 0<=first[1]<100,('notch should glide, not jump',first)
+    page.wait_for_timeout(400);assert moved(before)==(0,100),moved(before)
+    before=view(page);page.mouse.wheel(0,100);page.mouse.wheel(0,100);page.wait_for_timeout(500)
+    assert moved(before)==(0,200),'consecutive notches add up'
+    before=view(page);page.mouse.wheel(12.5,0);page.wait_for_timeout(20)
+    assert moved(before)==(12.5,0),'high-resolution delta applies at once'
+    before=view(page);page.mouse.wheel(17.5,0);page.mouse.wheel(0,100);page.wait_for_timeout(400)
+    assert moved(before)==(17.5,100),'both wheels together move on both axes'
+    page.keyboard.down('Shift');before=view(page);page.mouse.wheel(0,100);page.wait_for_timeout(400)
+    page.keyboard.up('Shift');assert moved(before)==(100,0),'shift+wheel scrolls sideways'
+    print('PASS: wheel notches glide, high-resolution deltas follow at once')
     # Fit to content via Shift+1, the toolbar button and the lost hint.
     for trigger in ['Shift+1','#btn-fit','#back-to-content']:
         page.mouse.move(x,y);page.mouse.wheel(30000,30000)

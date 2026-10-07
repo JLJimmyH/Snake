@@ -8,8 +8,8 @@ const SVGNS = 'http://www.w3.org/2000/svg';
 const MIN_S = 0.1, MAX_S = 8, GRID = 24, HISTORY = 100;
 // 觸控板捏合的 deltaY 很小，照原比例縮放才跟手；滑鼠滾輪一格約 100，限制成一格約 10%
 const WHEEL_ZOOM_MAX = 10;
-// 滾輪鎖軸：停頓超過 WHEEL_GAP 毫秒算新的一串滾動；連續 WHEEL_SWITCH 次都偏向另一軸才換方向
-const WHEEL_GAP = 200, WHEEL_SWITCH = 3;
+// 一次至少 WHEEL_NOTCH px 的滾動視為「一格一格」的滾輪，用時間常數 WHEEL_GLIDE 毫秒的動畫滑過去
+const WHEEL_NOTCH = 50, WHEEL_GLIDE = 40;
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
 
 const r1 = n => Math.round(n * 10) / 10;
@@ -192,7 +192,7 @@ export class Board {
     this.darkCanvas = false;
     this.mouseMode = false;   // 滑鼠模式：點到物件直接選取並拖動，空白處拖曳＝框選
     this.spacePan = false;    // 按住空白鍵：左鍵拖曳＝移動畫布
-    this.wheelLock = null;    // 滾輪鎖軸狀態，見 _wheelAxis
+    this.glide = { x: 0, y: 0, frame: 0 }; // 滾輪還沒滑完的距離，見 _glide
     this.pointers = new Map();
     this.action = null;
     this.editing = null;
@@ -360,6 +360,8 @@ export class Board {
   _stopAnim() {
     cancelAnimationFrame(this.anim);
     this.anim = 0;
+    cancelAnimationFrame(this.glide.frame);
+    this.glide = { x: 0, y: 0, frame: 0 };
   }
 
   // 全部物件的外框（世界座標），空白頁回傳 null
@@ -833,40 +835,48 @@ export class Board {
 
   _wheel(e) {
     e.preventDefault();
-    this._stopAnim();
+    // 只停 animateView；滾輪自己的滑行要接著累加
+    cancelAnimationFrame(this.anim);
+    this.anim = 0;
     this.rect = this.vp.getBoundingClientRect();
     const k = e.deltaMode === 1 ? 16 : 1;
     if (e.ctrlKey || e.metaKey) {
       const d = clamp(e.deltaY * k, -WHEEL_ZOOM_MAX, WHEEL_ZOOM_MAX);
       this.zoomAt(e.clientX - this.rect.left, e.clientY - this.rect.top, Math.exp(-d * 0.01));
-    } else {
-      let dx = e.deltaX * k, dy = e.deltaY * k;
-      // 只有直向滾輪的滑鼠：Shift+滾輪＝橫向（有些瀏覽器已經自己轉好）
-      if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
-      [dx, dy] = this._wheelAxis(dx, dy);
-      this.setView(this.view.x - dx, this.view.y - dy, this.view.s);
+      return;
     }
+    let dx = e.deltaX * k, dy = e.deltaY * k;
+    // 只有直向滾輪的滑鼠：Shift+滾輪＝橫向（有些瀏覽器已經自己轉好）
+    if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
+    // 一格一格的滾輪每格跳約 100px，補成短動畫，跟瀏覽器原生捲動一樣順；
+    // 高解析度滾輪、觸控板本來就是連續的小數值，直接套用才跟手
+    if (e.deltaMode === 1 || Math.max(Math.abs(dx), Math.abs(dy)) >= WHEEL_NOTCH) this._glide(dx, dy);
+    else this.setView(this.view.x - dx, this.view.y - dy, this.view.s);
   }
 
-  // 一串滾動只走一開始的主要方向：橫向滾輪常順便送出一點直向（或反過來），不鎖會斜著飄。
-  // 一開始兩軸差不多大（觸控板斜著滑）就不鎖。
-  _wheelAxis(dx, dy) {
-    const ax = Math.abs(dx), ay = Math.abs(dy);
-    if (!ax && !ay) return [dx, dy];
-    const now = performance.now();
-    let w = this.wheelLock;
-    if (!w || now - w.at > WHEEL_GAP) {
-      w = this.wheelLock = { axis: ax >= 2 * ay ? 'x' : ay >= 2 * ax ? 'y' : 'free', streak: 0 };
+  // 把滾動距離累加起來，每個畫格走剩下距離的一部分（指數減速），連續滾動時會一直接續
+  _glide(dx, dy) {
+    const g = this.glide;
+    g.x += dx;
+    g.y += dy;
+    if (g.frame) return;
+    if (matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      this.setView(this.view.x - g.x, this.view.y - g.y, this.view.s);
+      g.x = g.y = 0;
+      return;
     }
-    w.at = now;
-    if (w.axis === 'free') return [dx, dy];
-    const along = w.axis === 'x' ? ax : ay, across = w.axis === 'x' ? ay : ax;
-    if (along >= across) w.streak = 0;
-    else if (++w.streak >= WHEEL_SWITCH) {
-      w.axis = w.axis === 'x' ? 'y' : 'x';
-      w.streak = 0;
-    }
-    return w.axis === 'x' ? [dx, 0] : [0, dy];
+    let last = performance.now();
+    const step = now => {
+      const f = 1 - Math.exp(-(now - last) / WHEEL_GLIDE);
+      last = now;
+      let sx = g.x * f, sy = g.y * f;
+      if (Math.abs(g.x - sx) < .5 && Math.abs(g.y - sy) < .5) [sx, sy] = [g.x, g.y];
+      g.x -= sx;
+      g.y -= sy;
+      this.setView(this.view.x - sx, this.view.y - sy, this.view.s);
+      g.frame = g.x || g.y ? requestAnimationFrame(step) : 0;
+    };
+    g.frame = requestAnimationFrame(step);
   }
 
   // ---------- ink ----------
