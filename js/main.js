@@ -7,6 +7,7 @@ import { Minimap } from './minimap.js';
 import { cleanName } from './notebook-core.js';
 import { setupNotebooks } from './notebook-ui.js';
 import { setupAi } from './ai-ui.js';
+import { setupExport } from './export.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -784,6 +785,7 @@ async function init() {
   setupAppearance({ board, button: $('#btn-appearance'), panel: $('#appearance-panel'), onCanvas: refreshNav });
   setupInputMode({ board, panel: $('#appearance-panel'), onChange: onInputMode });
   ai = setupAi({ board, title: () => $('#page-title').value, toast, showMenu });
+  setupExport({ board, title: () => $('#page-title').value, toast, showMenu, ai });
   setTool('select');
   notebooks = setupNotebooks({
     current: () => notebookId, switchTo: switchNotebook, reload: reloadNotebook, create: createNotebook, flush, showMenu, toast,

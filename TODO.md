@@ -243,3 +243,10 @@ python tests/browser_smoke.py
 - [ ] 第 7 階段：開啟同步、另存備份到 Drive、下載為本機筆記本。
 - [ ] 第 8 階段：搬家與清理（移除 Supabase／Node／單頁協作、隱私權政策、GitHub Pages 搬家提示、升級 Paid 後正式開放）。
 - 工具：已安裝 Cloudflare Claude 外掛與 cf CLI（使用者這台電腦）；換電腦要重新 `claude plugin marketplace add cloudflare/skills`、`claude plugin install cloudflare@cloudflare`、`npm install -g cf`、`cf auth login`。專案有 wrangler 設定後改用 wrangler。
+
+## 📄 匯出 PDF（2026-10-07）
+- [x] 頂列 ✨ 改成「匯出」按鈕（手機頂列按鈕數不變），選單：匯出 PDF／複製圖片／交給 AI…；有選取（框選、套索、Shift+點）就只匯出選取的物件，沒有就整頁。桌機右鍵選單也有「匯出 PDF」「匯出整頁 PDF」。
+- [x] js/export.js：走瀏覽器列印（另存為 PDF），Board.printSheet 直接複製畫面上的元素，文字是向量可搜尋，Markdown、字型、圖片跟畫面一樣，中文字型交給系統。白紙、筆色照白底重算（深色畫布的反轉不帶過去）；A4 橫直自動選，放得下照實際大小，放不下縮成一頁；預設檔名＝頁面標題。
+- [x] tests/export_smoke.py：右鍵／頂列選取匯出、整頁、圖片解碼、列印樣式實際輸出 PDF 只有一頁、深色畫布印原色、交給 AI、手機頂列不爆版。ai_smoke 改走匯出選單。
+- 已知：LINE 等 App 內建瀏覽器可能不支援列印；iOS 要從分享／列印畫面存成 PDF。
+- [ ] 實機驗收：iPhone Safari、Android Chrome 的「列印 → 存成 PDF」流程。

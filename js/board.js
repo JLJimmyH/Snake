@@ -24,6 +24,7 @@ export const FONTS = {
   kai: '"BiauKai", "DFKai-SB", "標楷體", "Kaiti TC", "KaiTi", serif',
   mono: 'ui-monospace, Consolas, "Courier New", monospace',
 };
+const PAPER = '#ffffff'; // 列印／匯出 PDF 的紙色
 
 const r1 = n => Math.round(n * 10) / 10;
 const r2 = n => Math.round(n * 100) / 100;
@@ -793,6 +794,36 @@ export class Board {
       }
     }
     return new Promise((resolve, reject) => c.toBlob(b => b ? resolve(b) : reject(new Error('無法產生截圖')), 'image/png'));
+  }
+
+  // 把 area 範圍複製成一塊 DOM（給列印／匯出 PDF），ids 有給就只放那些物件。
+  // 直接複製畫面上的元素，Markdown、字型、圖片都跟畫面一樣；印在白紙上，顏色照白底重算
+  printSheet(area, ids = null) {
+    const sheet = h('div', 'print-sheet');
+    sheet.style.width = area.w + 'px';
+    sheet.style.height = area.h + 'px';
+    const world = h('div', 'world');
+    world.style.transform = `translate(${-area.x}px, ${-area.y}px)`;
+    const svg = document.createElementNS(SVGNS, 'svg');
+    svg.setAttribute('class', 'ink');
+    const layers = [[this.imgLayer, h('div', 'layer')], [this.svg, svg], [this.textLayer, h('div', 'layer')]];
+    const byId = new Map(this.items.map(it => [it.id, it]));
+    // 照 DOM 順序（＝畫面上的疊放順序）複製；套索、遠端預覽這些不是物件的元素略過
+    for (const [from, to] of layers) for (const el of from.children) {
+      const it = byId.get(el.dataset.id);
+      if (!it || this.els.get(it.id) !== el || (ids && !ids.has(it.id))) continue;
+      const copy = el.cloneNode(true);
+      copy.classList.remove('selected', 'cropping');
+      if (it.type === 'stroke') copy.setAttribute('stroke', it.tool === 'hl' ? it.color : readableInk(it.color, PAPER));
+      if (it.type === 'text') {
+        copy.querySelector('.text-body').removeAttribute('contenteditable');
+        if (it.color) copy.style.color = readableInk(it.color, PAPER);
+      }
+      to.append(copy);
+    }
+    world.append(...layers.map(([, to]) => to));
+    sheet.append(world);
+    return sheet;
   }
 
   // 結束目前的文字編輯（會觸發 focusout 存檔）

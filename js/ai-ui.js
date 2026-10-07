@@ -1,9 +1,10 @@
 import { uid } from './db.js';
 import { exportRegion, copyText, buildPrompt, replyItems, placeItems } from './ai-core.js';
+import { copyPng, printPdf } from './export.js';
 
 const $ = selector => document.querySelector(selector);
 
-// AI 協作：框選一塊（或整頁）按 ✨ → 看一眼要交出去的內容 → 複製給 ChatGPT／Claude。
+// AI 協作：框選一塊（或整頁）→ 匯出選單「交給 AI」→ 看一眼要交出去的內容 → 複製給 ChatGPT／Claude。
 // AI 回的 {"items":[…]} 由使用者在畫布上 Ctrl+V 貼回，原本的內容不會被改動。右鍵／Ctrl+C 複製物件也在這裡。
 export function setupAi({ board, title, toast, showMenu }) {
   const dialog = $('#ai-dialog');
@@ -27,8 +28,6 @@ export function setupAi({ board, title, toast, showMenu }) {
     dialog.showModal();
   }
 
-  // 有選取就只給選取的部分，沒有就整頁
-  $('#ai-button').addEventListener('click', () => open([...board.sel]));
   $('#ai-close').addEventListener('click', () => dialog.close());
 
   $('#ai-copy').addEventListener('click', async () => {
@@ -45,20 +44,9 @@ export function setupAi({ board, title, toast, showMenu }) {
     }
   });
 
-  $('#ai-shot').addEventListener('click', async () => {
+  $('#ai-shot').addEventListener('click', () => {
     if (!png) { toast('沒有內容可以複製'); return; }
-    try {
-      // Safari 要求在點擊當下呼叫 write，所以傳 Promise 進去
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
-      toast('已複製截圖');
-    } catch {
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(await png);
-      a.download = (title() || '筆記') + '.png';
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      toast('瀏覽器不能複製圖片，改成下載截圖');
-    }
+    copyPng(png, title() || '筆記', toast);
   });
 
   async function insert(items, at) {
@@ -72,7 +60,7 @@ export function setupAi({ board, title, toast, showMenu }) {
     toast(`已貼上 ${kept.length} 個物件` + (skipped ? `（${skipped} 張圖片找不到，略過）` : '') + '，可以按復原還原');
   }
 
-  // 右鍵：選取框裡或點到物件＝複製這些物件（點到未選取的物件會先選它）；空白處＝複製全部。
+  // 右鍵：選取框裡或點到物件＝複製／匯出 PDF 這些物件（點到未選取的物件會先選它）；空白處＝整頁。
   // 複製的是 {"items":[…]} JSON，可以 Ctrl+V 貼到別頁，也可以直接貼給 AI
   $('#viewport').addEventListener('contextmenu', e => {
     if (e.target.isContentEditable) return;
@@ -84,9 +72,10 @@ export function setupAi({ board, title, toast, showMenu }) {
       if (hit) ids = [hit.id];
     }
     if (!ids && !board.items.length) return;
-    showMenu({ left: x, right: x, top: y, bottom: y }, [ids
-      ? { label: `複製（${ids.length} 個物件）`, run: () => copy(ids) }
-      : { label: '複製全部', run: () => copy(null) }]);
+    showMenu({ left: x, right: x, top: y, bottom: y }, [
+      ids ? { label: `複製（${ids.length} 個物件）`, run: () => copy(ids) } : { label: '複製全部', run: () => copy(null) },
+      { label: ids ? '匯出 PDF' : '匯出整頁 PDF', run: () => printPdf(board, ids, title() || '筆記') },
+    ]);
   });
 
   // Ctrl+C：有選取物件、而且不是在打字時，複製物件

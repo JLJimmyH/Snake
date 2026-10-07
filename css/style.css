@@ -817,3 +817,21 @@ html:not([data-input="mouse"]) #btn-shortcuts { display: none; }
 .input-modes { display: flex; gap: 6px; }
 .input-modes .chip { flex: 1; }
 .input-note { margin: 8px 0 12px; }
+
+/* ---------- 匯出 PDF（js/export.js）：列印時只印 #print-root，白紙＋淺色畫布的字色 ---------- */
+#print-root { display: none; }
+@media print {
+  html, body { height: auto; overflow: visible; background: #fff; }
+  body > :not(#print-root) { display: none !important; }
+  #print-root {
+    display: block;
+    --ink: #3b3b3b;
+    --accent: #0078d4;
+    --muted: #6e6e6e;
+    color: var(--ink);
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .print-fit { position: relative; overflow: hidden; break-inside: avoid; }
+  .print-sheet { position: relative; transform-origin: 0 0; }
+}

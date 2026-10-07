@@ -1,4 +1,4 @@
-"""Verify AI collaboration and copy/paste: right-click copies the selection (or everything), ✨ previews and exports just the selected region, the AI reply is pasted with Ctrl+V at the cursor, undo, missing images, persistence, and pasting copied items on another page."""
+"""Verify AI collaboration and copy/paste: right-click copies the selection (or everything), the export menu's 「交給 AI」 previews and exports just the selected region, the AI reply is pasted with Ctrl+V at the cursor, undo, missing images, persistence, and pasting copied items on another page."""
 import json, os, re
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8050')
@@ -53,14 +53,14 @@ with sync_playwright() as pw:
 
     # 右鍵點筆跡：選取它，選單只有「複製」，複製的是完整的筆跡
     page.mouse.click(sx+30,sy,button='right')
-    expect(page.locator('#menu button')).to_have_text(['複製（1 個物件）'])
+    expect(page.locator('#menu button')).to_have_text(['複製（1 個物件）','匯出 PDF'])
     menu(page,'複製（1 個物件）')
     expect(page.locator('#toast')).to_contain_text('已複製 1 個物件')
     data=json.loads(page.evaluate('navigator.clipboard.readText()'))
     assert data['format']=='snake-note-ai' and len(data['items'])==1 and len(data['items'][0]['pts'])==10,data
 
-    # 選取後按 ✨：只把這一塊交給 AI
-    page.click('#ai-button')
+    # 選取後按「匯出 → 交給 AI」：只把這一塊交給 AI
+    page.click('#export-button'); menu(page,'交給 AI')
     expect(page.locator('#ai-dialog')).to_be_visible()
     expect(page.locator('#ai-heading')).to_have_text('AI 分析選取的 1 個物件')
     # 預覽：只畫選取的那一塊
@@ -79,7 +79,7 @@ with sync_playwright() as pw:
 
     # 截圖：只畫選取的那一塊（headless 不支援時會改成下載）
     page.click('#ai-shot')
-    expect(page.locator('#toast')).to_have_text(re.compile('已複製截圖|改成下載截圖'))
+    expect(page.locator('#toast')).to_have_text(re.compile('已複製圖片|改成下載'))
     if SHOTS:
         page.screenshot(path=os.path.join(SHOTS,'ai-dialog.png'))
 
@@ -127,10 +127,10 @@ with sync_playwright() as pw:
     page.keyboard.press('Control+V')
     expect(page.locator('.text-item .text-body',has_text='一般文字')).to_have_count(1)
 
-    # 沒有選取時按 ✨＝整頁
+    # 沒有選取時「交給 AI」＝整頁
     page.keyboard.press('Escape')
     page.mouse.click(box['x']+700,box['y']+300)
-    page.click('#ai-button')
+    page.click('#export-button'); menu(page,'交給 AI')
     expect(page.locator('#ai-heading')).to_have_text('AI 分析這一頁')
     data=region_json(copy(page))
     assert data['scope']=='page' and len(data['items'])==len(texts(page))+strokes(page),data['scope']
@@ -145,7 +145,7 @@ with sync_playwright() as pw:
 
     # 右鍵空白處只有「複製全部」，貼到別頁會整份貼上
     page.mouse.click(box['x']+700,box['y']+300,button='right')
-    expect(page.locator('#menu button')).to_have_text(['複製全部'])
+    expect(page.locator('#menu button')).to_have_text(['複製全部','匯出整頁 PDF'])
     menu(page,'複製全部')
     expect(page.locator('#toast')).to_contain_text('已複製全部')
     data=json.loads(page.evaluate('navigator.clipboard.readText()'))
