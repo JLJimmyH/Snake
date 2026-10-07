@@ -1,5 +1,5 @@
 // AI 協作：把框選的一塊區域（沒選就整頁）匯出成 AI 看得懂的精簡 JSON，
-// AI 回傳一組「新元件」（文字框、筆跡），使用者點畫布決定放哪裡。原本的內容一律不動，方便對照。
+// AI 回傳一組「新元件」（文字框、筆跡），使用者在畫布上 Ctrl+V 貼到想要的位置。原本的內容一律不動，方便對照。
 // 右鍵「複製」也用同一套 {"items":[…]} 格式，所以可以貼到別頁，也可以直接貼給 AI。
 import { uid } from './db.js';
 
@@ -241,15 +241,4 @@ export function placeItems(items, at) {
 export function replyItems(text, options) {
   if (!/"items"\s*:/.test(text)) return null;
   try { return toItems(parseReply(text), options); } catch { return null; }
-}
-
-// 給使用者確認的摘要
-export function summarize(items) {
-  const count = type => items.filter(it => it.type === type).length;
-  const counts = [['text', '文字框'], ['stroke', '筆跡'], ['image', '圖片']].filter(([t]) => count(t)).map(([t, label]) => `${label} ${count(t)}`);
-  const snippet = text => { const line = text.trim().split('\n')[0]; return line.length > 30 ? line.slice(0, 30) + '…' : line; };
-  const lines = items.filter(it => it.type === 'text').map(it => `＋ ${snippet(it.text)}`);
-  if (count('stroke')) lines.push(`＋ ${count('stroke')} 條筆跡`);
-  if (count('image')) lines.push(`＋ ${count('image')} 張圖片`);
-  return { counts: counts.join('、'), lines };
 }

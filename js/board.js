@@ -214,7 +214,6 @@ export class Board {
 
   // ---------- public ----------
   load(doc) {
-    this.cancelPick();
     this._stopAnim();
     this.action = null;
     this.pointers.clear();
@@ -497,21 +496,6 @@ export class Board {
     this.setSelection(items.map(it => it.id));
   }
 
-  // 等使用者點一下畫布，回傳世界座標；cancelPick() 或換頁時回傳 null
-  pickPoint() {
-    this.cancelPick();
-    this.vp.classList.add('picking');
-    return new Promise(resolve => { this.picking = resolve; });
-  }
-
-  cancelPick(point = null) {
-    const resolve = this.picking;
-    if (!resolve) return;
-    this.picking = null;
-    this.vp.classList.remove('picking');
-    resolve(point);
-  }
-
   // 圖檔載得到嗎（貼上從別處複製來的圖片時檢查）
   async hasBlob(blobId) {
     try { return !!(await this._url(blobId)); } catch { return false; }
@@ -635,12 +619,6 @@ export class Board {
     this.lastPointer = { x: e.clientX, y: e.clientY };
     this.downAt = performance.now();
     this.noFocusUntil = 0;
-    if (this.picking && e.button === 0 && !this.action) {
-      e.preventDefault();
-      this.commitText();
-      this.cancelPick(this.toWorld(e.clientX, e.clientY));
-      return;
-    }
     if (e.pointerType === 'mouse' && e.button !== 0) {
       if (e.button === 1 && !this.action) {
         e.preventDefault();

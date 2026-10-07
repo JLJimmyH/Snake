@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { exportRegion, copyText, regionJson, buildPrompt, parseReply, toItems, replyItems, placeItems, itemsBox, simplify, summarize, FORMAT } from '../js/ai-core.js';
+import { exportRegion, copyText, regionJson, buildPrompt, parseReply, toItems, replyItems, placeItems, itemsBox, simplify, FORMAT } from '../js/ai-core.js';
 
 const items = () => [
   { id: 't1', type: 'text', x: 100, y: 100, size: 18, text: '# 會議\n重點' },
@@ -85,7 +85,6 @@ test('reply items become new text and strokes with defaults filled in', () => {
   assert.equal(out[4].width, 5);
   assert.equal(out[5].color, '#1f2937', 'unknown colors fall back to the pen color');
   assert.equal(new Set(out.map(it => it.id)).size, out.length);
-  assert.deepEqual(summarize(out), { counts: '文字框 2、筆跡 4', lines: ['＋ # 標題', '＋ 寬', '＋ 4 條筆跡'] });
 });
 
 test('any invalid item rejects the whole reply', () => {
@@ -146,7 +145,6 @@ test('copied items keep full detail and paste back as new items', () => {
   // 外框左上角是螢光筆的 (90,90)（筆寬 20），整組平移 910
   assert.deepEqual(placed[0], { ...source[0], id: pasted[0].id, x: 1010, y: 1010 }, 'relative layout survives the round trip');
   assert.deepEqual(placed[2].pts, source[2].pts.map(([x, y]) => [x + 910, y + 910]));
-  assert.deepEqual(summarize(pasted).counts, '文字框 2、筆跡 2、圖片 1');
   assert.throws(() => toItems([{ type: 'image', x: 0, y: 0, w: 0, h: 1, blob: 'b' }]), /圖片位置/);
   assert.throws(() => toItems([{ type: 'image', x: 0, y: 0, w: 1, h: 1, blob: '../x' }]), /不能新增圖片/);
 });

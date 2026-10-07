@@ -1,4 +1,4 @@
-"""Verify AI collaboration and copy/paste: right-click copies the selection (or everything), ✨ exports just the selected region, the AI reply is placed by clicking the canvas or Ctrl+V, undo, Esc cancel, missing images, persistence, and pasting copied items on another page."""
+"""Verify AI collaboration and copy/paste: right-click copies the selection (or everything), ✨ previews and exports just the selected region, the AI reply is pasted with Ctrl+V at the cursor, undo, missing images, persistence, and pasting copied items on another page."""
 import json, os, re
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8050')
@@ -63,7 +63,11 @@ with sync_playwright() as pw:
     page.click('#ai-button')
     expect(page.locator('#ai-dialog')).to_be_visible()
     expect(page.locator('#ai-heading')).to_have_text('AI 分析選取的 1 個物件')
-    expect(page.locator('#ai-insert')).to_be_disabled()
+    # 預覽：只畫選取的那一塊
+    expect(page.locator('#ai-shot-preview')).to_be_visible()
+    page.wait_for_function("document.querySelector('#ai-shot-preview').naturalWidth>0")
+    nw,nh=page.locator('#ai-shot-preview').evaluate('el => [el.naturalWidth, el.naturalHeight]')
+    assert nw<400 and nh<200,(nw,nh)
     prompt=copy(page,'轉成文字')
     assert '轉成文字' in prompt and '"items"' in prompt and '框選' in prompt,prompt[:300]
     data=region_json(prompt)
@@ -79,37 +83,22 @@ with sync_playwright() as pw:
     if SHOTS:
         page.screenshot(path=os.path.join(SHOTS,'ai-dialog.png'))
 
-    # 看不懂的回覆：顯示錯誤，不能放
-    page.fill('#ai-reply','好的，我整理好了')
-    expect(page.locator('.ai-error')).to_contain_text('看不懂')
-    expect(page.locator('#ai-insert')).to_be_disabled()
-    page.fill('#ai-reply',json.dumps({'items':[{'type':'image','x':0,'y':0}]}))
-    expect(page.locator('.ai-error')).to_contain_text('不能新增圖片')
+    page.click('#ai-close')
 
-    # 正常回覆：先顯示摘要，再點畫布放上去
-    page.fill('#ai-reply','以下是結果：\n```json\n'+json.dumps(REPLY,ensure_ascii=False)+'\n```')
-    expect(page.locator('.ai-counts')).to_have_text('文字框 1、筆跡 1')
-    expect(page.locator('#ai-insert')).to_be_enabled()
-    page.click('#ai-insert')
-    expect(page.locator('#ai-dialog')).to_be_hidden()
-    expect(page.locator('#toast')).to_contain_text('點一下畫布')
-    expect(page.locator('#viewport')).to_have_class(re.compile('picking'))
+    # AI 的回覆：在畫布上 Ctrl+V，外框左上角放在游標位置
+    page.evaluate('t => navigator.clipboard.writeText(t)','以下是結果：\n```json\n'+json.dumps(REPLY,ensure_ascii=False)+'\n```')
     box=page.locator('#viewport').bounding_box()
     px,py=box['x']+300,box['y']+box['height']-300
-    page.mouse.move(px,py)
-    expect(page.locator('#ai-ghost')).to_be_visible()
-    if SHOTS:
-        page.screenshot(path=os.path.join(SHOTS,'ai-placing.png'))
     page.mouse.click(px,py)
-    expect(page.locator('#ai-ghost')).to_be_hidden()
-    expect(page.locator('#toast')).to_contain_text('已放上 2 個物件')
+    page.keyboard.press('Control+V')
+    expect(page.locator('#toast')).to_contain_text('已貼上 2 個物件')
     after=texts(page)
     assert after[:len(before_texts)]==before_texts and after[-1]=='AI 轉出的文字',after
     assert strokes(page)==before_strokes+1
     added=page.locator('.text-item').last.bounding_box()
-    assert abs(added['x']-px)<4 and abs(added['y']-py)<4,(added,px,py)  # 外框左上角放在點的位置
+    assert abs(added['x']-px)<4 and abs(added['y']-py)<4,(added,px,py)
     assert page.locator('svg.ink path[stroke="#ff0000"]').count()==1
-    expect(page.locator('#btn-del')).to_be_enabled()  # 放上去的物件是選取狀態
+    expect(page.locator('#btn-del')).to_be_enabled()  # 貼上的物件是選取狀態
 
     # 一次復原就拿掉，重做放回來
     page.click('#btn-undo')
@@ -117,21 +106,11 @@ with sync_playwright() as pw:
     page.click('#btn-redo')
     assert texts(page)==after and strokes(page)==before_strokes+1
 
-    # 回覆留著可以再放一次；Esc 取消放置
-    page.click('#ai-button')
-    expect(page.locator('#ai-insert')).to_be_enabled()
-    page.click('#ai-insert')
-    page.keyboard.press('Escape')
-    expect(page.locator('#toast')).to_have_text('已取消')
-    expect(page.locator('#viewport')).not_to_have_class(re.compile('picking'))
-    page.mouse.click(px+200,py)
-    assert texts(page)==after
-
     # Ctrl+V：剪貼簿裡是 AI 回覆就放在游標位置，不當成一般文字
-    page.evaluate('t => navigator.clipboard.writeText(t)',json.dumps(REPLY,ensure_ascii=False))
+    page.keyboard.press('Escape')
     page.mouse.click(box['x']+600,box['y']+120)
     page.keyboard.press('Control+V')
-    expect(page.locator('#toast')).to_contain_text('已放上 2 個物件')
+    expect(page.locator('.text-item .text-body',has_text='AI 轉出的文字')).to_have_count(2)
     assert texts(page).count('AI 轉出的文字')==2 and strokes(page)==before_strokes+2
 
     # 圖片只帶 blob id：這台裝置找不到圖檔就略過，其他照貼
