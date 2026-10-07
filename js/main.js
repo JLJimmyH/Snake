@@ -8,6 +8,21 @@ import { cleanName } from './notebook-core.js';
 import { setupNotebooks } from './notebook-ui.js';
 import { setupAi } from './ai-ui.js';
 import { setupExport } from './export.js';
+import { BUILD } from './build.js';
+
+// index.html 跟 JS 不是同一版（瀏覽器快取了舊的 index.html，見 scripts/stamp.mjs）：
+// 重新抓 index.html 再重新整理，每一版只試一次；在任何用到畫面元素的程式之前檢查
+function staleHtml() {
+  const html = document.querySelector('meta[name=build]')?.content;
+  if (!html || html === BUILD) return false;
+  try {
+    if (sessionStorage.getItem('reloadFor') === BUILD) return false;
+    sessionStorage.setItem('reloadFor', BUILD);
+  } catch { return false; }
+  fetch(location.href, { cache: 'reload' }).catch(() => {}).finally(() => location.reload());
+  return true;
+}
+if (staleHtml()) throw new Error('index.html 是舊版，重新整理中');
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -39,7 +54,13 @@ const board = new Board($('#viewport'), {
     $('#btn-undo').disabled = !canUndo;
     $('#btn-redo').disabled = !canRedo;
   },
+  // 最後一次調整的字級當新文字框的預設，記在這台裝置
+  onTextSize: size => { try { localStorage.setItem('textSize', size); } catch { /* ignore */ } },
 });
+try {
+  const size = Number(localStorage.getItem('textSize'));
+  if (size > 0) board.style.text.size = size;
+} catch { /* ignore */ }
 
 // ---------- 儲存 ----------
 function setSaveState(t) { $('#save-state').textContent = t; }
@@ -551,7 +572,11 @@ function refreshContext() {
     const press = (el, on) => el.setAttribute('aria-pressed', String(on));
     press(textGroup.querySelector('[data-fmt=bold]'), format.bold);
     press(textGroup.querySelector('[data-fmt=italic]'), format.italic);
-    textGroup.querySelector('.palette-toggle').style.setProperty('--brush-color', format.color ?? 'var(--text)');
+    textGroup.querySelector('[aria-controls=text-palette]').style.setProperty('--brush-color', format.color ?? 'var(--text)');
+    const size = Math.round(format.size * 10) / 10;
+    textGroup.querySelector('.size-name').textContent = size;
+    for (const b of $$('.size-opt')) press(b, +b.dataset.size === size);
+    textGroup.querySelector('.size-input').value = size;
     for (const sw of textGroup.querySelectorAll('.swatch')) press(sw, sw.dataset.color === (format.color ?? ''));
     if (format.color) textGroup.querySelector('input[type=color]').value = format.color;
     for (const b of $$('.font-opt')) press(b, b.dataset.font === (format.font ?? ''));
@@ -571,7 +596,9 @@ textGroup.addEventListener('click', e => {
   const toggle = e.target.closest('.palette-toggle');
   const sw = e.target.closest('.swatch');
   const font = e.target.closest('.font-opt');
+  const size = e.target.closest('.size-opt');
   if (toggle) togglePalette(toggle);
+  else if (size) { board.setTextSize(+size.dataset.size); closeBrushPalettes(); }
   else if (fmt?.dataset.fmt === 'bigger' || fmt?.dataset.fmt === 'smaller') board.stepTextSize(fmt.dataset.fmt === 'bigger' ? 1 : -1);
   else if (fmt) board.toggleMark(fmt.dataset.fmt);
   else if (sw) { board.setTextStyle('color', sw.dataset.color); closeBrushPalettes(); }
@@ -579,6 +606,10 @@ textGroup.addEventListener('click', e => {
 });
 // 拖色盤時 input 會一直觸發，選定（change）才存，復原才不會一格一格
 textGroup.querySelector('input[type=color]').addEventListener('change', e => board.setTextStyle('color', e.target.value));
+textGroup.querySelector('.size-input').addEventListener('change', e => {
+  const size = Number(e.target.value);
+  if (size > 0) board.setTextSize(size);
+});
 
 imageGroup.addEventListener('click', e => {
   const b = e.target.closest('[data-img]');
@@ -777,19 +808,30 @@ async function initialNotebook() {
 }
 
 // ---------- init ----------
+// 附加功能壞掉不能擋住筆記載入。例如剛更新時，瀏覽器快取（GitHub Pages 10 分鐘）可能給新舊混在一起的檔案
+function optional(name, setup) {
+  try {
+    return setup();
+  } catch (err) {
+    console.error(err);
+    toast(`${name}功能載入失敗，筆記不受影響；請重新整理頁面（${err.message}）`);
+    return null;
+  }
+}
+
 async function init() {
   // 小地圖預設：桌機打開、手機收合；之後記住使用者的選擇
   let map = null;
   try { map = localStorage.getItem('minimap'); } catch { /* ignore */ }
   setMinimap(map ? map === '1' : !isMobile());
-  setupAppearance({ board, button: $('#btn-appearance'), panel: $('#appearance-panel'), onCanvas: refreshNav });
-  setupInputMode({ board, panel: $('#appearance-panel'), onChange: onInputMode });
-  ai = setupAi({ board, title: () => $('#page-title').value, toast, showMenu });
-  setupExport({ board, title: () => $('#page-title').value, toast, showMenu, ai });
+  optional('外觀設定', () => setupAppearance({ board, button: $('#btn-appearance'), panel: $('#appearance-panel'), onCanvas: refreshNav }));
+  optional('輸入模式', () => setupInputMode({ board, panel: $('#appearance-panel'), onChange: onInputMode }));
+  ai = optional('AI', () => setupAi({ board, title: () => $('#page-title').value, toast, showMenu }));
+  optional('匯出', () => setupExport({ board, title: () => $('#page-title').value, toast, showMenu, ai }));
   setTool('select');
-  notebooks = setupNotebooks({
+  notebooks = optional('筆記本選單', () => setupNotebooks({
     current: () => notebookId, switchTo: switchNotebook, reload: reloadNotebook, create: createNotebook, flush, showMenu, toast,
-  });
+  }));
   await switchNotebook(await initialNotebook());
   try {
     const response = await fetch(new URL('api/config', document.baseURI));
@@ -816,5 +858,5 @@ async function init() {
 
 init().catch(err => {
   console.error(err);
-  toast('初始化失敗：' + err.message);
+  toast('初始化失敗，筆記還存在這台裝置上，請重新整理頁面：' + err.message);
 });

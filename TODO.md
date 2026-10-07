@@ -250,3 +250,15 @@ python tests/browser_smoke.py
 - [x] tests/export_smoke.py：右鍵／頂列選取匯出、整頁、圖片解碼、列印樣式實際輸出 PDF 只有一頁、深色畫布印原色、交給 AI、手機頂列不爆版。ai_smoke 改走匯出選單。
 - 已知：LINE 等 App 內建瀏覽器可能不支援列印；iOS 要從分享／列印畫面存成 PDF。
 - [ ] 實機驗收：iPhone Safari、Android Chrome 的「列印 → 存成 PDF」流程。
+
+## 🔒 HTML 與 JS 版本對應（2026-10-07）
+- 事件：推送後 10 分鐘內，手機重新整理拿到新的 index.html＋快取裡舊的 ai-ui.js（GitHub Pages `max-age=600`），初始化失敗、畫面空白。資料在 IndexedDB 沒有遺失，快取過期後就恢復。
+- [x] scripts/stamp.mjs（`npm run stamp`）：依內容雜湊幫 css/style.css、js/main.js 加 `?v=`，其他模組用 import map 對應到 `?v=` 網址；js/build.js 和 `<meta name="build">` 記這一版的編號。**改完 JS／CSS 要先 `npm run stamp` 再提交**，.githooks/pre-commit（`git config core.hooksPath .githooks`）和 tests/stamp.test.mjs 會擋。
+- [x] main.js 一開始比對 build：HTML 是快取的舊版就重新抓 index.html 再重新整理，每一版只試一次。
+- [x] 外觀、輸入模式、AI、匯出、筆記本選單任一個初始化失敗，筆記照樣載入，只提示重新整理。
+- [x] tests/version_smoke.py：所有 JS／CSS 請求都帶版本號、舊 HTML 只重整一次、附加功能壞掉筆記照樣載入。
+
+## ✨ 字級（2026-10-07）
+- [x] 新文字框的字級＝最後一次調整的字級（A−／A+、字級選單、拉把手縮放），存在這台裝置的 localStorage（textSize）。
+- [x] A− 與 A+ 中間加字級選單：顯示目前大小，常用 12～96 與自訂數字，固定寬度的文字框寬度等比例跟著變；文字工具沒選文字框時只改新文字框的預設。
+- [x] tests/text_size_smoke.py；format_smoke 的新文字框字級改成沿用最後的字級。

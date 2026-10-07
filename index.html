@@ -6,7 +6,35 @@
 <meta name="theme-color" content="#ffffff">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Snake Note</title>
-<link rel="stylesheet" href="css/style.css">
+<!-- 版本：scripts/stamp.mjs 產生，不要手改 -->
+<meta name="build" content="44c4029298">
+<script type="importmap">
+{
+  "imports": {
+    "./js/ai-core.js": "./js/ai-core.js?v=4cd36dedf8",
+    "./js/ai-ui.js": "./js/ai-ui.js?v=78b4075923",
+    "./js/appearance.js": "./js/appearance.js?v=6970172940",
+    "./js/board.js": "./js/board.js?v=5a238672a4",
+    "./js/collaboration.js": "./js/collaboration.js?v=e39182534f",
+    "./js/color.js": "./js/color.js?v=9ed004b7a7",
+    "./js/db.js": "./js/db.js?v=678d8bb427",
+    "./js/drive-config.js": "./js/drive-config.js?v=7c4725f44f",
+    "./js/drive.js": "./js/drive.js?v=133f24113c",
+    "./js/export.js": "./js/export.js?v=5c580fdb47",
+    "./js/input-mode.js": "./js/input-mode.js?v=35acee13a1",
+    "./js/main.js": "./js/main.js?v=95144ce66f",
+    "./js/markdown.js": "./js/markdown.js?v=06db38e2ae",
+    "./js/minimap.js": "./js/minimap.js?v=1a13398d7d",
+    "./js/notebook-core.js": "./js/notebook-core.js?v=8356661d5a",
+    "./js/notebook-ui.js": "./js/notebook-ui.js?v=482a3c3a44",
+    "./js/shortcuts.js": "./js/shortcuts.js?v=8f44b92950",
+    "./js/vendor/fflate.js": "./js/vendor/fflate.js?v=89c01a7364",
+    "./js/build.js": "./js/build.js?v=7b4512ed60"
+  }
+}
+</script>
+<!-- /版本 -->
+<link rel="stylesheet" href="css/style.css?v=9d0aca91b8">
 <script>
   // 在畫面出來前套用主題，避免先閃一下別的顏色；之後由 js/appearance.js 接手
   // theme 存 'system' 或主題名稱；舊版存 light／dark，主題另外存在 lightPalette／darkPalette
@@ -138,6 +166,25 @@
       <div class="tb-group ctx" data-ctx="text" data-keep-text>
         <span class="tb-sep"></span>
         <button class="tbtn fmt-btn" data-fmt="smaller" title="縮小文字" aria-label="縮小文字"><span class="fmt-a">A<small>−</small></span></button>
+        <button class="palette-toggle size-toggle" aria-label="字級" aria-expanded="false" aria-controls="size-menu" title="字級"><span class="size-name">18</span><span class="palette-arrow">▾</span></button>
+        <div class="brush-palette size-menu" id="size-menu" hidden role="group" aria-label="字級">
+          <span class="palette-heading">字級</span>
+          <div class="size-opts">
+            <button class="size-opt" data-size="12" aria-pressed="false">12</button>
+            <button class="size-opt" data-size="14" aria-pressed="false">14</button>
+            <button class="size-opt" data-size="16" aria-pressed="false">16</button>
+            <button class="size-opt" data-size="18" aria-pressed="false">18</button>
+            <button class="size-opt" data-size="20" aria-pressed="false">20</button>
+            <button class="size-opt" data-size="24" aria-pressed="false">24</button>
+            <button class="size-opt" data-size="28" aria-pressed="false">28</button>
+            <button class="size-opt" data-size="32" aria-pressed="false">32</button>
+            <button class="size-opt" data-size="40" aria-pressed="false">40</button>
+            <button class="size-opt" data-size="48" aria-pressed="false">48</button>
+            <button class="size-opt" data-size="64" aria-pressed="false">64</button>
+            <button class="size-opt" data-size="96" aria-pressed="false">96</button>
+          </div>
+          <label class="brush-color">自訂<input type="number" class="size-input" min="1" max="2000" step="1" inputmode="numeric" aria-label="自訂字級"></label>
+        </div>
         <button class="tbtn fmt-btn" data-fmt="bigger" title="放大文字" aria-label="放大文字"><span class="fmt-a big">A<small>+</small></span></button>
         <button class="tbtn fmt-btn" data-fmt="bold" title="粗體 (Ctrl+B)" aria-label="粗體" aria-pressed="false"><b class="fmt-b">B</b></button>
         <button class="tbtn fmt-btn" data-fmt="italic" title="斜體 (Ctrl+I)" aria-label="斜體" aria-pressed="false"><i class="fmt-i">I</i></button>
@@ -318,6 +365,6 @@
   <textarea id="ai-request" rows="2" aria-label="想要 AI 做什麼" placeholder="想要 AI 做什麼（可以不填）"></textarea>
   <p class="ai-actions"><button id="ai-copy" class="collab-primary">複製給 AI</button><button id="ai-shot" class="chip">複製截圖</button></p>
 </dialog>
-<script type="module" src="js/main.js"></script>
+<script type="module" src="js/main.js?v=95144ce66f"></script>
 </body>
 </html>

@@ -75,7 +75,7 @@ export function setupExport({ board, title, toast, showMenu, ai }) {
       { head: !area ? '這頁沒有內容' : set ? `匯出選取的 ${ids.length} 個物件` : '匯出整頁' },
       { label: '📄 匯出 PDF', disabled: !area, run: () => printPdf(board, ids, name()) },
       { label: '🖼 複製圖片', disabled: !area, run: () => copyPng(board.toPNG(area, { ids: set }), name(), toast) },
-      { label: '✨ 交給 AI…', run: () => ai.open(ids) },
+      { label: '✨ 交給 AI…', disabled: !ai, run: () => ai.open(ids) },
     ]);
   });
 }

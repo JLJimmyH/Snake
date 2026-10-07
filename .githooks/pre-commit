@@ -1,0 +1,3 @@
+#!/bin/sh
+# index.html 的 CSS／JS 版本號要跟內容一致，不然部署後新舊檔案會混在一起（見 scripts/stamp.mjs）
+exec node scripts/stamp.mjs --check

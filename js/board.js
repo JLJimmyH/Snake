@@ -469,7 +469,7 @@ export class Board {
     if (this.readOnly) return null;
     const id = this.textTargets()[0];
     const it = id ? this._item(id) : this.tool === 'text' ? this.style.text : null;
-    return it && { bold: !!it.bold, italic: !!it.italic, color: it.color ?? null, font: it.font ?? null };
+    return it && { bold: !!it.bold, italic: !!it.italic, color: it.color ?? null, font: it.font ?? null, size: it.size };
   }
 
   setTextStyle(key, value) {
@@ -483,6 +483,26 @@ export class Board {
       it.size = clamp(r2(it.size * f), 1, 2000);
       if (it.w) it.w = r1(it.w * f);
     });
+    this._rememberSize();
+  }
+
+  // 直接設定字級（字級選單），固定寬度的文字框寬度跟著等比例縮放
+  setTextSize(size) {
+    size = clamp(r2(size), 1, 2000);
+    this._styleText(it => {
+      if (it.w) it.w = r1(it.w * size / it.size);
+      it.size = size;
+    });
+    this._rememberSize();
+  }
+
+  // 新文字框用最後一次調整過的字級（A−／A+、字級選單、拉把手縮放）
+  _rememberSize() {
+    const id = this.textTargets()[0];
+    const size = id ? this._item(id)?.size : this.tool === 'text' ? this.style.text.size : null;
+    if (!size || this.readOnly) return;
+    this.style.text.size = size;
+    this.cb.onTextSize?.(size);
   }
 
   // 粗體／斜體：編輯中有反白文字就用 Markdown 包起來（已經包著就拿掉），不然整個文字框切換
@@ -1129,7 +1149,7 @@ export class Board {
         break;
       case 'transform':
         this._dragHandle(null);
-        if (a.changed) this._commit(a.before);
+        if (a.changed) { this._commit(a.before); this._rememberSize(); }
         this._updateSelBox();
         break;
       case 'pan':

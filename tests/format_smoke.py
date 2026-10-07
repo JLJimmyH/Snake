@@ -50,7 +50,7 @@ with sync_playwright() as pw:
     expect(text_bar).to_be_visible();expect(image_bar).to_be_hidden()
     text_bar.locator('[data-fmt=bold]').click();saved(page)
     text_bar.locator('[data-fmt=italic]').click();saved(page)
-    text_bar.locator('.palette-toggle').first.click();page.locator('#text-palette [data-color="#dc2626"]').click();saved(page)
+    text_bar.locator('[aria-controls=text-palette]').click();page.locator('#text-palette [data-color="#dc2626"]').click();saved(page)
     text_bar.locator('.font-toggle').click();page.locator('.font-opt[data-font=serif]').click();saved(page)
     text_bar.locator('[data-fmt=bigger]').click();saved(page)
     t=item(page,'t')
@@ -90,7 +90,7 @@ with sync_playwright() as pw:
     page.mouse.click(vp['x']+300,vp['y']+600);page.keyboard.type('zoomed')
     page.locator('#page-title').click();saved(page)
     new_text=next(it for it in state(page)['items'] if it.get('text')=='zoomed')
-    assert new_text['size']==18,new_text
+    assert new_text['size']==25,new_text  # 最後一次調整的字級（上面拉側邊把手時是 25），不乘縮放
     page.locator('.tool[data-tool=pen]').click()
     page.mouse.move(vp['x']+300,vp['y']+700);page.mouse.down();page.mouse.move(vp['x']+400,vp['y']+720,steps=5);page.mouse.up();saved(page)
     stroke=next(it for it in state(page)['items'] if it['type']=='stroke')

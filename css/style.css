@@ -322,6 +322,13 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
 .font-opt { display: block; width: 100%; padding: 7px 8px; border-radius: 6px; font-size: 15px; text-align: left; }
 .font-opt:hover { background: var(--hover); }
 .font-opt[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
+.size-toggle .size-name { min-width: 2ch; font-size: 13px; font-variant-numeric: tabular-nums; }
+.size-menu { width: 208px; }
+.size-opts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 12px; }
+.size-opt { height: 34px; border-radius: 6px; font-size: 14px; font-variant-numeric: tabular-nums; }
+.size-opt:hover { background: var(--hover); }
+.size-opt[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
+.size-menu .brush-color input { width: 72px; padding: 2px 6px; font: inherit; color: var(--text); cursor: text; }
 
 .tbtn {
   flex: none;
