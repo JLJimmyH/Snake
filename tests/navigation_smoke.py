@@ -112,41 +112,54 @@ with sync_playwright() as pw:
     assert moved(before)==(0,200),'consecutive notches add up'
     before=view(page);page.mouse.wheel(12.5,0);page.wait_for_timeout(20)
     assert moved(before)==(12.5,0),'high-resolution delta applies at once'
-    before=view(page);page.mouse.wheel(17.5,0);page.mouse.wheel(0,100);page.wait_for_timeout(400)
-    assert moved(before)==(17.5,100),'both wheels together move on both axes'
+    page.wait_for_timeout(1100) # 拇指滾輪剛動過的 1 秒內，整格事件會先等一下
     page.keyboard.down('Shift');before=view(page);page.mouse.wheel(0,100);page.wait_for_timeout(400)
     page.keyboard.up('Shift');assert moved(before)==(100,0),'shift+wheel scrolls sideways'
     print('PASS: wheel notches glide, high-resolution deltas follow at once')
-    # A real MX Master thumb-wheel nudge (ms, deltaX): the device itself keeps sending a decaying
-    # tail for about 1.5 s. The tail is trimmed, while a steady turn keeps its full distance.
-    NUDGE=[(0,.83),(18,2.5),(22,2.5),(35,2.5),(52,5.83),(71,7.5),(90,10.83),(91,11.67),(103,20),(119,23.33),
-      (136,30.83),(153,23.33),(155,26.67),(170,25.83),(186,15.83),(205,15),(221,15.83),(222,15),(235,15.83),
-      (250,15.83),(270,15),(286,15.83),(291,14.17),(302,13.33),(320,12.5),(336,10.83),(350,10),(355,9.17),
-      (369,8.33),(386,7.5),(404,6.67),(420,5.83),(423,5.83),(436,5),(454,5),(467,4.17),(484,4.17),(489,3.33),
-      (504,3.33),(520,2.5),(538,2.5),(553,2.5),(556,2.5),(570,1.67),(587,1.67),(605,1.67),(621,1.67),(623,1.67),
-      (637,.83),(654,1.67),(672,.83),(687,.83),(690,.83),(703,.83),(748,.83),(818,.83),(864,.83),(890,.83),
-      (942,.83),(991,.83),(1081,.83),(1201,.83),(1497,.83)]
+    # A real MX Master thumb-wheel recording (ms, deltaX, deltaY): while the thumb wheel scrolls, the device
+    # slips in whole-notch events (deltaY +100, or deltaX -100 against the scroll) that made the view jump.
+    THUMB=[(0,-0.83,0),(23,-0.83,0),(39,-0.83,0),(55,-0.83,0),(72,-0.83,0),(76,-0.83,0),(101,-0.83,0),(109,-0.83,0),
+      (122,-0.83,0),(143,-0.83,0),(180,-0.83,0),(198,-0.83,0),(223,-0.83,0),(277,-0.83,0),(399,-0.83,0),(612,-0.83,0),
+      (900,0,100),(963,2.5,0),(979,3.33,0),(993,5.83,0),(1008,6.67,0),(1025,6.67,0),(1046,9.17,0),(1061,7.5,0),
+      (1080,11.67,0),(1096,13.33,0),(1111,13.33,0),(1129,14.17,0),(1145,10,0),(1160,10,0),(1179,10.83,0),(1195,15,0),
+      (1207,14.17,0),(1228,10,0),(1244,10,0),(1260,11.67,0),(1277,12.5,0),(1296,11.67,0),(1310,13.33,0),(1327,12.5,0),
+      (1346,10.83,0),(1358,10.83,0),(1376,0,100),(1379,10.83,0),(1396,10.83,0),(1413,9.17,0),(1427,9.17,0),(1444,9.17,0),
+      (1456,-100,0),(1458,9.17,0),(1473,9.17,0),(1491,9.17,0),(1543,5.83,0),(1548,5.83,0),(1556,5.83,0),(1570,0,100),
+      (1571,5.83,0),(1587,5.83,0),(1606,5.83,0),(1620,5.83,0),(1623,5.83,0),(1637,5.83,0),(1654,5.83,0),(1674,5.83,0),
+      (1691,5.83,0),(1707,0,100),(1707,5.83,0),(1721,5,0),(1739,5,0),(1755,2.5,0),(1774,2.5,0),(1791,2.5,0),
+      (1805,2.5,0),(1822,2.5,0),(1838,3.33,0),(1855,2.5,0),(1871,2.5,0),(1890,2.5,0),(1907,2.5,0),(1924,2.5,0),
+      (1925,-100,0),(1941,2.5,0),(1958,1.67,0),(1973,1.67,0),(1991,1.67,0),(2726,10.83,0),(2766,15.83,0),(2806,18.33,0),
+      (2847,19.17,0),(2894,23.33,0),(2928,20,0),(2958,21.67,0),(2994,21.67,0),(3035,23.33,0),(3067,19.17,0),(3100,17.5,0),
+      (3137,17.5,0),(3180,16.67,0),(3214,15.83,0),(3245,13.33,0),(3255,-100,0),(3286,12.5,0),(3294,0,100),(3319,12.5,0),
+      (3326,0,100),(3358,12.5,0),(3396,13.33,0),(3433,12.5,0)]
     def replay(events):
         return page.evaluate('''async events => {
-          const vp=document.querySelector('#viewport'),r=vp.getBoundingClientRect(),t0=performance.now(),xs=[];
-          const x=()=>+document.querySelector('.world').style.transform.match(/translate\((.+?)px/)[1];
-          const start=x();
-          for (const [ms,dx] of events) {
+          const vp=document.querySelector('#viewport'),r=vp.getBoundingClientRect(),t0=performance.now();
+          const at=()=>document.querySelector('.world').style.transform.match(/translate\((.+?)px, (.+?)px/).slice(1).map(Number);
+          const [x0,y0]=at(),track=[];
+          for (const [ms,dx,dy] of events) {
             await new Promise(res=>setTimeout(res,Math.max(0,t0+ms-performance.now())));
-            vp.dispatchEvent(new WheelEvent('wheel',{deltaX:dx,clientX:r.x+r.width/2,clientY:r.y+r.height/2,bubbles:true,cancelable:true}));
-            xs.push([ms,start-x()]);
+            vp.dispatchEvent(new WheelEvent('wheel',{deltaX:dx,deltaY:dy,clientX:r.x+r.width/2,clientY:r.y+r.height/2,bubbles:true,cancelable:true}));
+            const [x,y]=at();track.push([x0-x,y0-y]);
           }
-          return xs;
+          await new Promise(res=>setTimeout(res,400));
+          const [x,y]=at();track.push([x0-x,y0-y]);
+          return track;
         }''',events)
-    page.wait_for_timeout(300)
-    xs=replay(NUDGE);raw=sum(dx for _,dx in NUDGE);total=xs[-1][1]
-    after_peak=total-next(d for ms,d in xs if ms>=400)
-    assert total<raw*.75,(total,raw)
-    assert after_peak<10,('tail after 400 ms should be tiny',after_peak)
-    page.wait_for_timeout(300)
-    steady=[(i*15,15) for i in range(30)]
-    assert abs(replay(steady)[-1][1]-15*30)<1,'a steady turn keeps its full distance'
-    print(f'PASS: thumb-wheel momentum tail trimmed ({raw:.0f}px -> {total:.0f}px, {after_peak:.1f}px after 400 ms)')
+    track=replay(THUMB)
+    smooth=sum(dx for _,dx,dy in THUMB if abs(dx)<50 and not dy)
+    assert all(abs(y)<.01 for _,y in track),'the view must not move vertically'
+    assert abs(track[-1][0]-smooth)<.5,(track[-1][0],smooth)
+    forward=[x for (ms,_,_),(x,_) in zip(THUMB,track) if ms>=963]
+    assert all(b>=a-.01 for a,b in zip(forward,forward[1:])),'no jump against the scroll direction'
+    for events,expected,why in [
+        ([(0,17.5,0),(10,0,100)],(17.5,0),'a notch while the thumb wheel scrolls is noise'),
+        ([(0,5,0),(400,0,100),(430,5,0)],(10,0),'a notch right before the thumb wheel moves again is noise'),
+        ([(0,5,0),(400,0,100)],(5,100),'a notch shortly after the thumb wheel stops still scrolls'),
+        ([(0,0,100)],(0,100),'without a thumb wheel a notch scrolls')]:
+        page.wait_for_timeout(1100)
+        end=replay(events)[-1];assert (round(end[0],2),round(end[1],2))==expected,(why,end)
+    print('PASS: stray notches from a thumb wheel are ignored')
     # Fit to content via Shift+1, the toolbar button and the lost hint.
     for trigger in ['Shift+1','#btn-fit','#back-to-content']:
         page.mouse.move(x,y);page.mouse.wheel(30000,30000)
