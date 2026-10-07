@@ -117,6 +117,61 @@ with sync_playwright() as pw:
     page.keyboard.down('Shift');before=view(page);page.mouse.wheel(0,100);page.wait_for_timeout(400)
     page.keyboard.up('Shift');assert moved(before)==(100,0),'shift+wheel scrolls sideways'
     print('PASS: wheel notches glide, high-resolution deltas follow at once')
+    # Both wheels at once (recorded on Chrome/Windows with an MX Master, ms, deltaX, deltaY). Chrome turns a
+    # vertical notch that shares a message time with the thumb wheel's last WM_MOUSEHWHEEL into a horizontal
+    # one (hwnd_message_handler.cc), so a notch down arrives as deltaX -100 / wheelDeltaX +120.
+    BOTH=[(0,0,100),(63,2.5,0),(79,3.33,0),(93,5.83,0),(108,6.67,0),(125,6.67,0),(146,9.17,0),(161,7.5,0),
+      (180,11.67,0),(196,13.33,0),(211,13.33,0),(229,14.17,0),(245,10,0),(260,10,0),(279,10.83,0),(295,15,0),
+      (307,14.17,0),(328,10,0),(344,10,0),(360,11.67,0),(377,12.5,0),(396,11.67,0),(410,13.33,0),(427,12.5,0),
+      (446,10.83,0),(458,10.83,0),(476,0,100),(479,10.83,0),(496,10.83,0),(513,9.17,0),(527,9.17,0),(544,9.17,0),
+      (556,-100,0),(558,9.17,0),(573,9.17,0),(591,9.17,0),(643,5.83,0),(648,5.83,0),(656,5.83,0),(670,0,100),
+      (671,5.83,0),(687,5.83,0),(706,5.83,0),(720,5.83,0),(723,5.83,0),(737,5.83,0),(754,5.83,0),(774,5.83,0),
+      (791,5.83,0),(807,0,100),(807,5.83,0),(821,5,0),(839,5,0),(855,2.5,0),(874,2.5,0),(891,2.5,0),
+      (905,2.5,0),(922,2.5,0),(938,3.33,0),(955,2.5,0),(971,2.5,0),(990,2.5,0),(1007,2.5,0),(1024,2.5,0),
+      (1025,-100,0),(1041,2.5,0),(1058,1.67,0),(1073,1.67,0),(1091,1.67,0),(1826,10.83,0),(1866,15.83,0),(1906,18.33,0),
+      (1947,19.17,0),(1994,23.33,0),(2028,20,0),(2058,21.67,0),(2094,21.67,0),(2135,23.33,0),(2167,19.17,0),(2200,17.5,0),
+      (2237,17.5,0),(2280,16.67,0),(2314,15.83,0),(2345,13.33,0),(2355,-100,0),(2386,12.5,0),(2394,0,100),(2419,12.5,0),
+      (2426,0,100),(2458,12.5,0),(2496,13.33,0),(2533,12.5,0)]
+    def wheel_init(dx,dy):
+        # wheelDelta = ticks * 120: a notch is 120, the thumb wheel sends 1/120-tick units (deltaX 0.8333 each)
+        if dy: return {'deltaX':0,'deltaY':dy,'wheelDeltaX':0,'wheelDeltaY':-round(dy*1.2)}
+        return {'deltaX':dx,'deltaY':0,'wheelDeltaX':-round(dx*1.2),'wheelDeltaY':0}
+    def replay(events,settle=500):
+        return page.evaluate('''async ([events,settle]) => {
+          const vp=document.querySelector('#viewport'),r=vp.getBoundingClientRect(),t0=performance.now();
+          const at=()=>document.querySelector('.world').style.transform.match(/translate\((.+?)px, (.+?)px/).slice(1).map(Number);
+          const [x0,y0]=at(),track=[];
+          for (const [ms,init] of events) {
+            await new Promise(res=>setTimeout(res,Math.max(0,t0+ms-performance.now())));
+            vp.dispatchEvent(new WheelEvent('wheel',{...init,clientX:r.x+r.width/2,clientY:r.y+r.height/2,bubbles:true,cancelable:true}));
+            const [x,y]=at();track.push([x0-x,y0-y]);
+          }
+          await new Promise(res=>setTimeout(res,settle));
+          const [x,y]=at();track.push([x0-x,y0-y]);
+          return track;
+        }''',[[[ms,wheel_init(dx,dy)] for ms,dx,dy in events],settle])
+    page.wait_for_timeout(300)
+    track=replay(BOTH)
+    thumb=sum(dx for _,dx,dy in BOTH if abs(dx)<50 and not dy)
+    assert abs(track[-1][1]-900)<.5,('all 9 vertical notches (6 + 3 swapped by Chrome) scroll down',track[-1])
+    assert abs(track[-1][0]-thumb)<.5,('horizontal follows the thumb wheel only',track[-1][0],thumb)
+    xs=[x for x,_ in track]
+    assert all(b>=a-.01 for a,b in zip(xs,xs[1:])),'no jump against the scroll direction'
+    page.wait_for_timeout(300)
+    # A whole horizontal notch with no thumb wheel nearby (tilt wheel, Shift) stays horizontal.
+    end=replay([(0,-100,0)],900)[-1];assert (round(end[0],2),round(end[1],2))==(-100,0),end
+    # Scrolling up while the thumb wheel moves comes back as deltaX +100; it is restored to a notch up.
+    end=replay([(0,5,0),(8,100,0)],900)[-1];assert (round(end[0],2),round(end[1],2))==(5,-100),end
+    print('PASS: notches Chrome swaps to horizontal during two-wheel scrolling are restored')
+    # With both wheels moving, a notch glides longer (tau 100 ms) so consecutive notches join up;
+    # alone it keeps the short glide (tau 40 ms).
+    def after(events,ms):
+        return replay(events,settle=ms)[-1][1]
+    page.wait_for_timeout(300);alone=after([(0,0,100)],60)
+    page.wait_for_timeout(600);both=after([(0,5,0),(10,0,100)],60)
+    assert alone>70 and both<60,(alone,both)
+    page.wait_for_timeout(600)
+    print('PASS: notches glide longer only while both wheels move')
     # Fit to content via Shift+1, the toolbar button and the lost hint.
     for trigger in ['Shift+1','#btn-fit','#back-to-content']:
         page.mouse.move(x,y);page.mouse.wheel(30000,30000)

@@ -8,8 +8,11 @@ const SVGNS = 'http://www.w3.org/2000/svg';
 const MIN_S = 0.1, MAX_S = 8, GRID = 24, HISTORY = 100;
 // 觸控板捏合的 deltaY 很小，照原比例縮放才跟手；滑鼠滾輪一格約 100，限制成一格約 10%
 const WHEEL_ZOOM_MAX = 10;
-// 一次至少 WHEEL_NOTCH px 的滾動視為「一格一格」的滾輪，用時間常數 WHEEL_GLIDE 毫秒的動畫滑過去
-const WHEEL_NOTCH = 50, WHEEL_GLIDE = 40;
+// 一次至少 WHEEL_NOTCH px 的滾動視為「一格一格」的滾輪，用時間常數 WHEEL_GLIDE 毫秒的動畫滑過去；
+// 拇指滾輪 WHEEL_BOTH 毫秒內也在滾（兩個滾輪一起用）時改用 WHEEL_GLIDE_BOTH，讓相鄰兩格接得起來
+const WHEEL_NOTCH = 50, WHEEL_GLIDE = 40, WHEEL_GLIDE_BOTH = 100, WHEEL_BOTH = 200;
+// Chrome 改判的那一格，會在拇指滾輪事件之後 WHEEL_SWAPPED 毫秒內出現
+const WHEEL_SWAPPED = 32;
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
 
 const r1 = n => Math.round(n * 10) / 10;
@@ -192,7 +195,9 @@ export class Board {
     this.darkCanvas = false;
     this.mouseMode = false;   // 滑鼠模式：點到物件直接選取並拖動，空白處拖曳＝框選
     this.spacePan = false;    // 按住空白鍵：左鍵拖曳＝移動畫布
-    this.glide = { x: 0, y: 0, frame: 0 }; // 滾輪還沒滑完的距離，見 _glide
+    this.glide = { x: 0, y: 0, frame: 0, tau: WHEEL_GLIDE }; // 滾輪還沒滑完的距離，見 _glide
+    this.thumbAt = -Infinity; // 最近一次高解析度橫向滾動（拇指滾輪）的時間
+    this.lineY = 0;           // 直向滾輪一格幾 px，從真正的直向格學來
     this.pointers = new Map();
     this.action = null;
     this.editing = null;
@@ -362,7 +367,7 @@ export class Board {
     cancelAnimationFrame(this.anim);
     this.anim = 0;
     cancelAnimationFrame(this.glide.frame);
-    this.glide = { x: 0, y: 0, frame: 0 };
+    this.glide = { x: 0, y: 0, frame: 0, tau: WHEEL_GLIDE };
   }
 
   // 全部物件（或 ids 指定的物件）的外框（世界座標），空白頁回傳 null
@@ -879,12 +884,35 @@ export class Board {
       return;
     }
     let dx = e.deltaX * k, dy = e.deltaY * k;
+    if (e.deltaMode === 0 && !e.shiftKey) [dx, dy] = this._unswap(e, dx, dy);
     // 只有直向滾輪的滑鼠：Shift+滾輪＝橫向（有些瀏覽器已經自己轉好）
     if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
     // 一格一格的滾輪每格跳約 100px，補成短動畫，跟瀏覽器原生捲動一樣順；
     // 高解析度滾輪、觸控板本來就是連續的小數值，直接套用才跟手
-    if (e.deltaMode === 1 || Math.max(Math.abs(dx), Math.abs(dy)) >= WHEEL_NOTCH) this._glide(dx, dy);
-    else this.setView(this.view.x - dx, this.view.y - dy, this.view.s);
+    if (e.deltaMode === 1 || Math.max(Math.abs(dx), Math.abs(dy)) >= WHEEL_NOTCH) {
+      this.glide.tau = e.timeStamp - this.thumbAt < WHEEL_BOTH ? WHEEL_GLIDE_BOTH : WHEEL_GLIDE;
+      this._glide(dx, dy);
+    } else this.setView(this.view.x - dx, this.view.y - dy, this.view.s);
+  }
+
+  // Windows 版 Chrome 為了舊的 Logitech 驅動，會把「跟前一則橫向滾動同一個時間刻度」的直向滾動
+  // 當成橫向（ui/views/win/hwnd_message_handler.cc）。拇指滾輪和直向滾輪一起滾時，
+  // 往下那一格就會變成往左一格（deltaX -100），畫面往反方向跳。認出這種整格的橫向事件，還原成直向。
+  // wheelDelta 是「格數 × 120 ÷ devicePixelRatio」：整數格＝滾輪的一格，拇指滾輪只有零點幾格。
+  _unswap(e, dx, dy) {
+    const dpr = devicePixelRatio || 1;
+    const ticksX = (e.wheelDeltaX ?? 0) * dpr / 120, ticksY = (e.wheelDeltaY ?? 0) * dpr / 120;
+    const whole = t => Math.abs(t) >= .95 && Math.abs(t - Math.round(t)) < .05;
+    if (!dx && dy && whole(ticksY)) this.lineY = Math.abs(dy / ticksY);
+    if (dy || !dx) return [dx, dy];
+    if (!whole(ticksX)) {
+      this.thumbAt = e.timeStamp;
+      return [dx, dy];
+    }
+    if (e.timeStamp - this.thumbAt > WHEEL_SWAPPED) return [dx, dy];
+    // 往下一格：wheelDeltaY -120 → 改判後 wheelDeltaX +120、deltaX -100；還原成 deltaY +100
+    const ticks = Math.round(ticksX);
+    return [0, ticks * (this.lineY || Math.abs(dx / ticksX))];
   }
 
   // 把滾動距離累加起來，每個畫格走剩下距離的一部分（指數減速），連續滾動時會一直接續
@@ -900,7 +928,7 @@ export class Board {
     }
     let last = performance.now();
     const step = now => {
-      const f = 1 - Math.exp(-(now - last) / WHEEL_GLIDE);
+      const f = 1 - Math.exp(-(now - last) / g.tau);
       last = now;
       let sx = g.x * f, sy = g.y * f;
       if (Math.abs(g.x - sx) < .5 && Math.abs(g.y - sy) < .5) [sx, sy] = [g.x, g.y];
