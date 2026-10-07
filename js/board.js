@@ -195,6 +195,7 @@ export class Board {
     this.canvas = '#ffffff';  // 畫布底色，由 setCanvas 設定
     this.darkCanvas = false;
     this.mouseMode = false;   // 滑鼠模式：點到物件直接選取並拖動，空白處拖曳＝框選
+    this.penMode = false;     // 觸控筆模式：手指不書寫，只移動畫布
     this.spacePan = false;    // 按住空白鍵：左鍵拖曳＝移動畫布
     this.glide = { x: 0, y: 0, frame: 0, tau: WHEEL_GLIDE }; // 滾輪還沒滑完的距離，見 _glide
     this.thumbAt = -Infinity; // 最近一次高解析度橫向滾動（拇指滾輪）的時間
@@ -297,9 +298,11 @@ export class Board {
   }
 
   // 'touch'：先點選物件才能拖動，空白處拖曳＝移動畫布，比較不會誤觸
+  // 'pen'：同觸控，但筆、螢光筆、橡皮擦、套索只聽觸控筆，手指拖曳一律移動畫布
   // 'mouse'：點到物件直接選取並拖動，空白處拖曳＝框選
   setInputMode(mode) {
     this.mouseMode = mode === 'mouse';
+    this.penMode = mode === 'pen';
     this.vp.dataset.input = mode;
   }
 
@@ -691,9 +694,11 @@ export class Board {
 
     const w = this.toWorld(e.clientX, e.clientY);
     const base = { id: e.pointerId, ptype: e.pointerType };
-    const t = this.tool;
+    // 觸控筆的橡皮擦端（按住橡皮擦鍵）＝這一筆用橡皮擦
+    const t = isPen && e.buttons & 32 ? 'eraser' : this.tool;
     const transform = e.target.closest('[data-transform]');
     if (transform && (t === 'select' || t === 'lasso')) return this._startTransform(base, w, transform.dataset.transform);
+    if (isTouch && this.penMode && ['pen', 'hl', 'eraser', 'lasso'].includes(t)) return this._startPan(e, w);
 
     if (t === 'pen' || t === 'hl' || t === 'eraser') {
       if (t === 'eraser') {
@@ -732,7 +737,8 @@ export class Board {
 
   _move(e) {
     this.lastPointer = { x: e.clientX, y: e.clientY };
-    if (this.tool === 'eraser' && (e.pointerType !== 'touch' || this.action?.kind === 'erase')) this._showCursor(e);
+    const erasing = this.action?.kind === 'erase' && this.action.id === e.pointerId;
+    if (erasing || (this.tool === 'eraser' && e.pointerType !== 'touch' && !this.action)) this._showCursor(e);
     const p = this.pointers.get(e.pointerId);
     if (!p) return;
     p.x = e.clientX;
