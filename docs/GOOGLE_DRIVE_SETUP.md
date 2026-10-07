@@ -4,7 +4,7 @@
 
 每本筆記本在 Drive 上就是一個 `<筆記本名稱>.zip` 檔（內含頁面、內容與圖片）。「儲存」會覆寫同一個檔案；要留備份，使用「另存副本到 Drive」。
 
-目前網址：https://jljimmyh.github.io/note-mvp/
+目前網址：https://jljimmyh.github.io/snake/
 
 本功能可在 GitHub Pages 運作，不需要 Supabase 或 Node 後端。Google OAuth／Drive 真實帳號尚未在本開發環境驗收；請完成下列設定後，先用測試帳號驗證。
 
@@ -69,7 +69,7 @@ Google 介面的欄位／選單可能調整。若頁面要求品牌首頁、隱�
 https://jljimmyh.github.io
 ```
 
-注意：**沒有 `/note-mvp/`，也沒有尾端 `/`**。Origin 只包含通訊協定、網域和必要的 port。
+注意：**沒有 `/snake/`，也沒有尾端 `/`**。Origin 只包含通訊協定、網域和必要的 port。
 
 若要在自己的電腦測試，可另外加入實際使用的來源，例如：
 
