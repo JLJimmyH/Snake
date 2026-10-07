@@ -209,6 +209,14 @@ python tests/browser_smoke.py
 - 已知：新增的文字框不會自動避開既有物件，靠提示詞要求 AI 不要重疊；AI 不能新增圖片或改筆跡。
 - [ ] 真實 ChatGPT／Claude 試用：提示詞是否夠清楚、回覆格式是否穩定，再依結果調整提示詞。
 
+### 改成「區域匯出＋插入元件」（2026-10-07）
+原本整頁匯出、AI 回 ops 改原物件；改成只交出框選的一塊，AI 回傳新元件，使用者自己決定放哪裡，原本的內容不動，方便對照。上面第 1 階段的 ops／replaceItems 已移除。
+- [x] ai-core：exportRegion（座標以區域左上角為原點、不給 id；筆跡給 RDP 簡化後的點，全部超過 4000 點才退回外框）、提示詞改成「產生新內容」、回覆格式 {"items":[…]}（text、stroke；不能新增圖片），驗證有錯整批不收；placeItems 整組平移到點的位置；replyItems 判斷貼上的文字是不是 AI 回覆。
+- [x] Board：exportArea／contentBounds／toPNG 可以只算指定物件；insertItems（一次復原）；pickPoint／cancelPick 等使用者點畫布。
+- [x] 入口：選取後按 ✨ 或在選取範圍按右鍵「提取給 AI 分析」（點到物件會先選它，空白處＝整頁）。放回：對話框「點畫布放上去」（虛線框預覽，Esc 取消，回覆留著可以再放）、畫布上 Ctrl+V、右鍵「在這裡貼上 AI 回覆」。
+- 已知：觸控裝置沒有右鍵，用 ✨ 按鈕；放置預覽框的文字大小是粗估。
+- [ ] 真實 ChatGPT／Claude 試用：看 AI 畫出來的筆跡（底線、框線、箭頭）是否堪用。
+
 ### 第 2 階段：網址／MCP 給 agent（等 Cloudflare 同步，見 docs/CLOUDFLARE_SYNC_PLAN.md）
 - [ ] 沿用訪客連結發「AI 權杖」：只限單頁、有期限、可撤銷，寫入計在建立者名下。
 - [ ] REST：`GET /api/ai/<token>`（精簡 JSON＋說明）、`POST /api/ai/<token>/ops`（同第 1 階段的 ops，經 Durable Object 即時推到開著的畫面）。給能跑 curl 的 agent（Claude Code 等）。

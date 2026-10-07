@@ -748,6 +748,9 @@ svg.ink path.remote-preview { opacity: .55; }
 #ai-preview ul { margin: 4px 0 0; padding-left: 20px; max-height: 180px; overflow-y: auto; }
 .ai-counts { margin: 10px 0 0; font-weight: 600; }
 .ai-error { margin: 10px 0 0; color: var(--danger); white-space: pre-line; }
+#viewport.picking, #viewport.picking * { cursor: copy !important; }
+#ai-ghost { position: fixed; z-index: 40; pointer-events: none; border: 2px dashed var(--accent); border-radius: 4px; background: color-mix(in srgb, var(--accent) 8%, transparent); }
+#ai-ghost[hidden] { display: none; }
 
 /* 外觀面板：主題、畫布顏色 */
 .popover-note { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }

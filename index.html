@@ -53,7 +53,7 @@
       <button id="drive-sync" class="chip" title="從 Google Drive 載入其他裝置存的最新內容" hidden>⟳ 同步</button>
       <button id="drive-save" class="chip" title="把目前的筆記本存到 Google Drive (Ctrl+S)">☁ 存到 Drive</button>
       <button id="collab-button" class="chip" hidden>協作</button>
-      <button id="ai-button" class="icon-btn" title="AI 整理：把這頁交給 ChatGPT、Claude 等 AI 整理" aria-label="AI 整理" aria-haspopup="dialog">
+      <button id="ai-button" class="icon-btn" title="AI 分析：把選取的內容（沒選就整頁）交給 ChatGPT、Claude 等 AI" aria-label="AI 分析" aria-haspopup="dialog">
         <svg class="i" viewBox="0 0 24 24"><path d="M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8z"/><path d="M18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"/></svg>
       </button>
       <button id="btn-shortcuts" class="icon-btn" title="快捷鍵 (?)" aria-label="快捷鍵" aria-expanded="false" aria-controls="shortcuts-panel">
@@ -264,18 +264,20 @@
   <p class="drive-actions"><button id="drive-disconnect" class="chip">中斷 Google 連線</button><a href="privacy.html" target="_blank" rel="noopener">隱私權政策</a></p>
 </dialog>
 <dialog id="ai-dialog" aria-labelledby="ai-heading">
-  <div class="collab-heading"><h2 id="ai-heading">AI 整理這一頁</h2><button id="ai-close" class="icon-btn" aria-label="關閉">✕</button></div>
+  <div class="collab-heading"><h2 id="ai-heading">AI 分析這一頁</h2><button id="ai-close" class="icon-btn" aria-label="關閉">✕</button></div>
+  <p class="drive-muted">先框選一塊再按 ✨（或在選取範圍按右鍵），就只交出那一塊。AI 給的是新內容，不會改到原本的筆記。</p>
   <h3>1. 複製給 AI</h3>
-  <label for="ai-request" class="drive-muted">想怎麼整理（可以不填）</label>
-  <textarea id="ai-request" rows="2" placeholder="例如：把手寫內容轉成文字、重點整理成條列、排整齊"></textarea>
+  <label for="ai-request" class="drive-muted">想要 AI 做什麼（可以不填）</label>
+  <textarea id="ai-request" rows="2" placeholder="例如：把手寫轉成文字、整理成條列、畫成流程圖"></textarea>
   <p class="ai-actions"><button id="ai-copy" class="collab-primary">複製給 AI</button><button id="ai-shot" class="chip" title="有手寫或圖片時附上，AI 才看得到內容">複製截圖</button></p>
   <p class="drive-muted">貼到 ChatGPT、Claude 等 AI 的對話框。有手寫的話，也把截圖貼過去。</p>
   <h3>2. 貼回 AI 的回覆</h3>
-  <textarea id="ai-reply" rows="5" placeholder='{"ops":[ … ]}' spellcheck="false"></textarea>
+  <textarea id="ai-reply" rows="5" placeholder='{"items":[ … ]}' spellcheck="false"></textarea>
   <div id="ai-preview" aria-live="polite"></div>
-  <button id="ai-apply" class="collab-primary" disabled>套用</button>
-  <p class="drive-muted">套用後可以按復原還原。</p>
+  <button id="ai-insert" class="collab-primary" disabled>點畫布放上去</button>
+  <p class="drive-muted">也可以直接複製 AI 的回覆，在畫布上按 Ctrl+V 或右鍵「在這裡貼上」。放上去後可以按復原還原。</p>
 </dialog>
+<div id="ai-ghost" hidden></div>
 <script type="module" src="js/main.js"></script>
 </body>
 </html>

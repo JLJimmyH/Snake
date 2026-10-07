@@ -207,6 +207,7 @@ export class Board {
 
   // ---------- public ----------
   load(doc) {
+    this.cancelPick();
     this._stopAnim();
     this.action = null;
     this.pointers.clear();
@@ -364,10 +365,11 @@ export class Board {
     this.glide = { x: 0, y: 0, frame: 0 };
   }
 
-  // 全部物件的外框（世界座標），空白頁回傳 null
-  contentBounds() {
+  // 全部物件（或 ids 指定的物件）的外框（世界座標），空白頁回傳 null
+  contentBounds(ids = null) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const it of this.items) {
+      if (ids && !ids.has(it.id)) continue;
       const b = this._box(it);
       x0 = Math.min(x0, b.x); y0 = Math.min(y0, b.y);
       x1 = Math.max(x1, b.x + b.w); y1 = Math.max(y1, b.y + b.h);
@@ -478,24 +480,48 @@ export class Board {
     this.setSelection([item.id]);
   }
 
-  // 整批換掉內容（AI 整理），一次復原就能還原
-  replaceItems(items) {
-    if (this.readOnly) return;
+  // 插入一組新物件（AI 回傳的元件，已經是世界座標），一次復原就能還原，插入後選取方便拖動對照
+  insertItems(items) {
+    if (this.readOnly || !items.length) return;
     this.commitText();
     const before = this._snap();
-    this.items = items;
-    this._renderAll();
+    for (const item of items) { this.items.push(item); this._mount(item); }
     this._commit(before);
+    this.setSelection(items.map(it => it.id));
   }
 
-  // 截圖範圍：全部內容外加一點留白；空白頁回傳 null
-  exportArea(pad = 24) {
-    const b = this.contentBounds();
+  // 等使用者點一下畫布，回傳世界座標；cancelPick() 或換頁時回傳 null
+  pickPoint() {
+    this.cancelPick();
+    this.vp.classList.add('picking');
+    return new Promise(resolve => { this.picking = resolve; });
+  }
+
+  cancelPick(point = null) {
+    const resolve = this.picking;
+    if (!resolve) return;
+    this.picking = null;
+    this.vp.classList.remove('picking');
+    resolve(point);
+  }
+
+  // 螢幕座標上最上層的物件，沒有就 null
+  itemAt(cx, cy) {
+    return this._hitsAt(this.toWorld(cx, cy))[0] ?? null;
+  }
+
+  selectionHas(cx, cy) {
+    return this.sel.size > 0 && this._inSelBox(this.toWorld(cx, cy));
+  }
+
+  // 截圖／匯出範圍：指定物件（沒給就全部）的外框外加一點留白；沒有內容回傳 null
+  exportArea(ids = null, pad = 24) {
+    const b = this.contentBounds(ids);
     return b && { x: b.x0 - pad, y: b.y0 - pad, w: b.x1 - b.x0 + pad * 2, h: b.y1 - b.y0 + pad * 2 };
   }
 
-  // 把 area 範圍畫成 PNG（給 AI 看手寫）。顏色跟畫面一樣；文字只畫原始文字，不排 Markdown
-  async toPNG(area, maxSide = 2400) {
+  // 把 area 範圍畫成 PNG（給 AI 看手寫），ids 有給就只畫那些物件。顏色跟畫面一樣；文字只畫原始文字，不排 Markdown
+  async toPNG(area, { ids = null, maxSide = 2400 } = {}) {
     const k = Math.min(2, maxSide / Math.max(area.w, area.h));
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(area.w * k));
@@ -507,6 +533,7 @@ export class Board {
     ctx.lineCap = ctx.lineJoin = 'round';
     const css = getComputedStyle(this.vp);
     for (const it of this.items) {
+      if (ids && !ids.has(it.id)) continue;
       ctx.globalAlpha = 1;
       if (it.type === 'stroke') {
         ctx.globalAlpha = it.tool === 'hl' ? .5 : 1;
@@ -596,6 +623,12 @@ export class Board {
     this.lastPointer = { x: e.clientX, y: e.clientY };
     this.downAt = performance.now();
     this.noFocusUntil = 0;
+    if (this.picking && e.button === 0 && !this.action) {
+      e.preventDefault();
+      this.commitText();
+      this.cancelPick(this.toWorld(e.clientX, e.clientY));
+      return;
+    }
     if (e.pointerType === 'mouse' && e.button !== 0) {
       if (e.button === 1 && !this.action) {
         e.preventDefault();

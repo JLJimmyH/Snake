@@ -19,6 +19,7 @@ let current = null;
 let saveTimer = null;
 let contentChanged = false;
 let collaboration = null;
+let ai = null;
 let lastLocalPage = null;
 
 const board = new Board($('#viewport'), {
@@ -622,7 +623,7 @@ document.addEventListener('paste', async e => {
       try { await board.addImage(files[i], { x: position.x + i * 24, y: position.y + i * 24 }); }
       catch (error) { toast(error.message); }
     }
-  } else board.addText(text, position);
+  } else if (!ai?.paste(text, position)) board.addText(text, position);
 });
 
 // 手機鍵盤彈出時 visualViewport 會變小：讓整個 app 貼齊可見範圍，再把游標捲進畫面
@@ -721,7 +722,7 @@ async function init() {
   setMinimap(map ? map === '1' : !isMobile());
   setupAppearance({ board, button: $('#btn-appearance'), panel: $('#appearance-panel'), onCanvas: refreshNav });
   setupInputMode({ board, panel: $('#appearance-panel'), onChange: onInputMode });
-  setupAi({ board, title: () => $('#page-title').value, toast });
+  ai = setupAi({ board, title: () => $('#page-title').value, toast, showMenu });
   setTool('select');
   notebooks = setupNotebooks({
     current: () => notebookId, switchTo: switchNotebook, reload: reloadNotebook, create: createNotebook, flush, showMenu, toast,
