@@ -1,5 +1,6 @@
 import { db, uid, newNotebook, pagesOf } from './db.js';
 import { setupAppearance } from './appearance.js';
+import { setupShortcuts } from './shortcuts.js';
 import { Board } from './board.js';
 import { Minimap } from './minimap.js';
 import { cleanName } from './notebook-core.js';
@@ -31,10 +32,6 @@ const board = new Board($('#viewport'), {
   onHistory: (canUndo, canRedo) => {
     $('#btn-undo').disabled = !canUndo;
     $('#btn-redo').disabled = !canRedo;
-  },
-  onPenDetected: () => {
-    updateFinger();
-    toast('偵測到觸控筆：單指改為「移動畫面」，可在工具列切換');
   },
 });
 
@@ -541,19 +538,18 @@ $('#nav').addEventListener('wheel', e => e.preventDefault(), { passive: false })
 $('#viewport').addEventListener('load', refreshNav, true);
 window.addEventListener('resize', refreshNav);
 
-function updateFinger() {
-  try { localStorage.setItem('fingerDraws', board.fingerDraws ? '1' : '0'); } catch { /* ignore */ }
-  const b = $('#btn-finger');
-  b.textContent = board.fingerDraws ? '☝️ 手指：書寫' : '✋ 手指：移動';
-  b.classList.toggle('on', !board.fingerDraws);
-}
-$('#btn-finger').addEventListener('click', () => {
-  board.fingerDraws = !board.fingerDraws;
-  updateFinger();
-});
-
 // ---------- 鍵盤 / 貼上 ----------
+const shortcuts = setupShortcuts({ button: $('#btn-shortcuts'), panel: $('#shortcuts-panel') });
 const typing = el => el && (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
+
+// Esc 回到選取工具（編輯文字框時也算）。有色盤、面板或對話框開著時只關掉它們，交給各自的處理。
+// 用 window capture 搶在那些處理之前，才看得到它們關掉前的狀態。
+window.addEventListener('keydown', e => {
+  if (e.key !== 'Escape' || $('dialog[open], .brush-palette:not([hidden]), .popover:not([hidden])')) return;
+  const a = document.activeElement;
+  if (typing(a) && !a.classList.contains('text-body')) return;
+  setTool('select');
+}, true);
 
 document.addEventListener('keydown', e => {
   if (typing(document.activeElement) || $('dialog[open]')) return;
@@ -565,9 +561,12 @@ document.addEventListener('keydown', e => {
   if (e.shiftKey && e.code === 'Digit1') { board.fitContent(); return; }
   if (e.shiftKey && e.code === 'Digit0') { board.zoomTo(1); return; }
   if (k === 'm') { setMinimap($('#minimap').hidden); return; }
+  // 手機排版沒有「?」按鈕，面板也就不開
+  if (e.key === '?' && $('#btn-shortcuts').offsetParent) { shortcuts.toggle(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { board.deleteSelected(); return; }
-  const tools = { v: 'select', l: 'lasso', p: 'pen', h: 'hl', e: 'eraser', t: 'text' };
-  if (tools[k]) setTool(tools[k]);
+  // 只在選取工具下切換：Q 筆、W 螢光筆、E 套索、R 文字；其他工具按 Esc 回到選取
+  const tools = { q: 'pen', w: 'hl', e: 'lasso', r: 'text' };
+  if (board.tool === 'select' && tools[k] && !e.shiftKey && !e.altKey) setTool(tools[k]);
 });
 
 document.addEventListener('paste', async e => {
@@ -678,7 +677,6 @@ async function initialNotebook() {
 
 // ---------- init ----------
 async function init() {
-  try { if (localStorage.getItem('fingerDraws') === '0') board.fingerDraws = false; } catch { /* ignore */ }
   // 小地圖預設：桌機打開、手機收合；之後記住使用者的選擇
   let map = null;
   try { map = localStorage.getItem('minimap'); } catch { /* ignore */ }
@@ -686,7 +684,6 @@ async function init() {
   setupAppearance({ board, button: $('#btn-appearance'), panel: $('#appearance-panel'), onCanvas: refreshNav });
   setupAi({ board, title: () => $('#page-title').value, toast });
   setTool('select');
-  updateFinger();
   notebooks = setupNotebooks({
     current: () => notebookId, switchTo: switchNotebook, reload: reloadNotebook, create: createNotebook, flush, showMenu, toast,
   });

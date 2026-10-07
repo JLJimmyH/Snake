@@ -186,7 +186,6 @@ export class Board {
       hl: { color: '#fde047', width: 20 },
       eraser: { mode: 'partial', width: 12 }, // width = 螢幕上的半徑
     };
-    this.fingerDraws = true;  // 偵測到觸控筆後自動改成手指只負責移動
     this.canvas = '#ffffff';  // 畫布底色，由 setCanvas 設定
     this.darkCanvas = false;
     this.pointers = new Map();
@@ -608,10 +607,6 @@ export class Board {
       if (this.action && this.action.ptype !== 'pen') this.action = null;
     }
     if (isPen) {
-      if (this.fingerDraws) {
-        this.fingerDraws = false;
-        this.cb.onPenDetected?.();
-      }
       if (this.action && this.action.ptype !== 'pen') this._abort();
     } else if (isTouch && this.action?.ptype === 'pen') {
       return; // 觸控筆書寫中，忽略手掌
@@ -652,12 +647,11 @@ export class Board {
 
     const w = this.toWorld(e.clientX, e.clientY);
     const base = { id: e.pointerId, ptype: e.pointerType };
-    const fingerPans = isTouch && !this.fingerDraws;
     const t = this.tool;
     const transform = e.target.closest('[data-transform]');
     if (transform && (t === 'select' || t === 'lasso')) return this._startTransform(base, w, transform.dataset.transform);
 
-    if ((t === 'pen' || t === 'hl' || t === 'eraser') && !fingerPans) {
+    if (t === 'pen' || t === 'hl' || t === 'eraser') {
       if (t === 'eraser') {
         this.action = { ...base, kind: 'erase', before: this._snap(), hit: false, last: w };
         this._showCursor(e);
@@ -678,7 +672,7 @@ export class Board {
         this.action.link = e.target.closest('a.md-link')?.href;
         return;
       }
-      if (t === 'lasso' && !fingerPans && !itemEl) return this._startLasso(base, w);
+      if (t === 'lasso' && !itemEl) return this._startLasso(base, w);
     }
 
     this._startPan(e, w);

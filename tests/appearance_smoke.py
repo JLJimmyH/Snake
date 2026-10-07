@@ -39,13 +39,13 @@ with sync_playwright() as pw:
     assert s['theme']=='light' and s['palette']=='vscode-light' and s['bg']=='rgb(255, 255, 255)' and not s['dark'],s
 
     # 畫一條黑色筆跡
-    page.keyboard.press('p')
+    page.keyboard.press('q')
     box=page.locator('#viewport').bounding_box()
     x,y=box['x']+box['width']/2,box['y']+box['height']/2
     page.mouse.move(x,y); page.mouse.down()
     for i in range(1,12): page.mouse.move(x+i*12,y+(i%3)*8)
     page.mouse.up()
-    page.keyboard.press('v')
+    page.keyboard.press('Escape')
     assert state(page)['stroke']=='#1f2937',state(page)
 
     # 面板開關、Escape 關閉

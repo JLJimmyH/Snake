@@ -11,13 +11,13 @@ def strokes(page):
     return page.locator('svg.ink path:not(.lasso)').count()
 
 def draw(page, dx=0):
-    page.keyboard.press('p')
+    page.keyboard.press('q')
     box=page.locator('#viewport').bounding_box()
     x,y=box['x']+box['width']-260+dx,box['y']+box['height']-160
     page.mouse.move(x,y); page.mouse.down()
     for i in range(1,10): page.mouse.move(x+i*10,y+(i%3)*8)
     page.mouse.up()
-    page.keyboard.press('v')
+    page.keyboard.press('Escape')
 
 def copy(page, request=''):
     page.fill('#ai-request',request)
