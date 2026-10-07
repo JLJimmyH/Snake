@@ -6,6 +6,7 @@ import { renderMarkdown, sourceOffset, toggleTask } from './markdown.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const MIN_S = 0.1, MAX_S = 8, GRID = 24, HISTORY = 100;
+const PALM_GRACE = 300; // 觸控筆離開後這段時間（毫秒）內的觸控仍當成手掌
 // 觸控板捏合的 deltaY 很小，照原比例縮放才跟手；滑鼠滾輪一格約 100，限制成一格約 10%
 const WHEEL_ZOOM_MAX = 10;
 // 一次至少 WHEEL_NOTCH px 的滾動視為「一格一格」的滾輪，用時間常數 WHEEL_GLIDE 毫秒的動畫滑過去；
@@ -196,6 +197,9 @@ export class Board {
     this.darkCanvas = false;
     this.mouseMode = false;   // 滑鼠模式：點到物件直接選取並拖動，空白處拖曳＝框選
     this.spacePan = false;    // 按住空白鍵：左鍵拖曳＝移動畫布
+    this.penNear = false;     // 觸控筆在感應範圍內（懸停或接觸）：這時候的觸控都是手掌，見 _penIn
+    this.penLeftAt = -Infinity;
+    this.penEraser = false;   // 這次靠近用的是筆尾，記到筆離開範圍，見 _down
     this.glide = { x: 0, y: 0, frame: 0, tau: WHEEL_GLIDE }; // 滾輪還沒滑完的距離，見 _glide
     this.thumbAt = -Infinity; // 最近一次高解析度橫向滾動（拇指滾輪）的時間
     this.thumbTicks = 0;      // 那一次滾了幾格（拇指滾輪只有零點幾格）
@@ -607,6 +611,24 @@ export class Board {
       document.execCommand('insertText', false, e.clipboardData.getData('text/plain'));
     });
     window.addEventListener('resize', () => { this.rect = vp.getBoundingClientRect(); });
+    // 觸控筆懸停時瀏覽器會送 pointermove；離開感應範圍送 relatedTarget 為 null 的 pointerout
+    document.addEventListener('pointermove', e => { if (e.pointerType === 'pen') this._penIn(); }, true);
+    document.addEventListener('pointerout', e => { if (e.pointerType === 'pen' && !e.relatedTarget) this._penOut(); }, true);
+  }
+
+  // 筆靠近之前就壓著的觸控是握筆的手掌：中止它的動作，之後也不再理它
+  _penIn() {
+    if (this.penNear) return;
+    this.penNear = true;
+    for (const [id, p] of this.pointers) if (p.type === 'touch') this.pointers.delete(id);
+    if (this.action && this.action.ptype !== 'pen' && this.action.ptype !== 'mouse') this._abort();
+  }
+
+  _penOut() {
+    this.penNear = false;
+    this.penEraser = false;
+    this.penLeftAt = performance.now();
+    if (!this.action) this.cursor.hidden = true;
   }
 
   _touches() {
@@ -635,6 +657,11 @@ export class Board {
       return;
     }
 
+    const isPen = e.pointerType === 'pen';
+    const isTouch = e.pointerType === 'touch';
+    if (isPen) this._penIn();
+    else if (isTouch && (this.penNear || performance.now() - this.penLeftAt < PALM_GRACE)) return;
+
     if (this.readOnly) {
       e.preventDefault();
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
@@ -642,8 +669,6 @@ export class Board {
       try { this.vp.setPointerCapture(e.pointerId); } catch { /* ignore */ }
       return;
     }
-    const isPen = e.pointerType === 'pen';
-    const isTouch = e.pointerType === 'touch';
 
     if (isTouch && e.isPrimary) {
       // 新的觸控序列開始：清掉可能殘留的舊觸控點
@@ -691,8 +716,11 @@ export class Board {
 
     const w = this.toWorld(e.clientX, e.clientY);
     const base = { id: e.pointerId, ptype: e.pointerType };
-    // 觸控筆的橡皮擦端＝這一筆用橡皮擦。有的瀏覽器只給 button 5、沒給 buttons 32，兩個都看
-    const t = isPen && (e.buttons & 32 || e.button === 5) ? 'eraser' : this.tool;
+    // 觸控筆的橡皮擦端＝這一筆用橡皮擦。有的瀏覽器只給 button 5、沒給 buttons 32，兩個都看。
+    // Chrome 懸停時看不出筆尾，輕碰也可能還沒標成橡皮擦；翻轉筆一定會離開感應範圍，
+    // 所以擦過一次就記著，到筆離開前的每一筆都是橡皮擦
+    if (isPen && (e.buttons & 32 || e.button === 5)) this.penEraser = true;
+    const t = isPen && this.penEraser ? 'eraser' : this.tool;
     const transform = e.target.closest('[data-transform]');
     if (transform && (t === 'select' || t === 'lasso')) return this._startTransform(base, w, transform.dataset.transform);
 
@@ -734,7 +762,11 @@ export class Board {
   _move(e) {
     this.lastPointer = { x: e.clientX, y: e.clientY };
     const erasing = this.action?.kind === 'erase' && this.action.id === e.pointerId;
-    if (erasing || (this.tool === 'eraser' && e.pointerType !== 'touch' && !this.action)) this._showCursor(e);
+    const isPen = e.pointerType === 'pen';
+    const eraserNear = isPen && (e.buttons & 32 || this.penEraser);
+    if (erasing || (!this.action && (eraserNear || (this.tool === 'eraser' && e.pointerType !== 'touch')))) this._showCursor(e);
+    // 筆尾輕碰時先被當成筆尖在畫，壓下去才標成橡皮擦（可能換了 pointerId）：整筆改成擦除
+    if (this.action?.kind === 'draw' && this.action.ptype === 'pen' && isPen && e.buttons & 32) this._drawToErase(this.action, e);
     const p = this.pointers.get(e.pointerId);
     if (!p) return;
     p.x = e.clientX;
@@ -942,6 +974,16 @@ export class Board {
     };
     const path = this._mount(item);
     this.action = { ...base, kind: 'draw', item, path, before: this._snap() };
+  }
+
+  _drawToErase(a, e) {
+    a.path.remove();
+    this.penEraser = true;
+    this.pointers.delete(a.id);
+    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: 'pen' });
+    const [x, y] = a.item.pts[0];
+    this.action = { id: e.pointerId, ptype: 'pen', kind: 'erase', before: a.before, hit: false, last: { x, y } };
+    for (const [px, py] of a.item.pts) this._eraseAt({ x: px, y: py });
   }
 
   _addPoint(a, w) {
