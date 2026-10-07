@@ -31,6 +31,7 @@ const board = new Board($('#viewport'), {
     if (!silent) scheduleSave();
   },
   onSelect: count => { $('#btn-del').disabled = !count; },
+  onTool: t => setTool(t),
   onHistory: (canUndo, canRedo) => {
     $('#btn-undo').disabled = !canUndo;
     $('#btn-redo').disabled = !canRedo;

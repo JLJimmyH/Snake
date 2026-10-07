@@ -200,6 +200,8 @@ export class Board {
     this.penNear = false;     // 觸控筆在感應範圍內（懸停或接觸）：這時候的觸控都是手掌，見 _penIn
     this.penLeftAt = -Infinity;
     this.penEraser = false;   // 這次靠近用的是筆尾，記到筆離開範圍，見 _down
+    this.lastBrush = 'pen';   // 最後用過的畫筆：選取工具下筆尖用它寫
+    this.downType = null;     // 最近一次按下的指標種類
     this.glide = { x: 0, y: 0, frame: 0, tau: WHEEL_GLIDE }; // 滾輪還沒滑完的距離，見 _glide
     this.thumbAt = -Infinity; // 最近一次高解析度橫向滾動（拇指滾輪）的時間
     this.thumbTicks = 0;      // 那一次滾了幾格（拇指滾輪只有零點幾格）
@@ -295,6 +297,7 @@ export class Board {
   setTool(t) {
     this.commitText();
     this.tool = t;
+    if (t === 'pen' || t === 'hl') this.lastBrush = t;
     this.vp.dataset.tool = t;
     this.cursor.hidden = true;
     if (t !== 'select' && t !== 'lasso') this.setSelection([]);
@@ -640,6 +643,7 @@ export class Board {
     this.rect = this.vp.getBoundingClientRect();
     this.lastPointer = { x: e.clientX, y: e.clientY };
     this.downAt = performance.now();
+    this.downType = e.pointerType;
     this.noFocusUntil = 0;
     if (e.pointerType === 'mouse' && e.button !== 0) {
       if (e.button === 1 && !this.action) {
@@ -720,9 +724,13 @@ export class Board {
     // Chrome 懸停時看不出筆尾，輕碰也可能還沒標成橡皮擦；翻轉筆一定會離開感應範圍，
     // 所以擦過一次就記著，到筆離開前的每一筆都是橡皮擦
     if (isPen && (e.buttons & 32 || e.button === 5)) this.penEraser = true;
-    const t = isPen && this.penEraser ? 'eraser' : this.tool;
+    let t = isPen && this.penEraser ? 'eraser' : this.tool;
+    // 按住筆的側鍵（回報成 buttons 2）拖曳＝套索選取，什麼工具都一樣
+    if (isPen && t !== 'eraser' && (e.buttons & 2 || e.button === 2)) return this._startLasso({ ...base, barrel: true }, w);
     const transform = e.target.closest('[data-transform]');
     if (transform && (t === 'select' || t === 'lasso')) return this._startTransform(base, w, transform.dataset.transform);
+    // 選取工具下筆尖照樣用最後用過的畫筆寫，選取交給手指和滑鼠；縮放把手例外
+    if (isPen && t === 'select' && !(handle && itemEl)) t = this.lastBrush;
 
     if (t === 'pen' || t === 'hl' || t === 'eraser') {
       if (t === 'eraser') {
@@ -730,7 +738,7 @@ export class Board {
         this._showCursor(e);
         this._eraseAt(w);
       } else {
-        this._startStroke(base, w);
+        this._startStroke(base, w, t);
       }
       return;
     }
@@ -841,6 +849,8 @@ export class Board {
         break;
       case 'lasso':
         this._endLasso(a);
+        // 拿著畫筆用側鍵圈選：換到選取工具，手指才能拖動選到的東西（筆尖照樣能寫）
+        if (a.barrel && this.sel.size && this.tool !== 'select' && this.tool !== 'lasso') this.cb.onTool?.('select');
         break;
       case 'marquee':
         this._endMarquee(a);
@@ -965,10 +975,10 @@ export class Board {
   }
 
   // ---------- ink ----------
-  _startStroke(base, w) {
-    const st = this.style[this.tool];
+  _startStroke(base, w, tool) {
+    const st = this.style[tool];
     const item = {
-      id: uid(), type: 'stroke', tool: this.tool, color: st.color,
+      id: uid(), type: 'stroke', tool, color: st.color,
       width: Math.round(st.width / this.view.s * 100) / 100, // 粗細以「螢幕上看起來」為準
       pts: [[r1(w.x), r1(w.y)]],
     };
@@ -1122,6 +1132,7 @@ export class Board {
   // pointerdown 有 setPointerCapture，dblclick 的 target 不可靠，改用座標找文字框。
   _dblEdit(e) {
     if (this.readOnly || this.action || !(this.tool === 'select' || this.tool === 'lasso')) return;
+    if (this.downType === 'pen') return; // 筆尖在選取工具下是寫字，連點兩下不是要編輯文字
     if (document.activeElement?.closest?.('.text-item')) return;
     this.rect = this.vp.getBoundingClientRect();
     const hit = this._hitsAt(this.toWorld(e.clientX, e.clientY)).find(it => it.type === 'text');

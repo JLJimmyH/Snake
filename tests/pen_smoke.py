@@ -1,7 +1,8 @@
 """Verify stylus handling: the pen tip draws with the active tool and the eraser end erases with any tool,
 an eraser contact is remembered until the pen leaves range, a light eraser contact that starts as ink turns
-into erasing, touches are ignored as palms while the pen is near, and fingers draw as before once it leaves."""
-import os
+into erasing, touches are ignored as palms while the pen is near, fingers draw as before once it leaves, the pen writes with the last brush in the select tool, and dragging
+with the barrel button lassos."""
+import os, re
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8030')
 
@@ -110,6 +111,38 @@ with sync_playwright() as pw:
     send(page,'touch',line(ox+100,oy+500,120,0,1,3));saved(page)
     assert len(ids())==2
     print('PASS: fingers draw again after the pen leaves')
+    page.locator('#btn-undo').click();saved(page)
+    tool=lambda: page.locator('#viewport').get_attribute('data-tool')
+    blank=lambda: page.mouse.click(ox+900,oy+150)
+
+    # 選取工具下筆尖用最後用過的畫筆寫；手指照樣點選
+    page.click('.tool[data-tool=hl]');page.click('.tool[data-tool=select]')
+    send(page,'pen',line(ox+100,oy+100,200,0));saved(page)
+    items=state(page)['items']
+    assert len(items)==2 and items[1]['tool']=='hl',items
+    page.locator('#btn-undo').click();saved(page)
+    pen_leaves(page)
+    page.dispatch_event('#viewport','pointerup')  # 清掉合成事件
+    send(page,'touch',[(ox+250,oy+300,1,3)]*2);expect(page.locator('#btn-del')).to_be_enabled()
+    page.keyboard.press('Escape')
+    print('PASS: in the select tool the pen writes with the last brush and fingers select')
+
+    # 按住側鍵拖曳＝套索選取，不畫線
+    page.click('.tool[data-tool=select]');blank()
+    expect(page.locator('#btn-del')).to_be_disabled()
+    loop=[(ox+x,oy+y,2,2) for x,y in [(80,260),(420,260),(420,340),(80,340),(80,262)]]
+    send(page,'pen',loop,button=2)
+    expect(page.locator('#btn-del')).to_be_enabled()
+    assert ids()==['stroke'] and tool()=='select'
+    # 拿著畫筆用側鍵圈選：換到選取工具，筆尖照樣能寫
+    blank();page.click('.tool[data-tool=pen]')
+    send(page,'pen',loop,button=2)
+    expect(page.locator('#btn-del')).to_be_enabled()
+    assert ids()==['stroke'] and tool()=='select',(ids(),tool())
+    expect(page.locator('.tool[data-tool=select]')).to_have_class(re.compile(r'(^|\s)active(\s|$)'))
+    send(page,'pen',line(ox+500,oy+100,80,0));saved(page)
+    assert state(page)['items'][-1]['tool']=='pen'
+    print('PASS: dragging with the barrel button lassos and switches to the select tool')
 
     assert not errors,errors
     browser.close()
