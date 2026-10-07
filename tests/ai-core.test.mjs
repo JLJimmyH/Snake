@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { exportRegion, regionJson, buildPrompt, parseReply, toItems, replyItems, placeItems, itemsBox, simplify, summarize, FORMAT } from '../js/ai-core.js';
+import { exportRegion, copyText, regionJson, buildPrompt, parseReply, toItems, replyItems, placeItems, itemsBox, simplify, summarize, FORMAT } from '../js/ai-core.js';
 
 const items = () => [
   { id: 't1', type: 'text', x: 100, y: 100, size: 18, text: '# 會議\n重點' },
@@ -126,4 +126,27 @@ test('pasted text is only treated as an AI reply when it has valid items', () =>
   const got = replyItems('```json\n{"items":[{"type":"text","x":0,"y":0,"text":"hi"}]}\n```', { newId });
   assert.equal(got.length, 1);
   assert.equal(got[0].text, 'hi');
+});
+
+test('copied items keep full detail and paste back as new items', () => {
+  const source = items();
+  const text = copyText(source, area);
+  const data = JSON.parse(text);
+  assert.equal(data.format, FORMAT);
+  assert.ok(data.note.includes('{"items":[…]}'));
+  assert.deepEqual(data.items[2], { type: 'stroke', color: '#1f2937', width: 3, pts: [[34, 44], [54, 49], [44, 84]] });
+  assert.deepEqual(data.items[4], { type: 'image', x: 124, y: 124, w: 200, h: 100, blob: 'b' });
+  const pasted = replyItems(text, { newId });
+  assert.equal(pasted.length, 5);
+  assert.deepEqual(pasted.map(it => it.type), ['text', 'text', 'stroke', 'stroke', 'image']);
+  assert.equal(pasted[3].tool, 'hl');
+  assert.equal(pasted[4].blobId, 'b');
+  assert.ok(pasted.every(it => !source.some(s => s.id === it.id)), 'fresh ids');
+  const placed = placeItems(pasted, { x: 1000, y: 1000 });
+  // 外框左上角是螢光筆的 (90,90)（筆寬 20），整組平移 910
+  assert.deepEqual(placed[0], { ...source[0], id: pasted[0].id, x: 1010, y: 1010 }, 'relative layout survives the round trip');
+  assert.deepEqual(placed[2].pts, source[2].pts.map(([x, y]) => [x + 910, y + 910]));
+  assert.deepEqual(summarize(pasted).counts, '文字框 2、筆跡 2、圖片 1');
+  assert.throws(() => toItems([{ type: 'image', x: 0, y: 0, w: 0, h: 1, blob: 'b' }]), /圖片位置/);
+  assert.throws(() => toItems([{ type: 'image', x: 0, y: 0, w: 1, h: 1, blob: '../x' }]), /不能新增圖片/);
 });

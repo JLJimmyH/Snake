@@ -12,7 +12,7 @@
 
 > ⚠️ 筆記存在這台裝置的瀏覽器 → 點左上角筆記本名稱「存到 Drive」或「匯出 zip」
 
-✨ AI 分析：框選 → 右鍵「提取給 AI 分析」→ 貼給 ChatGPT／Claude → 把回覆 Ctrl+V 貼到畫布上（原本的內容不會被改）
+📋 右鍵「複製」選取的物件（空白處＝複製全部）→ Ctrl+V 貼到別頁，或直接貼給 ChatGPT／Claude；AI 回的 JSON 也能 Ctrl+V 貼回畫布
 
 <kbd>V</kbd> <kbd>L</kbd> <kbd>P</kbd> <kbd>H</kbd> <kbd>E</kbd> <kbd>T</kbd> 工具　<kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> 復原　<kbd>Ctrl</kbd>+<kbd>S</kbd> 存到 Drive　<kbd>M</kbd> 小地圖
 

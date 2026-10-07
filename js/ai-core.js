@@ -1,10 +1,11 @@
 // AI 協作：把框選的一塊區域（沒選就整頁）匯出成 AI 看得懂的精簡 JSON，
 // AI 回傳一組「新元件」（文字框、筆跡），使用者點畫布決定放哪裡。原本的內容一律不動，方便對照。
+// 右鍵「複製」也用同一套 {"items":[…]} 格式，所以可以貼到別頁，也可以直接貼給 AI。
 import { uid } from './db.js';
 
 export const FORMAT = 'snake-note-ai';
-const MAX_ITEMS = 5000;
-const MAX_PTS = 5000;          // 單一筆跡最多幾個點
+const MAX_ITEMS = 20000;
+const MAX_PTS = 20000;         // 單一筆跡最多幾個點
 const MAX_EXPORT_PTS = 4000;   // 匯出時全部筆跡加起來最多給幾個點，超過就只給外框
 const MAX_TEXT = 100000;
 const PEN = { color: '#1f2937', width: 3 };
@@ -72,6 +73,22 @@ export function exportRegion({ title, items, area, selected = false }) {
       return { type: it.type, x, y, w: Math.round(it.w), h: Math.round(it.h) };
     }),
   };
+}
+
+// 複製物件：完整保留（筆跡不簡化、圖片帶 blob），座標以 area 左上角為原點
+export function copyText(items, area) {
+  const at = (x, y) => [r1(x - area.x), r1(y - area.y)];
+  return regionJson({
+    format: FORMAT,
+    note: 'Snake Note 白板物件，座標以左上角為原點、往右往下。回傳同樣格式的 {"items":[…]}（text、stroke）就能貼回畫布。',
+    area: { w: Math.round(area.w), h: Math.round(area.h) },
+    items: items.map(it => {
+      if (it.type === 'stroke') return { type: 'stroke', color: it.color, width: it.width, ...(it.tool === 'hl' && { highlighter: true }), pts: it.pts.map(([x, y]) => at(x, y)) };
+      const [x, y] = at(it.x, it.y);
+      if (it.type === 'text') return { type: 'text', x, y, ...(it.w && { w: it.w }), size: it.size, text: it.text };
+      return { type: 'image', x, y, w: it.w, h: it.h, blob: it.blobId };
+    }),
+  });
 }
 
 // 一個物件一行：筆跡很多時比縮排格式短很多，AI 也比較好對照
@@ -143,13 +160,15 @@ export function toItems(raw, { newId = uid, defaultSize = 18 } = {}) {
     const bad = !it || typeof it !== 'object' ? '格式不對'
       : it.type === 'text' ? checkText(it)
       : it.type === 'stroke' ? checkStroke(it)
-      : it.type === 'image' ? '不能新增圖片'
+      : it.type === 'image' ? checkImage(it)
       : `不認得的類型 ${JSON.stringify(it.type)}`;
     if (bad) return errors.push(`第 ${i + 1} 個：${bad}`);
     if (it.type === 'text') {
       const item = { id: newId(), type: 'text', x: r1(it.x), y: r1(it.y), size: it.size ?? defaultSize, text: it.text };
       if (it.w) item.w = r1(it.w);
       items.push(item);
+    } else if (it.type === 'image') {
+      items.push({ id: newId(), type: 'image', blobId: it.blob, x: r1(it.x), y: r1(it.y), w: r1(it.w), h: r1(it.h) });
     } else {
       const look = it.highlighter ? HL : PEN;
       items.push({
@@ -173,6 +192,13 @@ function checkText(it) {
   return null;
 }
 
+// 圖片只能從這個 app 複製過來（帶著本機的 blob id），AI 不能新增圖片
+function checkImage(it) {
+  if (typeof it.blob !== 'string' || !/^[\w-]{1,100}$/.test(it.blob)) return '不能新增圖片';
+  if (![it.x, it.y, it.w, it.h].every(num) || !(it.w > 0 && it.h > 0)) return '圖片位置不合法';
+  return null;
+}
+
 function checkStroke(it) {
   if (!Array.isArray(it.pts) || it.pts.length < 2) return '筆跡至少要 2 個點';
   if (it.pts.length > MAX_PTS) return `筆跡的點太多（上限 ${MAX_PTS}）`;
@@ -187,6 +213,7 @@ function roughBox(it) {
     const b = strokeBox(it.pts), p = it.width / 2;
     return { x: b.x - p, y: b.y - p, w: b.w + it.width, h: b.h + it.width };
   }
+  if (it.type === 'image') return { x: it.x, y: it.y, w: it.w, h: it.h };
   const lines = it.text.split('\n');
   const longest = Math.max(...lines.map(l => [...l].length));
   return { x: it.x, y: it.y, w: it.w || Math.min(longest, 32) * it.size + 8, h: lines.length * it.size * 1.45 + 4 };
@@ -210,7 +237,7 @@ export function placeItems(items, at) {
     : { ...it, x: r1(it.x + dx), y: r1(it.y + dy) });
 }
 
-// 貼上的文字是不是 AI 的回覆：是就回傳元件，不是就回傳 null（當一般文字貼上）
+// 貼上的文字是不是複製的物件或 AI 的回覆：是就回傳元件，不是就回傳 null（當一般文字貼上）
 export function replyItems(text, options) {
   if (!/"items"\s*:/.test(text)) return null;
   try { return toItems(parseReply(text), options); } catch { return null; }
@@ -219,9 +246,10 @@ export function replyItems(text, options) {
 // 給使用者確認的摘要
 export function summarize(items) {
   const count = type => items.filter(it => it.type === type).length;
-  const counts = [['text', '文字框'], ['stroke', '筆跡']].filter(([t]) => count(t)).map(([t, label]) => `${label} ${count(t)}`);
+  const counts = [['text', '文字框'], ['stroke', '筆跡'], ['image', '圖片']].filter(([t]) => count(t)).map(([t, label]) => `${label} ${count(t)}`);
   const snippet = text => { const line = text.trim().split('\n')[0]; return line.length > 30 ? line.slice(0, 30) + '…' : line; };
   const lines = items.filter(it => it.type === 'text').map(it => `＋ ${snippet(it.text)}`);
   if (count('stroke')) lines.push(`＋ ${count('stroke')} 條筆跡`);
+  if (count('image')) lines.push(`＋ ${count('image')} 張圖片`);
   return { counts: counts.join('、'), lines };
 }

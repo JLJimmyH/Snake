@@ -1,10 +1,10 @@
 import { uid } from './db.js';
-import { exportRegion, buildPrompt, parseReply, toItems, replyItems, placeItems, itemsBox, summarize } from './ai-core.js';
+import { exportRegion, copyText, buildPrompt, parseReply, toItems, replyItems, placeItems, itemsBox, summarize } from './ai-core.js';
 
 const $ = selector => document.querySelector(selector);
 
 // AI 協作：框選一塊（或整頁）→ 複製給 ChatGPT／Claude → 貼回 AI 的回覆 → 點畫布放上新元件。
-// 原本的內容不會被改動，新元件放在旁邊就能對照。
+// 原本的內容不會被改動，新元件放在旁邊就能對照。右鍵／Ctrl+C 複製物件、Ctrl+V 貼上也在這裡。
 export function setupAi({ board, title, toast, showMenu }) {
   const dialog = $('#ai-dialog');
   const reply = $('#ai-reply');
@@ -102,12 +102,15 @@ export function setupAi({ board, title, toast, showMenu }) {
     if (at) insert(items, at);
   }
 
-  function insert(items, at) {
+  async function insert(items, at) {
     if (board.readOnly) return;
-    // 每次放都換新 id，同一份回覆可以放好幾次
-    const fresh = items.map(it => ({ ...it, id: uid() }));
-    board.insertItems(placeItems(fresh, at));
-    toast(`已放上 ${items.length} 個物件，可以按復原還原`);
+    // 圖片只帶 blob id：這台裝置（或協作伺服器）找不到圖檔就略過
+    const found = await Promise.all(items.map(it => it.type !== 'image' || board.hasBlob(it.blobId)));
+    const kept = items.filter((_, i) => found[i]), skipped = items.length - kept.length;
+    if (!kept.length) { toast('找不到圖片檔，無法貼上'); return; }
+    // 每次放都換新 id，同一份內容可以放好幾次
+    board.insertItems(placeItems(kept.map(it => ({ ...it, id: uid() })), at));
+    toast(`已放上 ${kept.length} 個物件` + (skipped ? `（${skipped} 張圖片找不到，略過）` : '') + '，可以按復原還原');
   }
 
   // 放置預覽框跟著游標，大小是粗估的外框
@@ -127,31 +130,50 @@ export function setupAi({ board, title, toast, showMenu }) {
     toast('已取消');
   });
 
-  // 右鍵：選取框裡＝把選取的交給 AI；點到物件就先選它；空白處＝整頁。也可以把剪貼簿裡的 AI 回覆貼在這裡
+  // 右鍵：選取框裡或點到物件＝複製這些物件（點到未選取的物件會先選它）；空白處＝複製全部。
+  // 複製的是 {"items":[…]} JSON，可以 Ctrl+V 貼到別頁，也可以直接貼給 AI
   $('#viewport').addEventListener('contextmenu', e => {
     if (e.target.isContentEditable || board.picking) return;
     const { clientX: x, clientY: y } = e;
-    let ids = null;
-    if (board.selectionHas(x, y)) ids = [...board.sel];
-    else if (board.tool === 'select' || board.tool === 'lasso') {
+    let ids = board.selectionHas(x, y) ? [...board.sel] : null;
+    if (!ids && (board.tool === 'select' || board.tool === 'lasso')) {
       const hit = board.itemAt(x, y);
       board.setSelection(hit ? [hit.id] : []);
       if (hit) ids = [hit.id];
     }
-    const at = board.toWorld(x, y);
-    showMenu({ left: x, right: x, top: y, bottom: y }, [
-      { label: ids ? `✨ 提取給 AI 分析（${ids.length} 個物件）` : '✨ 整頁交給 AI 分析', run: () => open(ids) },
-      { label: '📋 在這裡貼上 AI 回覆', disabled: board.readOnly, run: () => pasteClipboard(at) },
-    ]);
+    if (!ids && !board.items.length) return;
+    showMenu({ left: x, right: x, top: y, bottom: y }, [ids
+      ? { label: `複製（${ids.length} 個物件）`, run: () => copy(ids) }
+      : { label: '複製全部', run: () => copy(null) }]);
   });
 
-  async function pasteClipboard(at) {
-    let text;
-    try { text = await navigator.clipboard.readText(); } catch { toast('無法讀取剪貼簿，請點畫布後按 Ctrl+V'); return; }
-    if (!paste(text, at)) toast('剪貼簿裡不是 AI 的回覆（需要 {"items":[…]}）');
+  // Ctrl+C：有選取物件、而且不是在打字時，複製物件
+  document.addEventListener('copy', e => {
+    const a = document.activeElement;
+    if (!board.sel.size || a?.isContentEditable || a?.matches?.('input, textarea') || $('dialog[open]')) return;
+    e.preventDefault();
+    e.clipboardData.setData('text/plain', copied([...board.sel]));
+    toast(`已複製 ${board.sel.size} 個物件`);
+  });
+
+  function copied(ids) {
+    board.commitText();
+    const set = ids && new Set(ids);
+    const items = set ? board.items.filter(it => set.has(it.id)) : board.items;
+    return copyText(items, board.exportArea(set));
   }
 
-  // 一般的貼上（Ctrl+V）也認得 AI 回覆：是的話放在游標位置，回傳 true
+  async function copy(ids) {
+    const text = copied(ids);
+    try {
+      await navigator.clipboard.writeText(text);
+      toast(ids ? `已複製 ${ids.length} 個物件，可以貼到別頁或貼給 AI` : '已複製全部，可以貼到別頁或貼給 AI');
+    } catch {
+      toast('無法存取剪貼簿，請改用 https 或 localhost 開啟');
+    }
+  }
+
+  // 一般的貼上（Ctrl+V）認得複製的物件和 AI 回覆：是的話放在游標位置，回傳 true
   function paste(text, at) {
     const items = replyItems(text, { defaultSize: size });
     if (!items) return false;

@@ -512,6 +512,11 @@ export class Board {
     resolve(point);
   }
 
+  // 圖檔載得到嗎（貼上從別處複製來的圖片時檢查）
+  async hasBlob(blobId) {
+    try { return !!(await this._url(blobId)); } catch { return false; }
+  }
+
   // 螢幕座標上最上層的物件，沒有就 null
   itemAt(cx, cy) {
     return this._hitsAt(this.toWorld(cx, cy))[0] ?? null;

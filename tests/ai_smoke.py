@@ -1,4 +1,4 @@
-"""Verify AI collaboration: right-click a selection to export just that region, paste the AI reply, click the canvas to insert the new items, undo, Esc cancel, Ctrl+V and right-click paste, whole-page export and persistence."""
+"""Verify AI collaboration and copy/paste: right-click copies the selection (or everything), ✨ exports just the selected region, the AI reply is placed by clicking the canvas or Ctrl+V, undo, Esc cancel, missing images, persistence, and pasting copied items on another page."""
 import json, os, re
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8050')
@@ -51,10 +51,16 @@ with sync_playwright() as pw:
     before_texts,before_strokes=texts(page),strokes(page)
     assert before_strokes==1 and len(before_texts)>3,(before_strokes,before_texts)
 
-    # 右鍵點筆跡：選取它，只把這一塊交給 AI
+    # 右鍵點筆跡：選取它，選單只有「複製」，複製的是完整的筆跡
     page.mouse.click(sx+30,sy,button='right')
-    expect(page.locator('#menu')).to_be_visible()
-    menu(page,'提取給 AI 分析（1 個物件）')
+    expect(page.locator('#menu button')).to_have_text(['複製（1 個物件）'])
+    menu(page,'複製（1 個物件）')
+    expect(page.locator('#toast')).to_contain_text('已複製 1 個物件')
+    data=json.loads(page.evaluate('navigator.clipboard.readText()'))
+    assert data['format']=='snake-note-ai' and len(data['items'])==1 and len(data['items'][0]['pts'])==10,data
+
+    # 選取後按 ✨：只把這一塊交給 AI
+    page.click('#ai-button')
     expect(page.locator('#ai-dialog')).to_be_visible()
     expect(page.locator('#ai-heading')).to_have_text('AI 分析選取的 1 個物件')
     expect(page.locator('#ai-insert')).to_be_disabled()
@@ -128,16 +134,14 @@ with sync_playwright() as pw:
     expect(page.locator('#toast')).to_contain_text('已放上 2 個物件')
     assert texts(page).count('AI 轉出的文字')==2 and strokes(page)==before_strokes+2
 
-    # 右鍵空白處「在這裡貼上 AI 回覆」
-    page.keyboard.press('Escape')
-    page.mouse.click(box['x']+650,box['y']+box['height']-120,button='right')
-    menu(page,'在這裡貼上 AI 回覆')
-    expect(page.locator('.text-item .text-body',has_text='AI 轉出的文字')).to_have_count(3)
-    assert strokes(page)==before_strokes+3
+    # 圖片只帶 blob id：這台裝置找不到圖檔就略過，其他照貼
+    page.evaluate('t => navigator.clipboard.writeText(t)',json.dumps({'items':[
+        {'type':'text','x':0,'y':0,'text':'有圖的貼上'},{'type':'image','x':0,'y':40,'w':50,'h':50,'blob':'nope'}]}))
+    page.mouse.click(box['x']+650,box['y']+box['height']-120)
+    page.keyboard.press('Control+V')
+    expect(page.locator('#toast')).to_contain_text('1 張圖片找不到')
+    expect(page.locator('.text-item .text-body',has_text='有圖的貼上')).to_have_count(1)
     page.evaluate("navigator.clipboard.writeText('一般文字')")
-    page.mouse.click(box['x']+550,box['y']+box['height']-220,button='right')
-    menu(page,'在這裡貼上 AI 回覆')
-    expect(page.locator('#toast')).to_contain_text('不是 AI 的回覆')
 
     # 一般文字的 Ctrl+V 還是新增文字框
     page.mouse.click(box['x']+900,box['y']+60)
@@ -158,7 +162,27 @@ with sync_playwright() as pw:
     final=texts(page)
     page.reload()
     page.wait_for_selector('.row.active')
-    assert texts(page)==final and strokes(page)==before_strokes+3,texts(page)
+    assert texts(page)==final and strokes(page)==before_strokes+2,texts(page)
+
+    # 右鍵空白處只有「複製全部」，貼到別頁會整份貼上
+    page.mouse.click(box['x']+700,box['y']+300,button='right')
+    expect(page.locator('#menu button')).to_have_text(['複製全部'])
+    menu(page,'複製全部')
+    expect(page.locator('#toast')).to_contain_text('已複製全部')
+    data=json.loads(page.evaluate('navigator.clipboard.readText()'))
+    assert len(data['items'])==len(final)+before_strokes+2,len(data['items'])
+    page.locator('.row',has_text='會議記錄').click()
+    expect(page.locator('#page-title')).to_have_value('會議記錄')
+    other_texts,other_strokes=texts(page),strokes(page)
+    page.mouse.click(box['x']+700,box['y']+300)
+    page.keyboard.press('Control+V')
+    expect(page.locator('.text-item')).to_have_count(len(other_texts)+len(final))
+    assert strokes(page)==other_strokes+before_strokes+2
+
+    # 貼上後是選取狀態，Ctrl+C 再複製一次
+    page.keyboard.press('Control+C')
+    expect(page.locator('#toast')).to_contain_text(f'已複製 {len(data["items"])} 個物件')
+    assert len(json.loads(page.evaluate('navigator.clipboard.readText()'))['items'])==len(data['items'])
 
     assert not errors,errors
     browser.close()
