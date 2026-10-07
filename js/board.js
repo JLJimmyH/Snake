@@ -1,6 +1,7 @@
 // 無限畫布：手寫(SVG) / 文字框 / 圖片，雙指縮放平移，復原重做
 // 座標系：item 都存「世界座標」，畫面用 translate(x,y) scale(s) 呈現
 import { db, uid } from './db.js';
+import { renderMarkdown, sourceOffset, toggleTask } from './markdown.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const MIN_S = 0.1, MAX_S = 8, GRID = 24, HISTORY = 100;
@@ -31,6 +32,9 @@ function pathData(pts) {
   const [lx, ly] = pts[pts.length - 1];
   return d + `L${lx} ${ly}`;
 }
+
+// .text-body → renderMarkdown 回傳的位置對照（編輯中的文字框沒有）
+const sources = new WeakMap();
 
 const boxes = new WeakMap();
 function bbox(it) {
@@ -489,6 +493,8 @@ export class Board {
     this._stopAnim();
     this.rect = this.vp.getBoundingClientRect();
     this.lastPointer = { x: e.clientX, y: e.clientY };
+    this.downAt = performance.now();
+    this.noFocusUntil = 0;
     if (e.pointerType === 'mouse' && e.button !== 0) {
       if (e.button === 1 && !this.action) {
         e.preventDefault();
@@ -540,9 +546,16 @@ export class Board {
     const itemEl = e.target.closest('.item');
     const handle = e.target.closest('.handle');
     const textEl = e.target.closest('.text-item');
+    const editingText = textEl?.contains(document.activeElement);
+    const check = e.target.closest('.md-check');
+    if (check && textEl && !editingText && ['select', 'lasso', 'text'].includes(this.tool)) {
+      e.preventDefault();
+      this._toggleTask(textEl.dataset.id, Number(check.dataset.at));
+      return;
+    }
     // 文字工具，或點在正在編輯的文字框裡：交給瀏覽器放游標。
     // 不能先 blur 再讓瀏覽器 focus 回來，手機鍵盤會收起又跳出。
-    if (!handle && textEl && (this.tool === 'text' || textEl.contains(document.activeElement))) return;
+    if (!handle && textEl && (this.tool === 'text' || editingText)) return;
 
     e.preventDefault();
     this.commitText();
@@ -571,7 +584,12 @@ export class Board {
       if (handle && itemEl) return this._startResize(base, w, itemEl.dataset.id);
       // 拖曳已選取的物件（選取框內）＝移動物件；未選取的物件或空白處＝移動畫布。
       // 選取只在放開時（點一下）發生，不在按下時。
-      if (this._inSelBox(w)) return this._startMove(base, w);
+      if (this._inSelBox(w)) {
+        this._startMove(base, w);
+        // 已選取的文字框裡點連結＝開啟連結（拖曳仍是移動）
+        this.action.link = e.target.closest('a.md-link')?.href;
+        return;
+      }
       if (t === 'lasso' && !fingerPans && !itemEl) return this._startLasso(base, w);
     }
 
@@ -661,6 +679,7 @@ export class Board {
         break;
       case 'move':
         if (a.moved) this._finishMove(a);
+        else if (a.link) this._openLink(a.link);
         else this._tapSelect(a.start);
         break;
       case 'transform':
@@ -995,23 +1014,86 @@ export class Board {
     const body = this.els.get(id)?.querySelector('.text-body');
     if (!body) return;
     body.focus({ preventScroll: true });
+    this._setCaret(body, null);
+  }
+
+  // 游標放在原始文字第 at 個字元；null = 最後面。編輯中的內容是 innerText 產生的文字節點與 <br>
+  _setCaret(body, at) {
     const range = document.createRange();
     range.selectNodeContents(body);
     range.collapse(false);
+    if (at != null) {
+      for (const n of body.childNodes) {
+        if (n.nodeType === Node.TEXT_NODE) {
+          if (at <= n.length) { range.setStart(n, at); range.collapse(true); break; }
+          at -= n.length;
+        } else {
+          if (at === 0) { range.setStartBefore(n); range.collapse(true); break; }
+          at -= 1;
+        }
+      }
+    }
     const sel = getSelection();
     sel.removeAllRanges();
     sel.addRange(range);
   }
 
+  // 剛剛點在 markdown 顯示畫面的哪個位置，換算成原始文字的位置
+  _tapOffset(body) {
+    const map = sources.get(body), p = this.lastPointer;
+    if (!map || !p || performance.now() - (this.downAt ?? 0) > 1000) return null;
+    let pos = document.caretPositionFromPoint?.(p.x, p.y);
+    if (!pos && document.caretRangeFromPoint) {
+      const r = document.caretRangeFromPoint(p.x, p.y);
+      pos = r && { offsetNode: r.startContainer, offset: r.startOffset };
+    }
+    if (!pos || !body.contains(pos.offsetNode)) return null;
+    return sourceOffset(body, map, pos.offsetNode, pos.offset);
+  }
+
+  _renderText(id) {
+    const el = this.els.get(id), item = this._item(id);
+    if (!el || !item) return;
+    const body = el.querySelector('.text-body');
+    sources.set(body, renderMarkdown(body, item.text));
+    if (this.sel.has(id)) this._updateSelBox();
+  }
+
+  _toggleTask(id, at) {
+    const before = this._snap();
+    const item = this._own(id);
+    item.text = toggleTask(item.text, at);
+    this._renderText(id);
+    this._commit(before);
+    // 手機點一下，瀏覽器之後還可能 focus 文字框；擋到下一次按下為止
+    this.noFocusUntil = performance.now() + 800;
+  }
+
+  _openLink(href) {
+    window.open(href, '_blank', 'noopener');
+    this.noFocusUntil = performance.now() + 800;
+  }
+
   _focusIn(e) {
     const el = e.target.closest?.('.text-item');
     if (!el) return;
+    if (performance.now() < (this.noFocusUntil ?? 0)) { e.target.blur(); return; }
     setTimeout(() => this.revealCaret(), 350); // 等手機鍵盤動畫
     const id = el.dataset.id;
     if (this.editing?.id === id) return;
     const before = this._snap();
     const item = this._own(id);
     this.editing = { id, item, before, orig: item.text, created: false };
+    // 換成原始 markdown 編輯，游標放回點到的字；瀏覽器之後可能再依新版面放一次，所以下一輪再放一次
+    const body = e.target;
+    const at = this._tapOffset(body);
+    sources.delete(body);
+    body.innerText = item.text;
+    this._setCaret(body, at);
+    setTimeout(() => {
+      if (document.activeElement === body && this.editing?.item === item && item.text === this.editing.orig) this._setCaret(body, at);
+    }, 0);
+    if (this.sel.has(id)) this._updateSelBox();
   }
 
   _input() {
@@ -1035,8 +1117,9 @@ export class Board {
       if (this.sel.has(ed.id)) this.setSelection([...this.sel].filter(x => x !== ed.id));
       if (ed.created) this.cb.onChange?.();
       else this._commit(ed.before);
-    } else if (ed.created || text !== ed.orig) {
-      this._commit(ed.before);
+    } else {
+      this._renderText(ed.id);
+      if (ed.created || text !== ed.orig) this._commit(ed.before);
     }
   }
 
@@ -1056,7 +1139,7 @@ export class Board {
       const body = h('div', 'text-body');
       body.contentEditable = String(!this.readOnly);
       body.spellcheck = false;
-      body.innerText = item.text;
+      sources.set(body, renderMarkdown(body, item.text));
       el.append(body, h('div', 'handle w-handle'));
       el.style.fontSize = item.size + 'px';
       this.textLayer.append(el);
