@@ -1,53 +1,23 @@
 // 極簡 IndexedDB 包裝：notebooks(筆記本) / pages(頁面樹) / docs(頁面內容) / blobs(圖片) / meta(設定)
-const DB_NAME = 'note-mvp';
-const DB_VERSION = 3;
-// v3 拿掉版本歷史後不再使用的 meta key
-const LEGACY_META = /^(history:|history-device$|drive-|workspaceRevision$|lastPage$)/;
+const DB_NAME = 'snake-note';
+const DB_VERSION = 1;
 
 let dbPromise;
 
 function open() {
   dbPromise ??= new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = event => {
-      const db = req.result, tx = req.transaction;
-      const pages = db.objectStoreNames.contains('pages') ? tx.objectStore('pages') : db.createObjectStore('pages', { keyPath: 'id' });
-      if (!pages.indexNames.contains('notebookId')) pages.createIndex('notebookId', 'notebookId');
-      if (!db.objectStoreNames.contains('docs')) db.createObjectStore('docs', { keyPath: 'pageId' });
-      for (const store of ['blobs', 'meta', 'notebooks']) if (!db.objectStoreNames.contains(store)) db.createObjectStore(store);
-      // 舊的版本快照直接刪除；筆記本身（pages/docs/blobs）不動
-      for (const store of ['versions', 'objects']) if (db.objectStoreNames.contains(store)) db.deleteObjectStore(store);
-      if (event.oldVersion > 0 && event.oldVersion < 3) migrateToNotebooks(tx);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      db.createObjectStore('pages', { keyPath: 'id' }).createIndex('notebookId', 'notebookId');
+      db.createObjectStore('docs', { keyPath: 'pageId' });
+      for (const store of ['blobs', 'meta', 'notebooks']) db.createObjectStore(store);
     };
     req.onsuccess = () => { req.result.onversionchange = () => { req.result.close(); dbPromise = null; }; resolve(req.result); };
     req.onblocked = () => reject(new Error('請關閉其他舊版筆記分頁，再重新整理'));
     req.onerror = () => reject(req.error);
   });
   return dbPromise;
-}
-
-// 升級前全部頁面就是一本筆記本：歸到「我的筆記」，lastPage 跟著搬過去
-function migrateToNotebooks(tx) {
-  const meta = tx.objectStore('meta');
-  const lastPage = meta.get('lastPage');
-  const id = uid();
-  let count = 0;
-  tx.objectStore('pages').openCursor().onsuccess = event => {
-    const cursor = event.target.result;
-    if (cursor) {
-      cursor.update({ ...cursor.value, notebookId: id });
-      count++;
-      cursor.continue();
-    } else if (count) {
-      tx.objectStore('notebooks').put(newNotebook(id, '我的筆記', { lastPage: lastPage.result ?? null }), id);
-    }
-  };
-  meta.openCursor().onsuccess = event => {
-    const cursor = event.target.result;
-    if (!cursor) return;
-    if (LEGACY_META.test(cursor.key)) cursor.delete();
-    cursor.continue();
-  };
 }
 
 // changes / savedChanges：不相等就是有尚未存到 Drive 的變更

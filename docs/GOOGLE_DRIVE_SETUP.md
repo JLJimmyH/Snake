@@ -21,7 +21,7 @@
 
 1. 開啟 https://console.cloud.google.com/ 並登入。
 2. 點畫面上方的專案選單 →「新增專案／New project」。
-3. 專案名稱可填 `Note MVP`。如果沒有組織，選「無組織」。
+3. 專案名稱可填 `Snake Note`。如果沒有組織，選「無組織」。
 4. 建立後，確認上方目前選取的是剛建立的專案。
 
 建立專案／使用 Drive API 本身通常不需要為此功能啟用付費服務；使用者上傳的檔案占用自己的 Drive 空間。若控制台要求帳務，先確認沒有誤選其他付費產品。
@@ -39,7 +39,7 @@
 Google 控制台可能顯示「Google Auth Platform」，或在「API 和服務」下面顯示「OAuth 同意畫面」。以下依欄位名稱對照即可。
 
 1. 開啟 Google Auth Platform →「開始使用／Get started」。
-2. **應用程式名稱／App name**：填 `筆記 MVP` 或你想給使用者看到的產品名稱。
+2. **應用程式名稱／App name**：填 `Snake Note` 或你想給使用者看到的產品名稱。
 3. **使用者支援電子郵件／User support email**：選你的管理者 email。
 4. **對象／Audience**：一般個人帳號選 **外部／External**。Internal 只適用特定 Workspace 組織。
 5. **開發人員聯絡資料／Developer contact information**：填你能收信的 email。
@@ -62,7 +62,7 @@ Google 介面的欄位／選單可能調整。若頁面要求品牌首頁、隱�
 1. Google Auth Platform → **Clients／用戶端** →「建立用戶端」。
    舊介面可用：API 和服務 → 憑證 → 建立憑證 → OAuth 用戶端 ID。
 2. **應用程式類型／Application type** 選 **Web application／網頁應用程式**。
-3. 名稱填 `Note MVP Web`。
+3. 名稱填 `Snake Note Web`。
 4. 在 **Authorized JavaScript origins／已授權的 JavaScript 來源** 加入：
 
 ```

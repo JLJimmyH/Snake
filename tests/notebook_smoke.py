@@ -1,4 +1,4 @@
-"""Notebooks: migration, switching, zip import/export, simulated Google OAuth/Drive. No real Google credentials."""
+"""Notebooks: switching, zip import/export, simulated Google OAuth/Drive. No real Google credentials."""
 import json, os, re
 from urllib.parse import urlparse, parse_qs, unquote
 from playwright.sync_api import sync_playwright, expect
@@ -90,35 +90,7 @@ with sync_playwright() as pw:
     browser = pw.chromium.launch(executable_path='/usr/bin/chromium', args=['--no-sandbox'])
     fake = FakeDrive(); errors = []
 
-    # 1. Upgrade from v2: existing pages become「我的筆記」, old version history is dropped.
-    ctx = new_context(browser, fake); page = ctx.new_page(); page.on('pageerror', lambda e: errors.append(str(e)))
-    page.goto(BASE + '/privacy.html')
-    page.evaluate("""()=>new Promise((resolve,reject)=>{
-      const req=indexedDB.open('note-mvp',2);
-      req.onupgradeneeded=()=>{const db=req.result;db.createObjectStore('pages',{keyPath:'id'});db.createObjectStore('docs',{keyPath:'pageId'});
-        for(const s of ['blobs','meta','versions','objects'])db.createObjectStore(s);};
-      req.onsuccess=()=>{const tx=req.result.transaction(['pages','docs','meta','versions'],'readwrite');
-        tx.objectStore('pages').put({id:'old1',parentId:null,title:'舊頁面',order:0,open:true,created:1});
-        tx.objectStore('pages').put({id:'old2',parentId:null,title:'上次開的',order:1,open:true,created:2});
-        tx.objectStore('docs').put({pageId:'old2',view:{x:0,y:0,s:1},items:[{id:'t',type:'text',x:0,y:0,size:18,text:'保留'}]});
-        tx.objectStore('meta').put('old2','lastPage');tx.objectStore('meta').put({head:'x'},'history:local');tx.objectStore('meta').put('k','collab:u:p');
-        tx.objectStore('versions').put({},'local:x');
-        tx.oncomplete=()=>{req.result.close();resolve()};tx.onerror=()=>reject(tx.error)};
-      req.onerror=()=>reject(req.error)})""")
-    page.goto(BASE)
-    expect(page.locator('#nb-name')).to_have_text('我的筆記')
-    expect(page.locator('#page-title')).to_have_value('上次開的')
-    assert titles(page) == ['舊頁面', '上次開的'], titles(page)
-    expect(page.locator('#drive-save')).to_have_text('☁ 存到 Drive')
-    expect(page.locator('#drive-sync')).to_be_hidden()
-    state = page.evaluate("""async()=>{const {db}=await import('./js/db.js');const d=await new Promise(r=>{const q=indexedDB.open('note-mvp');q.onsuccess=()=>r(q.result)});
-      return {stores:[...d.objectStoreNames],meta:await db.get('meta','history:local'),collab:await db.get('meta','collab:u:p'),pages:await db.getAll('pages')}}""")
-    assert 'versions' not in state['stores'] and 'objects' not in state['stores'] and 'notebooks' in state['stores'], state['stores']
-    assert state['meta'] is None and state['collab'] == 'k', state
-    assert len({p['notebookId'] for p in state['pages']}) == 1
-    ctx.close()
-
-    # 2. Fresh install, several notebooks with separate pages.
+    # 1. Fresh install, several notebooks with separate pages.
     ctx = new_context(browser, fake); page = ctx.new_page(); page.on('pageerror', lambda e: errors.append(str(e))); dialogs = Dialogs(page)
     page.goto(BASE)
     expect(page.locator('#nb-name')).to_have_text('我的筆記')
@@ -135,7 +107,7 @@ with sync_playwright() as pw:
     expect(page.locator('#page-title')).to_have_value('A 的頁面')
     expect(page.locator('#viewport path, #viewport polyline').first).to_be_attached()
 
-    # 3. Export → import creates an independent local copy.
+    # 2. Export → import creates an independent local copy.
     page.locator('#file').set_input_files({'name': 'x.png', 'mimeType': 'image/png', 'buffer': bytes.fromhex(
         '89504e470d0a1a0a0000000d4948445200000001000000010806000000'
         '1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082')})
@@ -158,7 +130,7 @@ with sync_playwright() as pw:
     toast(page, '不是有效的 zip')
     assert len(notebooks(page)) == 3
 
-    # 4. Save to Drive (local → bound), edit marks unsaved, save overwrites the same file.
+    # 3. Save to Drive (local → bound), edit marks unsaved, save overwrites the same file.
     menu(page, '專案 A'); expect(page.locator('#nb-name')).to_have_text('專案 A')
     page.locator('#drive-save').click()
     toast(page, '已儲存到 alice@example.test 的 Drive')
@@ -182,7 +154,7 @@ with sync_playwright() as pw:
     page.locator('#drive-save').click(); expect(page.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
     assert fake.files['alice'][file_id]['name'] == '專案 A 改名.zip'
 
-    # 5. Another device opens it from Drive, edits and saves.
+    # 4. Another device opens it from Drive, edits and saves.
     other = new_context(browser, fake); device = other.new_page(); device.on('pageerror', lambda e: errors.append(str(e))); Dialogs(device)
     device.goto(BASE); expect(device.locator('#nb-name')).to_have_text('我的筆記')
     menu(device, '從 Drive 開啟')
@@ -197,7 +169,7 @@ with sync_playwright() as pw:
     assert len(notebooks(device)) == 2, 'opening an already open file switches instead of duplicating'
     draw(device, 120); device.locator('#drive-save').click(); expect(device.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
 
-    # 6. First device is now stale. Sync pulls the other device's strokes and
+    # 5. First device is now stale. Sync pulls the other device's strokes and
     # stays on the same page; syncing again is a no-op.
     uploads = fake.uploads; strokes = page.locator('.ink path').count()
     expect(page.locator('#drive-sync')).to_be_visible()
@@ -225,17 +197,17 @@ with sync_playwright() as pw:
     dialogs.answers = [True]; page.locator('#drive-save').click(); expect(page.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
     assert fake.uploads == uploads + 1
 
-    # 7. Save a copy: new file, current notebook still bound to the original.
+    # 6. Save a copy: new file, current notebook still bound to the original.
     dialogs.answers = ['備份一']; menu(page, '另存副本到 Drive'); toast(page, '已在 alice@example.test 的 Drive 建立「備份一」')
     assert sorted(f['name'] for f in fake.files['alice'].values()) == ['備份一.zip', '專案 A 改名.zip']
     assert notebooks(page)[1]['drive']['fileId'] == file_id
 
-    # 8. A different Google account cannot overwrite alice's file.
+    # 7. A different Google account cannot overwrite alice's file.
     page.evaluate("window.testAccount='bob'")
     menu(page, '中斷 Google 連線'); toast(page, '已中斷')
     draw(page, 240); page.locator('#drive-save').click(); toast(page, '存在 alice@example.test 的 Drive')
 
-    # 9. Closing: unsaved Drive changes and local-only notebooks ask first; last one is replaced by an empty notebook.
+    # 8. Closing: unsaved Drive changes and local-only notebooks ask first; last one is replaced by an empty notebook.
     dialogs.answers = [False]; menu(page, '關閉筆記本')
     assert '尚未存到 Drive' in dialogs.last(page); expect(page.locator('#nb-name')).to_have_text('專案 A 改名')
     dialogs.answers = [True]; menu(page, '關閉筆記本'); toast(page, '已關閉「專案 A 改名」')

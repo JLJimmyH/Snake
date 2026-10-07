@@ -124,7 +124,7 @@ async function createPage(parentId, title = '') {
 async function seed() {
   const welcome = await createPage(null, '歡迎使用');
   const lines = [
-    [28, '👋 歡迎！這是筆記 MVP'],
+    [28, '👋 歡迎！這是 Snake Note'],
     [18, '↖ 選取（預設）：拖曳移動畫布，點一下選取物件後可拖曳移動'],
     [18, '➰ 套索：圈起筆跡/文字/圖片，一起移動或刪除'],
     [18, '✏️ 筆：單指或觸控筆直接書寫'],

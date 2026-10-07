@@ -49,7 +49,7 @@ with sync_playwright() as pw:
     prompt=copy(page,'重點整理成條列')
     assert '重點整理成條列' in prompt and '"ops"' in prompt,prompt[:300]
     data=page_json(prompt)
-    assert data['format']=='note-mvp-ai' and data['page']=='歡迎使用' and data['area']['w']>0,data
+    assert data['format']=='snake-note-ai' and data['page']=='歡迎使用' and data['area']['w']>0,data
     text=[i for i in data['items'] if i['type']=='text']
     stroke=[i for i in data['items'] if i['type']=='stroke']
     assert len(text)==len(before_texts) and len(stroke)==1 and 'pts' not in stroke[0] and stroke[0]['w']>0,stroke

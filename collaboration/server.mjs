@@ -272,6 +272,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   try {
     const app = await createCollaborationServer();
     const address = await app.listen();
-    console.log(`note-mvp ${process.env.COLLAB_DEMO === '1' ? '本機示範' : 'Supabase 協作'}服務已啟動，port ${address.port}`);
+    console.log(`snake-note ${process.env.COLLAB_DEMO === '1' ? '本機示範' : 'Supabase 協作'}服務已啟動，port ${address.port}`);
   } catch (error) { console.error(error.message); process.exitCode = 1; }
 }

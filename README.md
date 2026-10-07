@@ -1,4 +1,4 @@
-# 📒 筆記 MVP
+# 📒 Snake Note
 
 手寫無限畫布 ＋ 無限層頁面　👉 **[打開就用](https://jljimmyh.github.io/Snake/)**
 

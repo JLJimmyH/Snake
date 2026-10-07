@@ -2,7 +2,7 @@
 // AI 不直接改原始資料：沒提到的物件一律不動，筆跡與圖片只能移動或刪除。
 import { uid } from './db.js';
 
-export const FORMAT = 'note-mvp-ai';
+export const FORMAT = 'snake-note-ai';
 const MAX_OPS = 5000;
 const MAX_ITEMS = 20000;
 const MAX_TEXT = 100000;

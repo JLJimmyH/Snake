@@ -2,7 +2,7 @@ import { ensure, MAX_BYTES } from './notebook-core.js';
 
 const API = 'https://www.googleapis.com/drive/v3/';
 const UPLOAD = 'https://www.googleapis.com/upload/drive/v3/';
-const APP = 'note-mvp-notebook-v1';
+const APP = 'snake-note-notebook-v1';
 const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const FIELDS = 'id,name,modifiedTime,size,headRevisionId';
 let scriptPromise;

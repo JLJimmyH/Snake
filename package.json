@@ -1,5 +1,5 @@
 {
-  "name": "note-mvp",
+  "name": "snake-note",
   "private": true,
   "type": "module",
   "engines": { "node": ">=22" },

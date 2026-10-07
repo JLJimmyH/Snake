@@ -6,7 +6,7 @@
 import { zipSync, unzipSync } from './vendor/fflate.js';
 import { uid } from './db.js';
 
-export const FORMAT = 'note-mvp-notebook';
+export const FORMAT = 'snake-note-notebook';
 export const MAX_BYTES = 100 * 1024 * 1024;
 export const MAX_IMAGE = 20 * 1024 * 1024;
 const MAX_FILES = 25000;
