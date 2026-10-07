@@ -557,6 +557,7 @@ export class Board {
     vp.addEventListener('pointerup', e => this._up(e));
     vp.addEventListener('pointercancel', e => this._up(e));
     vp.addEventListener('pointerleave', e => { if (!this.action) this.cursor.hidden = true; });
+    vp.addEventListener('dblclick', e => this._dblEdit(e));
     vp.addEventListener('wheel', e => this._wheel(e), { passive: false });
     vp.addEventListener('contextmenu', e => { if (!e.target.isContentEditable) e.preventDefault(); });
     // focus 到文字框時瀏覽器可能偷偷捲動 overflow:hidden 的容器，強制歸零
@@ -964,6 +965,19 @@ export class Board {
     const cur = this.sel.size === 1 ? hits.findIndex(it => this.sel.has(it.id)) : -1;
     const hit = hits[(cur + 1) % hits.length];
     this.setSelection(hit ? [hit.id] : []);
+  }
+
+  // 選取工具雙擊文字框＝進入編輯（就算已經選取）。
+  // pointerdown 有 setPointerCapture，dblclick 的 target 不可靠，改用座標找文字框。
+  _dblEdit(e) {
+    if (this.readOnly || this.action || !(this.tool === 'select' || this.tool === 'lasso')) return;
+    if (document.activeElement?.closest?.('.text-item')) return;
+    this.rect = this.vp.getBoundingClientRect();
+    const hit = this._hitsAt(this.toWorld(e.clientX, e.clientY)).find(it => it.type === 'text');
+    if (!hit) return;
+    e.preventDefault();
+    this.setSelection([hit.id]);
+    this.els.get(hit.id)?.querySelector('.text-body')?.focus({ preventScroll: true });
   }
 
   _startLasso(base, w) {

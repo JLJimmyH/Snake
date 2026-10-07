@@ -77,5 +77,18 @@ with sync_playwright() as pw:
     assert re.search(r'^\*\*m+Xm+\*\* and',text,re.M),text
     expect(md.locator('strong')).to_contain_text('X')
     print('PASS: edit raw markdown at the clicked position, re-render on blur')
+
+    # With the select tool, double-clicking a text box (even an already selected one) edits it.
+    plain=page.locator('[data-id=plain] .text-body')
+    page.locator('.tool[data-tool=select]').click()
+    page.mouse.click(*center(plain))
+    expect(page.locator('[data-id=plain].selected')).to_have_count(1)
+    assert not page.evaluate("document.activeElement.classList.contains('text-body')")
+    page.mouse.dblclick(*center(plain))
+    assert page.evaluate("document.activeElement.closest('.text-item')?.dataset.id")=='plain'
+    page.keyboard.press('Control+End');page.keyboard.type('!')
+    page.locator('#page-title').click();saved(page)
+    assert state(page)['items'][1]['text'].endswith('</b>!')
+    print('PASS: double-click edits a text box with the select tool')
     assert not errors,errors
     browser.close()
