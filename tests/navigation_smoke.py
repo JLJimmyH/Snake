@@ -99,6 +99,24 @@ with sync_playwright() as pw:
     for button,expected in [('#zoom-in',1.25),('#zoom-in',1.5),('#zoom-out',1.25),('#zoom-out',1),('#zoom-out',.75)]:
         page.locator(button).click();assert abs(view(page)['s']-expected)<1e-6,(button,view(page))
     print('PASS: Ctrl+wheel steps about 10% and zoom buttons')
+    # Wheel axis lock: a horizontal scroll ignores stray vertical deltas until a pause,
+    # switches after several events on the other axis, and diagonal trackpad swipes stay free.
+    def wheel(dx,dy):
+        before=view(page);page.mouse.wheel(dx,dy);page.wait_for_timeout(20);after=view(page)
+        return round(before['x']-after['x'],2),round(before['y']-after['y'],2)
+    page.mouse.move(x,y);page.wait_for_timeout(300)
+    assert wheel(100,0)==(100,0)
+    assert wheel(0,100)==(0,0),'stray vertical delta during a horizontal scroll'
+    assert wheel(100,30)==(100,0)
+    assert wheel(0,100)==(0,0) and wheel(0,100)==(0,0) and wheel(0,100)==(0,100),'should switch to vertical'
+    page.wait_for_timeout(300)
+    assert wheel(0,100)==(0,100) and wheel(40,0)==(0,0)
+    page.wait_for_timeout(300)
+    assert wheel(30,25)==(30,25) and wheel(20,30)==(20,30),'diagonal swipe should stay free'
+    page.wait_for_timeout(300)
+    page.keyboard.down('Shift');assert wheel(0,100)==(100,0),'shift+wheel scrolls sideways';page.keyboard.up('Shift')
+    page.wait_for_timeout(300)
+    print('PASS: wheel locks to the starting axis')
     # Fit to content via Shift+1, the toolbar button and the lost hint.
     for trigger in ['Shift+1','#btn-fit','#back-to-content']:
         page.mouse.move(x,y);page.mouse.wheel(30000,30000)

@@ -8,6 +8,8 @@ const SVGNS = 'http://www.w3.org/2000/svg';
 const MIN_S = 0.1, MAX_S = 8, GRID = 24, HISTORY = 100;
 // 觸控板捏合的 deltaY 很小，照原比例縮放才跟手；滑鼠滾輪一格約 100，限制成一格約 10%
 const WHEEL_ZOOM_MAX = 10;
+// 滾輪鎖軸：停頓超過 WHEEL_GAP 毫秒算新的一串滾動；連續 WHEEL_SWITCH 次都偏向另一軸才換方向
+const WHEEL_GAP = 200, WHEEL_SWITCH = 3;
 const ZOOM_STEPS = [0.1, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4, 6, 8];
 
 const r1 = n => Math.round(n * 10) / 10;
@@ -190,6 +192,7 @@ export class Board {
     this.darkCanvas = false;
     this.mouseMode = false;   // 滑鼠模式：點到物件直接選取並拖動，空白處拖曳＝框選
     this.spacePan = false;    // 按住空白鍵：左鍵拖曳＝移動畫布
+    this.wheelLock = null;    // 滾輪鎖軸狀態，見 _wheelAxis
     this.pointers = new Map();
     this.action = null;
     this.editing = null;
@@ -837,8 +840,33 @@ export class Board {
       const d = clamp(e.deltaY * k, -WHEEL_ZOOM_MAX, WHEEL_ZOOM_MAX);
       this.zoomAt(e.clientX - this.rect.left, e.clientY - this.rect.top, Math.exp(-d * 0.01));
     } else {
-      this.setView(this.view.x - e.deltaX * k, this.view.y - e.deltaY * k, this.view.s);
+      let dx = e.deltaX * k, dy = e.deltaY * k;
+      // 只有直向滾輪的滑鼠：Shift+滾輪＝橫向（有些瀏覽器已經自己轉好）
+      if (e.shiftKey && !dx) [dx, dy] = [dy, 0];
+      [dx, dy] = this._wheelAxis(dx, dy);
+      this.setView(this.view.x - dx, this.view.y - dy, this.view.s);
     }
+  }
+
+  // 一串滾動只走一開始的主要方向：橫向滾輪常順便送出一點直向（或反過來），不鎖會斜著飄。
+  // 一開始兩軸差不多大（觸控板斜著滑）就不鎖。
+  _wheelAxis(dx, dy) {
+    const ax = Math.abs(dx), ay = Math.abs(dy);
+    if (!ax && !ay) return [dx, dy];
+    const now = performance.now();
+    let w = this.wheelLock;
+    if (!w || now - w.at > WHEEL_GAP) {
+      w = this.wheelLock = { axis: ax >= 2 * ay ? 'x' : ay >= 2 * ax ? 'y' : 'free', streak: 0 };
+    }
+    w.at = now;
+    if (w.axis === 'free') return [dx, dy];
+    const along = w.axis === 'x' ? ax : ay, across = w.axis === 'x' ? ay : ax;
+    if (along >= across) w.streak = 0;
+    else if (++w.streak >= WHEEL_SWITCH) {
+      w.axis = w.axis === 'x' ? 'y' : 'x';
+      w.streak = 0;
+    }
+    return w.axis === 'x' ? [dx, 0] : [0, dy];
   }
 
   // ---------- ink ----------
