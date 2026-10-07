@@ -19,6 +19,8 @@
 
 > ⚠️ 筆記只存在這台裝置的瀏覽器。換裝置、清除瀏覽器資料就看不到 → 點左上角筆記本名稱，「存到 Drive」或「匯出 zip」。
 
+✨ **AI 整理**：右上角 ✨ →「複製給 AI」貼到 ChatGPT／Claude（有手寫就再附截圖）→ 把回覆貼回來 → 看過變更再套用，可以復原。
+
 <kbd>V</kbd> <kbd>L</kbd> <kbd>P</kbd> <kbd>H</kbd> <kbd>E</kbd> <kbd>T</kbd> 切工具　<kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Y</kbd> 復原／重做　<kbd>Ctrl</kbd>+<kbd>V</kbd> 貼上　<kbd>Ctrl</kbd>+滾輪 縮放　<kbd>M</kbd> 小地圖　<kbd>Ctrl</kbd>+<kbd>S</kbd> 存到 Drive
 
 ---

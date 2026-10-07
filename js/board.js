@@ -34,6 +34,20 @@ function pathData(pts) {
   return d + `L${lx} ${ly}`;
 }
 
+// 依寬度逐字換行（中文沒有空白可以斷）
+function wrapText(ctx, text, width) {
+  const out = [];
+  for (const para of text.split('\n')) {
+    let line = '';
+    for (const ch of para) {
+      if (line && width > 0 && ctx.measureText(line + ch).width > width) { out.push(line); line = ''; }
+      line += ch;
+    }
+    out.push(line);
+  }
+  return out;
+}
+
 // .text-body → renderMarkdown 回傳的位置對照（編輯中的文字框沒有）
 const sources = new WeakMap();
 
@@ -449,6 +463,63 @@ export class Board {
     this._mount(item);
     this._commit(before);
     this.setSelection([item.id]);
+  }
+
+  // 整批換掉內容（AI 整理），一次復原就能還原
+  replaceItems(items) {
+    if (this.readOnly) return;
+    this.commitText();
+    const before = this._snap();
+    this.items = items;
+    this._renderAll();
+    this._commit(before);
+  }
+
+  // 截圖範圍：全部內容外加一點留白；空白頁回傳 null
+  exportArea(pad = 24) {
+    const b = this.contentBounds();
+    return b && { x: b.x0 - pad, y: b.y0 - pad, w: b.x1 - b.x0 + pad * 2, h: b.y1 - b.y0 + pad * 2 };
+  }
+
+  // 把 area 範圍畫成 PNG（給 AI 看手寫）。顏色跟畫面一樣；文字只畫原始文字，不排 Markdown
+  async toPNG(area, maxSide = 2400) {
+    const k = Math.min(2, maxSide / Math.max(area.w, area.h));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(area.w * k));
+    c.height = Math.max(1, Math.round(area.h * k));
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = this.canvas;
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.setTransform(k, 0, 0, k, -area.x * k, -area.y * k);
+    ctx.lineCap = ctx.lineJoin = 'round';
+    const css = getComputedStyle(this.vp);
+    for (const it of this.items) {
+      ctx.globalAlpha = 1;
+      if (it.type === 'stroke') {
+        ctx.globalAlpha = it.tool === 'hl' ? .5 : 1;
+        ctx.strokeStyle = this.inkColor(it);
+        ctx.lineWidth = it.width;
+        ctx.stroke(new Path2D(pathData(it.pts)));
+      } else if (it.type === 'image') {
+        const img = this.els.get(it.id)?.querySelector('img');
+        if (img?.complete && img.naturalWidth) ctx.drawImage(img, it.x, it.y, it.w, it.h);
+      } else if (it.type === 'text') {
+        // 畫顯示出來的文字（沒有 Markdown 符號），超出文字框的部分裁掉，避免疊到下一個框
+        const el = this.els.get(it.id), lh = it.size * 1.45;
+        if (!el) continue;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(it.x, it.y, el.offsetWidth, el.offsetHeight);
+        ctx.clip();
+        ctx.font = `${it.size}px ${css.fontFamily}`;
+        ctx.fillStyle = css.color;
+        ctx.textBaseline = 'middle';
+        let y = it.y + 2 + lh / 2;
+        for (const line of wrapText(ctx, el.querySelector('.text-body').innerText, el.offsetWidth - 8)) { ctx.fillText(line, it.x + 4, y); y += lh; }
+        ctx.restore();
+      }
+    }
+    return new Promise((resolve, reject) => c.toBlob(b => b ? resolve(b) : reject(new Error('無法產生截圖')), 'image/png'));
   }
 
   // 結束目前的文字編輯（會觸發 focusout 存檔）

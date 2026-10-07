@@ -4,6 +4,7 @@ import { Board } from './board.js';
 import { Minimap } from './minimap.js';
 import { cleanName } from './notebook-core.js';
 import { setupNotebooks } from './notebook-ui.js';
+import { setupAi } from './ai-ui.js';
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -555,7 +556,7 @@ $('#btn-finger').addEventListener('click', () => {
 const typing = el => el && (el.isContentEditable || el.tagName === 'INPUT' || el.tagName === 'TEXTAREA');
 
 document.addEventListener('keydown', e => {
-  if (typing(document.activeElement) || $('#drive-dialog').open || $('#collab-dialog').open) return;
+  if (typing(document.activeElement) || $('dialog[open]')) return;
   const mod = e.ctrlKey || e.metaKey;
   const k = e.key.toLowerCase();
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? board.redo() : board.undo(); return; }
@@ -570,7 +571,7 @@ document.addEventListener('keydown', e => {
 });
 
 document.addEventListener('paste', async e => {
-  if (typing(document.activeElement) || board.readOnly || $('#collab-dialog').open || $('#drive-dialog').open) return;
+  if (typing(document.activeElement) || board.readOnly || $('dialog[open]')) return;
   const clipboard = e.clipboardData;
   if (!clipboard) return;
   const files = [...clipboard.files].filter(file => file.type.startsWith('image/'));
@@ -681,6 +682,7 @@ async function init() {
   try { map = localStorage.getItem('minimap'); } catch { /* ignore */ }
   setMinimap(map ? map === '1' : !isMobile());
   setupAppearance({ board, button: $('#btn-appearance'), panel: $('#appearance-panel'), onCanvas: refreshNav });
+  setupAi({ board, title: () => $('#page-title').value, toast });
   setTool('select');
   updateFinger();
   notebooks = setupNotebooks({
