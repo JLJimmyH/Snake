@@ -694,7 +694,7 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
 svg.ink path.remote-preview { opacity: .55; }
 [hidden] { display: none !important; }
 @media (max-width: 767px) {
-  #topbar { flex-wrap: wrap; height: auto; min-height: 52px; padding-bottom: 4px; }
+  #topbar { flex-wrap: wrap; gap: 4px; height: auto; min-height: 52px; padding-bottom: 4px; }
   #collab-state { max-width: 160px; font-size: 11px; }
   #collab-presence { display: none; }
 }
@@ -735,6 +735,9 @@ svg.ink path.remote-preview { opacity: .55; }
 .drive-file small { display: block; color: var(--muted); margin-top: 4px; }
 .drive-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
 #drive-save:disabled, #drive-sync:disabled { opacity: .5; cursor: default; }
+#drive-save.on { background: var(--accent-soft); color: var(--accent); }
+.panel-section { margin-top: 14px; }
+.panel-wide { width: 100%; margin-left: 0; }
 
 /* AI 整理 */
 #ai-dialog { width: min(560px, calc(100vw - 24px)); max-height: 85dvh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 20px; color: var(--text); background: var(--surface); }

@@ -25,7 +25,9 @@ export function setupNotebooks({ current, switchTo, reload, create, flush, showM
     $('#nb-button').title = `${nb.name}（${state(nb)}）：點一下切換筆記本`;
     $('#nb-dirty').hidden = !nb.drive || !dirty(nb);
     const save = $('#drive-save');
-    save.textContent = !nb.drive ? '☁ 存到 Drive' : dirty(nb) ? '☁ 儲存到 Drive' : '☁ 已存到 Drive';
+    const label = !nb.drive ? '存到 Drive' : dirty(nb) ? '儲存到 Drive' : '已存到 Drive';
+    save.setAttribute('aria-label', label);
+    save.title = `${label} (Ctrl+S)`;
     save.classList.toggle('on', Boolean(nb.drive) && dirty(nb));
     save.disabled = busy;
     $('#drive-sync').hidden = !nb.drive;
@@ -69,7 +71,7 @@ export function setupNotebooks({ current, switchTo, reload, create, flush, showM
     const nb = await db.get('notebooks', current());
     if (nb.drive) {
       const remote = await remoteOf(nb);
-      if (remote.headRevisionId !== nb.drive.revision && !confirm(`Drive 上的「${remote.name}」在這台裝置上次開啟或儲存後，已被其他裝置修改。\n\n覆蓋會以這台裝置的內容取代它（之後仍可在 Drive 的「管理版本」找回舊內容）。\n\n要覆蓋嗎？按「取消」後可用「⟳ 同步」載入 Drive 上的內容，或「另存副本到 Drive」。`)) return;
+      if (remote.headRevisionId !== nb.drive.revision && !confirm(`Drive 上的「${remote.name}」在這台裝置上次開啟或儲存後，已被其他裝置修改。\n\n覆蓋會以這台裝置的內容取代它（之後仍可在 Drive 的「管理版本」找回舊內容）。\n\n要覆蓋嗎？按「取消」後可用「從 Drive 同步」載入 Drive 上的內容，或「另存副本到 Drive」。`)) return;
     }
     const changes = nb.changes;
     toast('正在儲存到 Drive…');

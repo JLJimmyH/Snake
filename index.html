@@ -50,9 +50,12 @@
       <span id="collab-state" role="status" aria-live="polite"></span>
       <span id="collab-presence" hidden></span>
       <button id="collab-leave" class="chip" hidden>回本機</button>
-      <button id="drive-sync" class="chip" title="從 Google Drive 載入其他裝置存的最新內容" hidden>⟳ 同步</button>
-      <button id="drive-save" class="chip" title="把目前的筆記本存到 Google Drive (Ctrl+S)">☁ 存到 Drive</button>
-      <button id="collab-button" class="chip" hidden>協作</button>
+      <button id="drive-sync" class="icon-btn" title="從 Drive 同步：載入其他裝置存的最新內容" aria-label="從 Drive 同步" hidden>
+        <svg class="i" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 01-.5-9A6 6 0 0118 9.5a4 4 0 01-.5 8.5"/><path d="M12 12v8M9 17l3 3 3-3"/></svg>
+      </button>
+      <button id="drive-save" class="icon-btn" title="存到 Drive (Ctrl+S)" aria-label="存到 Drive">
+        <svg class="i" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 01-.5-9A6 6 0 0118 9.5a4 4 0 01-.5 8.5"/><path d="M12 20v-8M9 15l3-3 3 3"/></svg>
+      </button>
       <button id="ai-button" class="icon-btn" title="AI 分析：把選取的內容（沒選就整頁）交給 ChatGPT、Claude 等 AI" aria-label="AI 分析" aria-haspopup="dialog">
         <svg class="i" viewBox="0 0 24 24"><path d="M10 3l1.8 5.2L17 10l-5.2 1.8L10 17l-1.8-5.2L3 10l5.2-1.8z"/><path d="M18 14l.9 2.1L21 17l-2.1.9L18 20l-.9-2.1L15 17l2.1-.9z"/></svg>
       </button>
@@ -202,6 +205,8 @@
   </div>
   <label class="brush-color">自訂顏色<input type="color" value="#ffffff" aria-label="畫布自訂顏色"></label>
   <p class="popover-note">深色畫布上，太暗的筆跡會改用亮色顯示，原本的顏色不變。</p>
+  <span class="palette-heading panel-section">協作</span>
+  <button id="collab-button" class="chip panel-wide" hidden>協作</button>
 </div>
 
 <div id="shortcuts-panel" class="popover" hidden role="group" aria-label="快捷鍵">

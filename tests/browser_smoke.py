@@ -3,13 +3,20 @@ import base64, os, time
 BASE = os.environ.get('NOTE_TEST_ORIGIN', 'http://127.0.0.1:8001')
 TITLE = 'Shared browser test ' + str(time.time_ns())
 
+def open_collab(page):
+    # 協作按鈕在設定面板裡
+    page.locator('#btn-appearance').click(); page.locator('#collab-button').click()
+
+def collab_ready(page):
+    page.wait_for_function("!document.querySelector('#collab-button').hidden")
+
 def login(page, name):
-    page.locator('#collab-button').click()
+    open_collab(page)
     page.locator(f'[data-demo-email="{name}@example.test"]').click()
     expect(page.locator('#collab-user')).to_have_text(f'{name}@example.test')
 
 def share(page, email, role):
-    if not page.locator('#collab-dialog').is_visible(): page.locator('#collab-button').click()
+    if not page.locator('#collab-dialog').is_visible(): open_collab(page)
     page.locator('.collab-page').filter(has_text=TITLE).locator('button').nth(1).click()
     page.locator('#share-email').fill(email)
     page.locator('#share-role').select_option(role)
@@ -41,7 +48,7 @@ with sync_playwright() as pw:
     for page in [a,b,e]:
         page.on('pageerror',lambda error: errors.append(str(error)))
         page.goto(BASE)
-        expect(page.locator('#collab-button')).to_be_visible()
+        collab_ready(page)
     # Empty local page copied into shared room.
     a.locator('#add-root').click(); a.locator('#page-title').fill(TITLE); a.locator('#page-title').press('Enter')
     login(a,'alice'); a.locator('#collab-copy').click()
@@ -95,7 +102,7 @@ with sync_playwright() as pw:
     a.locator('#page-title').click()
     expect(b.locator('.text-body')).to_have_text('Shared text box')
     print('PASS: text object synchronizes to peer')
-    b.reload(); expect(b.locator('#collab-button')).to_be_visible()
+    b.reload(); collab_ready(b)
     login(b,'bob'); b.locator('.collab-page').filter(has_text=TITLE).locator('button').first.click()
     expect(b.locator('.ink path:not(.remote-preview)')).to_have_count(5)
     expect(b.locator('.text-body')).to_have_text('Shared text box')
@@ -113,7 +120,7 @@ with sync_playwright() as pw:
     # before either syncs: their persisted histories must survive a new session.
     b2=b_ctx.new_page()
     b2.on('pageerror',lambda error: errors.append(str(error)))
-    b2.goto(BASE); expect(b2.locator('#collab-button')).to_be_visible()
+    b2.goto(BASE); collab_ready(b2)
     login(b2,'bob'); b2.locator('.collab-page').filter(has_text=TITLE).locator('button').first.click()
     expect(b2.locator('.ink path:not(.remote-preview)')).to_have_count(5)
     b_ctx.set_offline(True)
@@ -123,7 +130,7 @@ with sync_playwright() as pw:
     b.close(); b2.close()
     b_ctx.set_offline(False)
     b=b_ctx.new_page(); b.on('pageerror',lambda error: errors.append(str(error)))
-    b.goto(BASE); expect(b.locator('#collab-button')).to_be_visible()
+    b.goto(BASE); collab_ready(b)
     login(b,'bob'); b.locator('.collab-page').filter(has_text=TITLE).locator('button').first.click()
     expect(b.locator('#collab-state')).to_have_text('已同步',timeout=15000)
     expect(b.locator('.ink path:not(.remote-preview)')).to_have_count(7)

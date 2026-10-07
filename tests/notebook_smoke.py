@@ -146,27 +146,27 @@ with sync_playwright() as pw:
     menu(page, '專案 A'); expect(page.locator('#nb-name')).to_have_text('專案 A')
     page.locator('#drive-save').click()
     toast(page, '已儲存到 alice@example.test 的 Drive')
-    expect(page.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
     assert [f['name'] for f in fake.files['alice'].values()] == ['專案 A.zip']
     file_id = next(iter(fake.files['alice']))
     assert [f['name'] for f in fake.folders['alice'].values()] == ['SnakeNote'], fake.folders
     folder_id = next(iter(fake.folders['alice']))
     assert fake.files['alice'][file_id]['parents'] == [folder_id]
     draw(page, 60)
-    expect(page.locator('#drive-save')).to_have_text('☁ 儲存到 Drive')
+    expect(page.locator('#drive-save')).to_have_attribute('aria-label','儲存到 Drive')
     expect(page.locator('#nb-dirty')).to_be_visible()
     page.keyboard.press('Control+s')
     toast(page, '已儲存到')
-    expect(page.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
     assert list(fake.files['alice']) == [file_id] and fake.uploads == 2
     # Panning only is not a change.
     page.locator('#zoom-in').click(); page.wait_for_timeout(700)
-    expect(page.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
     # Rename syncs the Drive file name on the next save.
     dialogs.answers = ['專案 A 改名']; menu(page, '重新命名')
     expect(page.locator('#nb-name')).to_have_text('專案 A 改名')
-    expect(page.locator('#drive-save')).to_have_text('☁ 儲存到 Drive')
-    page.locator('#drive-save').click(); expect(page.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    expect(page.locator('#drive-save')).to_have_attribute('aria-label','儲存到 Drive')
+    page.locator('#drive-save').click(); expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
     assert fake.files['alice'][file_id]['name'] == '專案 A 改名.zip'
 
     # 4. Another device opens it from Drive, edits and saves.
@@ -183,12 +183,12 @@ with sync_playwright() as pw:
     expect(device.locator('#nb-name')).to_have_text('專案 A 改名')
     expect(device.locator('#page-title')).to_have_value('A 的頁面')
     expect(device.locator('#viewport img')).to_be_visible()
-    expect(device.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    expect(device.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
     del fake.files['alice']['stray']
     menu(device, '從 Drive 開啟'); device.locator('.drive-file', has_text='專案 A 改名').locator('button', has_text='切換').click()
     expect(device.locator('#drive-dialog')).not_to_be_visible()
     assert len(notebooks(device)) == 2, 'opening an already open file switches instead of duplicating'
-    draw(device, 120); device.locator('#drive-save').click(); expect(device.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    draw(device, 120); device.locator('#drive-save').click(); expect(device.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
 
     # 5. First device is now stale. Sync pulls the other device's strokes and
     # stays on the same page; syncing again is a no-op.
@@ -197,25 +197,25 @@ with sync_playwright() as pw:
     page.locator('#drive-sync').click(); toast(page, '已同步 Drive 上最新的「專案 A 改名」')
     expect(page.locator('.ink path')).to_have_count(strokes + 1)
     expect(page.locator('#page-title')).to_have_value('A 的頁面')
-    expect(page.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
     assert titles(page) == ['A 的頁面'], titles(page)
     page.locator('#drive-sync').click(); toast(page, '已是最新內容')
     assert fake.uploads == uploads
     # Unsaved local edits: cancelling the sync keeps them.
-    draw(device, 150); device.locator('#drive-save').click(); expect(device.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    draw(device, 150); device.locator('#drive-save').click(); expect(device.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
     uploads = fake.uploads
     draw(page, 180); strokes = page.locator('.ink path').count()
     dialogs.answers = [False]; page.locator('#drive-sync').click()
     assert '尚未存到 Drive 的變更' in dialogs.last(page)
     expect(page.locator('#drive-sync')).to_be_enabled()
     expect(page.locator('.ink path')).to_have_count(strokes)
-    expect(page.locator('#drive-save')).to_have_text('☁ 儲存到 Drive')
+    expect(page.locator('#drive-save')).to_have_attribute('aria-label','儲存到 Drive')
     # Saving while stale: cancel keeps Drive untouched, confirm overwrites.
     dialogs.answers = [False]; page.locator('#drive-save').click()
     assert '已被其他裝置修改' in dialogs.last(page)
     expect(page.locator('#drive-save')).to_be_enabled(); page.wait_for_timeout(300)
     assert fake.uploads == uploads
-    dialogs.answers = [True]; page.locator('#drive-save').click(); expect(page.locator('#drive-save')).to_have_text('☁ 已存到 Drive')
+    dialogs.answers = [True]; page.locator('#drive-save').click(); expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
     assert fake.uploads == uploads + 1
 
     # 6. Save a copy: new file, current notebook still bound to the original.

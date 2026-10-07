@@ -66,6 +66,8 @@ export function setupAppearance({ board, button, panel, onCanvas }) {
   });
 
   panel.addEventListener('click', e => {
+    // 協作按鈕會開對話框，面板先收起來
+    if (e.target.closest('#collab-button')) return close();
     const t = e.target.closest('.theme-card');
     const c = e.target.closest('[data-canvas]');
     if (t) {
