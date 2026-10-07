@@ -1,30 +1,33 @@
-// 外觀：模式（跟隨系統／淺色／深色）、淺色與深色各自的主題、畫布顏色，記在這台裝置，不跟著筆記本走
+// 外觀：主題（跟隨系統或指定一個，每個主題屬於淺色或深色系列）與畫布顏色，記在這台裝置，不跟著筆記本走
 // <html data-theme data-palette> 由 index.html 開頭的小段程式先設好，避免載入時先閃一下別的顏色
 import { isDark } from './color.js';
 
-const DEFAULT_PALETTE = { light: 'vscode-light', dark: 'atom' };
-const PALETTE_KEY = { light: 'lightPalette', dark: 'darkPalette' };
+// 跟隨系統時用的主題
+const SYSTEM = { light: 'vscode-light', dark: 'atom' };
 const system = matchMedia('(prefers-color-scheme: dark)');
 
 const load = (key, fallback) => { try { return localStorage.getItem(key) ?? fallback; } catch { return fallback; } };
 const save = (key, value) => { try { localStorage.setItem(key, value); } catch { /* ignore */ } };
 
 export function setupAppearance({ board, button, panel, onCanvas }) {
-  let theme = load('theme', 'system');
+  const cards = [...panel.querySelectorAll('.theme-card')];
+  const modeOf = p => cards.find(c => c.dataset.palette === p)?.dataset.mode;
+  // 'system' 或主題名稱；舊版存 light／dark，主題另外存在 lightPalette／darkPalette。不認得的就跟隨系統
+  const loadTheme = () => {
+    let t = load('theme', 'system');
+    if (t === 'light' || t === 'dark') t = load(t + 'Palette', SYSTEM[t]);
+    return modeOf(t) ? t : 'system';
+  };
+  let theme = loadTheme();
   let canvas = load('canvasColor', 'auto');
   const picker = panel.querySelector('input[type=color]');
   const meta = document.querySelector('meta[name=theme-color]');
-  // 存的名稱不在面板上（例如主題被拿掉了）就用預設
-  const palette = mode => {
-    const p = load(PALETTE_KEY[mode], DEFAULT_PALETTE[mode]);
-    return panel.querySelector(`[data-palette="${CSS.escape(p)}"][data-mode=${mode}]`) ? p : DEFAULT_PALETTE[mode];
-  };
 
   function apply() {
-    const mode = theme === 'dark' || (theme === 'system' && system.matches) ? 'dark' : 'light';
+    const palette = theme === 'system' ? SYSTEM[system.matches ? 'dark' : 'light'] : theme;
     const root = document.documentElement;
-    root.dataset.theme = mode;
-    root.dataset.palette = palette(mode);
+    root.dataset.theme = modeOf(palette);
+    root.dataset.palette = palette;
     const css = getComputedStyle(root);
     // 畫布選「自動」時用主題的畫布色
     const color = canvas === 'auto' ? css.getPropertyValue('--canvas-auto').trim() : canvas;
@@ -37,8 +40,7 @@ export function setupAppearance({ board, button, panel, onCanvas }) {
     board.setCanvas(color);
     onCanvas?.();
 
-    for (const b of panel.querySelectorAll('[data-theme-option]')) b.setAttribute('aria-pressed', String(b.dataset.themeOption === theme));
-    for (const b of panel.querySelectorAll('[data-palette]')) b.setAttribute('aria-pressed', String(b.dataset.palette === palette(b.dataset.mode)));
+    for (const b of cards) b.setAttribute('aria-pressed', String(b.dataset.palette === theme));
     for (const b of panel.querySelectorAll('[data-canvas]')) {
       const on = b.dataset.canvas === canvas;
       b.classList.toggle('active', on);
@@ -64,19 +66,11 @@ export function setupAppearance({ board, button, panel, onCanvas }) {
   });
 
   panel.addEventListener('click', e => {
-    const t = e.target.closest('[data-theme-option]');
-    const p = e.target.closest('.theme-card');
+    const t = e.target.closest('.theme-card');
     const c = e.target.closest('[data-canvas]');
     if (t) {
-      theme = t.dataset.themeOption;
+      theme = t.dataset.palette;
       save('theme', theme);
-    } else if (p) {
-      save(PALETTE_KEY[p.dataset.mode], p.dataset.palette);
-      // 選了另一個模式的主題就切過去，不然按了看不到變化
-      if (document.documentElement.dataset.theme !== p.dataset.mode) {
-        theme = p.dataset.mode;
-        save('theme', theme);
-      }
     } else if (c) {
       canvas = c.dataset.canvas;
       save('canvasColor', canvas);
@@ -98,8 +92,8 @@ export function setupAppearance({ board, button, panel, onCanvas }) {
   system.addEventListener('change', () => { if (theme === 'system') apply(); });
   // 其他分頁改了設定也跟著換
   window.addEventListener('storage', e => {
-    if (!['theme', 'canvasColor', ...Object.values(PALETTE_KEY)].includes(e.key)) return;
-    theme = load('theme', 'system');
+    if (e.key !== 'theme' && e.key !== 'canvasColor') return;
+    theme = loadTheme();
     canvas = load('canvasColor', 'auto');
     apply();
   });

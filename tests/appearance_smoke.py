@@ -52,13 +52,13 @@ with sync_playwright() as pw:
     page.click('#btn-appearance')
     expect(page.locator('#appearance-panel')).to_be_visible()
     expect(page.locator('#btn-appearance')).to_have_attribute('aria-expanded','true')
-    expect(page.locator('[data-theme-option=system]')).to_have_attribute('aria-pressed','true')
+    expect(page.locator('.theme-card[data-palette=system]')).to_have_attribute('aria-pressed','true')
     expect(page.locator('[data-canvas=auto]')).to_have_attribute('aria-pressed','true')
     page.keyboard.press('Escape')
     expect(page.locator('#appearance-panel')).to_be_hidden()
 
-    # 深色模式：預設 ATOM 主題，自動畫布變深，黑筆改用亮色顯示
-    pick(page,'[data-theme-option=dark]')
+    # ATOM（深色系列）：自動畫布變深，黑筆改用亮色顯示
+    pick(page,'.theme-card[data-palette=atom]')
     s=state(page)
     assert s['theme']=='dark' and s['palette']=='atom' and s['bg']=='rgb(40, 44, 52)' and s['dark'],s
     assert s['topbar']=='rgb(44, 49, 60)',s
@@ -67,7 +67,7 @@ with sync_playwright() as pw:
     expect(page.locator('meta[name=theme-color]')).to_have_attribute('content','#2c313c')
     if SHOTS: page.screenshot(path=os.path.join(SHOTS,'appearance-dark.png'))
 
-    # 換成 VS Code 深色主題，自動畫布跟著換
+    # 換成 VS Code 深色，自動畫布跟著換
     pick(page,'.theme-card[data-palette=vscode-dark]')
     s=state(page)
     assert s['theme']=='dark' and s['palette']=='vscode-dark' and s['bg']=='rgb(31, 31, 31)' and s['topbar']=='rgb(31, 31, 31)',s
@@ -75,16 +75,13 @@ with sync_playwright() as pw:
     expect(page.locator('.theme-card[data-palette=atom]')).to_have_attribute('aria-pressed','false')
     expect(page.locator('meta[name=theme-color]')).to_have_attribute('content','#1f1f1f')
 
-    # 深色模式下選淺色主題：直接切到淺色
+    # 深色換淺色主題
     pick(page,'.theme-card[data-palette=one-light]')
     s=state(page)
     assert s['theme']=='light' and s['palette']=='one-light' and s['bg']=='rgb(250, 250, 250)',s
-    expect(page.locator('[data-theme-option=light]')).to_have_attribute('aria-pressed','true')
+    expect(page.locator('#appearance-panel .theme-card[aria-pressed=true]')).to_have_count(1)
     if SHOTS: page.screenshot(path=os.path.join(SHOTS,'appearance-one-light.png'))
-
-    # 切回深色，記得剛才選的深色主題
-    pick(page,'[data-theme-option=dark]')
-    assert state(page)['palette']=='vscode-dark',state(page)
+    pick(page,'.theme-card[data-palette=vscode-dark]')
 
     # 深色介面配白紙：筆跡回原色，畫布文字用深色
     pick(page,'[data-canvas="#ffffff"]')
@@ -94,7 +91,7 @@ with sync_playwright() as pw:
     if SHOTS: page.screenshot(path=os.path.join(SHOTS,'appearance-dark-ui-white-canvas.png'))
 
     # 淺色介面配黑板綠
-    pick(page,'[data-theme-option=light]')
+    pick(page,'.theme-card[data-palette=one-light]')
     pick(page,'[data-canvas="#23302a"]')
     s=state(page)
     assert s['theme']=='light' and s['bg']=='rgb(35, 48, 42)' and s['dark'],s
@@ -118,15 +115,24 @@ with sync_playwright() as pw:
     s=state(page)
     assert s['theme']=='light' and s['palette']=='one-light' and s['bg']=='rgb(255, 238, 204)' and s['stroke']=='#1f2937',s
 
-    # 跟隨系統：系統切到深色就跟著變
-    pick(page,'[data-theme-option=system]')
+    # 跟隨系統：淺色用 VS Code，系統切到深色就換 ATOM
+    pick(page,'.theme-card[data-palette=system]')
     pick(page,'[data-canvas=auto]')
+    assert state(page)['palette']=='vscode-light',state(page)
     page.emulate_media(color_scheme='dark')
     expect(page.locator('html')).to_have_attribute('data-theme','dark')
     s=state(page)
-    assert s['palette']=='vscode-dark' and s['bg']=='rgb(31, 31, 31)' and s['dark'],s
+    assert s['palette']=='atom' and s['bg']=='rgb(40, 44, 52)' and s['dark'],s
     page.emulate_media(color_scheme='light')
     expect(page.locator('html')).to_have_attribute('data-theme','light')
+
+    # 舊版設定（theme=dark＋darkPalette）載入時轉成對應的主題
+    page.evaluate("() => { localStorage.setItem('theme','dark'); localStorage.setItem('darkPalette','vscode-dark'); }")
+    page.reload()
+    page.wait_for_selector('.row.active')
+    s=state(page)
+    assert s['theme']=='dark' and s['palette']=='vscode-dark',s
+    expect(page.locator('.theme-card[data-palette=vscode-dark]')).to_have_attribute('aria-pressed','true')
 
     assert not errors,errors
     browser.close()

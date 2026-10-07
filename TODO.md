@@ -192,7 +192,7 @@ python tests/browser_smoke.py
 
 ## 🎨 配色改成 VS Code／ATOM 風格（2026-10-07）
 - [x] 拿掉 OneNote 紫：淺色預設 VS Code Light Modern，深色預設 ATOM（UARTPro 的配色，主色用 One Dark 藍），另有 One Light、VS Code Dark Modern 可選。
-- [x] 外觀面板：模式（跟隨系統／淺色／深色）＋淺色主題、深色主題各選一個，存在 localStorage（lightPalette、darkPalette）；在深色模式點淺色主題會直接切到淺色。畫布「自動」用主題的 --canvas-auto。
+- [x] 外觀面板只有一個「主題」列表：跟隨系統（VS Code ↔ ATOM）＋四個主題，卡片標示淺色／深色系列；localStorage 的 theme 存 'system' 或主題名稱，舊版的 light／dark＋lightPalette／darkPalette 載入時自動轉換。畫布「自動」用主題的 --canvas-auto。
 - [x] 新 token：--accent-fill（按鈕底色）、--selected（側欄目前頁面）、--danger、--shadow、--canvas-auto；套索／選取框底色改用 color-mix，不再寫死紫色 rgba。
 - [x] 側欄目前頁面改成中性底色＋左側主色細線；補上 :focus-visible 外框；Toast 改成跟主題的浮層樣式；theme-color meta 跟著主題的 --surface。
 - [x] 畫布上的選取色固定藍（淺色畫布 #0078d4、深色畫布 #4daafc），小地圖畫面框同色；筆的紫色色票改 #9333ea。

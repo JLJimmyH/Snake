@@ -8,18 +8,20 @@
 <title>筆記 MVP</title>
 <link rel="stylesheet" href="css/style.css">
 <script>
-  // 在畫面出來前套用深色模式與主題，避免先閃一下別的顏色；之後由 js/appearance.js 接手
-  // 不認得的主題名稱 CSS 對不到，自然會用該模式的預設主題
+  // 在畫面出來前套用主題，避免先閃一下別的顏色；之後由 js/appearance.js 接手
+  // theme 存 'system' 或主題名稱；舊版存 light／dark，主題另外存在 lightPalette／darkPalette
   (function () {
-    var t = null, p = null;
-    var dark = matchMedia('(prefers-color-scheme: dark)').matches;
+    var DARK = { atom: 1, 'vscode-dark': 1 }; // 跟 index.html 外觀面板裡 data-mode=dark 的卡片一致
+    var t = null;
     try {
       t = localStorage.getItem('theme');
-      dark = t === 'dark' || (t !== 'light' && dark);
-      p = localStorage.getItem(dark ? 'darkPalette' : 'lightPalette');
+      if (t === 'light') t = localStorage.getItem('lightPalette') || 'vscode-light';
+      if (t === 'dark') t = localStorage.getItem('darkPalette') || 'atom';
     } catch (e) { /* ignore */ }
-    document.documentElement.dataset.theme = dark ? 'dark' : 'light';
-    document.documentElement.dataset.palette = p || (dark ? 'atom' : 'vscode-light');
+    // 不認得的主題名稱 CSS 對不到，自然會用淺色預設主題
+    var p = !t || t === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'atom' : 'vscode-light') : t;
+    document.documentElement.dataset.theme = DARK[p] ? 'dark' : 'light';
+    document.documentElement.dataset.palette = p;
   })();
 </script>
 </head>
@@ -171,21 +173,13 @@
 <div id="toast"></div>
 <div id="brush-preview" hidden role="status"><span class="brush-dot"></span><span class="brush-caption"></span></div>
 <div id="appearance-panel" class="popover" hidden role="group" aria-label="外觀">
-  <span class="palette-heading">模式</span>
-  <div class="segmented">
-    <button data-theme-option="system" aria-pressed="false">跟隨系統</button>
-    <button data-theme-option="light" aria-pressed="false">淺色</button>
-    <button data-theme-option="dark" aria-pressed="false">深色</button>
-  </div>
-  <span class="palette-heading">淺色主題</span>
+  <span class="palette-heading">主題</span>
   <div class="theme-cards">
-    <button class="theme-card" data-palette="vscode-light" data-mode="light" style="--p-sb:#f8f8f8;--p-bg:#ffffff;--p-ac:#005fb8" aria-pressed="false"><i></i>VS Code</button>
-    <button class="theme-card" data-palette="one-light" data-mode="light" style="--p-sb:#eaeaeb;--p-bg:#fafafa;--p-ac:#2c5fd6" aria-pressed="false"><i></i>One Light</button>
-  </div>
-  <span class="palette-heading">深色主題</span>
-  <div class="theme-cards">
-    <button class="theme-card" data-palette="atom" data-mode="dark" style="--p-sb:#21252b;--p-bg:#2c313c;--p-ac:#61afef" aria-pressed="false"><i></i>ATOM</button>
-    <button class="theme-card" data-palette="vscode-dark" data-mode="dark" style="--p-sb:#181818;--p-bg:#1f1f1f;--p-ac:#4daafc" aria-pressed="false"><i></i>VS Code</button>
+    <button class="theme-card wide" data-palette="system" aria-pressed="false"><i></i><span>跟隨系統<small>VS Code ／ ATOM</small></span></button>
+    <button class="theme-card" data-palette="vscode-light" data-mode="light" style="--p-sb:#f8f8f8;--p-bg:#ffffff;--p-ac:#005fb8" aria-pressed="false"><i></i><span>VS Code<small>淺色</small></span></button>
+    <button class="theme-card" data-palette="one-light" data-mode="light" style="--p-sb:#eaeaeb;--p-bg:#fafafa;--p-ac:#2c5fd6" aria-pressed="false"><i></i><span>One Light<small>淺色</small></span></button>
+    <button class="theme-card" data-palette="atom" data-mode="dark" style="--p-sb:#21252b;--p-bg:#2c313c;--p-ac:#61afef" aria-pressed="false"><i></i><span>ATOM<small>深色</small></span></button>
+    <button class="theme-card" data-palette="vscode-dark" data-mode="dark" style="--p-sb:#181818;--p-bg:#1f1f1f;--p-ac:#4daafc" aria-pressed="false"><i></i><span>VS Code<small>深色</small></span></button>
   </div>
   <span class="palette-heading">畫布顏色</span>
   <div class="palette-swatches">

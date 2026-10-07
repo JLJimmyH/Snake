@@ -1,5 +1,6 @@
-/* 主題：<html data-theme> 是淺色／深色，data-palette 是該模式下選的主題，由 js/appearance.js 設定。
-   淺色預設 VS Code，深色預設 ATOM；新增主題＝加一段覆寫，再到 index.html 的外觀面板加一張卡片 */
+/* 主題：<html data-palette> 是選的主題，data-theme 是它屬於淺色或深色系列，由 js/appearance.js 設定。
+   淺色系列的預設是 VS Code，深色系列是 ATOM（跟隨系統就在這兩個之間切換）；
+   新增主題＝加一段覆寫，再到 index.html 的外觀面板加一張卡片（深色的也要加進開頭小段程式的 DARK） */
 :root {
   /* VS Code Light Modern */
   --accent: #005fb8;       /* 文字、圖示 */
@@ -729,15 +730,14 @@ svg.ink path.remote-preview { opacity: .55; }
 .drive-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
 #drive-save:disabled, #drive-sync:disabled { opacity: .5; cursor: default; }
 
-/* 外觀面板：模式、主題、畫布顏色 */
-.segmented { display: flex; gap: 2px; padding: 2px; margin-bottom: 12px; border-radius: 8px; background: var(--chip); }
-.segmented button { flex: 1; height: 30px; border-radius: 6px; font-size: 13px; }
-.segmented button[aria-pressed=true] { background: var(--surface); color: var(--accent); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .15); }
+/* 外觀面板：主題、畫布顏色 */
 .popover-note { margin: 10px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
 .theme-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 12px; }
 .theme-card { display: flex; flex-direction: column; gap: 5px; padding: 5px 5px 6px; border-radius: 8px; font-size: 12px; text-align: left; }
 .theme-card:hover { background: var(--hover); }
 .theme-card[aria-pressed=true] { box-shadow: inset 0 0 0 2px var(--accent); }
+.theme-card > span { display: flex; justify-content: space-between; gap: 4px; padding: 0 2px; }
+.theme-card small { font-size: 11px; color: var(--muted); }
 /* 縮圖：左邊側欄、右邊內容、底下一條主色 */
 .theme-card i {
   display: block;
@@ -748,3 +748,7 @@ svg.ink path.remote-preview { opacity: .55; }
     linear-gradient(90deg, var(--p-sb) 28%, var(--p-bg) 28%);
   box-shadow: inset 0 0 0 1px rgba(128, 128, 128, .35);
 }
+/* 跟隨系統：橫跨兩欄，縮圖一半淺色一半深色 */
+.theme-card.wide { grid-column: 1 / -1; flex-direction: row; align-items: center; gap: 8px; }
+.theme-card.wide i { flex: none; width: 48px; height: 26px; background: linear-gradient(135deg, #ffffff 50%, #2c313c 50%); }
+.theme-card.wide > span { flex: 1; }
