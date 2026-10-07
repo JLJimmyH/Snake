@@ -458,6 +458,8 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
   user-select: none;
 }
 #viewport[data-tool="select"] .text-item.selected .md-link { cursor: pointer; }
+/* 編輯中的文字一律是文字游標，不繼承選取框的 move／畫布的 grab */
+#viewport .text-item:focus-within .text-body { cursor: text; }
 
 /* 選取範圍框（世界座標，跟著縮放） */
 .sel-box {

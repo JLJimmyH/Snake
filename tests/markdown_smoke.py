@@ -86,6 +86,7 @@ with sync_playwright() as pw:
     assert not page.evaluate("document.activeElement.classList.contains('text-body')")
     page.mouse.dblclick(*center(plain))
     assert page.evaluate("document.activeElement.closest('.text-item')?.dataset.id")=='plain'
+    expect(plain).to_have_css('cursor','text')
     page.keyboard.press('Control+End');page.keyboard.type('!')
     page.locator('#page-title').click();saved(page)
     assert state(page)['items'][1]['text'].endswith('</b>!')
