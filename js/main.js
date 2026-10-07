@@ -1,6 +1,7 @@
 import { db, uid, newNotebook, pagesOf } from './db.js';
 import { setupAppearance } from './appearance.js';
 import { setupShortcuts } from './shortcuts.js';
+import { setupInputMode } from './input-mode.js';
 import { Board } from './board.js';
 import { Minimap } from './minimap.js';
 import { cleanName } from './notebook-core.js';
@@ -392,6 +393,31 @@ function setTool(t) {
 
 $$('.tool').forEach(b => b.addEventListener('click', () => setTool(b.dataset.tool)));
 
+// 工具列第一組按鈕依序對應 Esc、Q、W、E、R、T、Y…（隱藏的不算），提示文字與快捷鍵面板跟著更新
+const TOOL_KEYS = ['Esc', 'Q', 'W', 'E', 'R', 'T', 'Y', 'U'];
+function updateToolKeys() {
+  const rows = [];
+  $$('#toolbar .tb-group:first-child .tbtn').forEach(b => {
+    const key = b.hidden ? null : TOOL_KEYS[rows.length / 2];
+    b.dataset.key = key?.toLowerCase() ?? '';
+    b.title = key ? `${b.dataset.name} (${key})` : b.dataset.name;
+    if (!key) return;
+    const dt = document.createElement('dt'), kbd = document.createElement('kbd'), dd = document.createElement('dd');
+    kbd.textContent = key;
+    dt.append(kbd);
+    dd.textContent = b.dataset.name;
+    rows.push(dt, dd);
+  });
+  $('#tool-keys').replaceChildren(...rows);
+}
+
+// 滑鼠模式不需要套索：選取工具在空白處拖曳就是框選
+function onInputMode(mode) {
+  $('.tool[data-tool=lasso]').hidden = mode === 'mouse';
+  if (mode === 'mouse' && board.tool === 'lasso') setTool('select');
+  updateToolKeys();
+}
+
 function closeBrushPalettes(restoreFocus = false) {
   for (const panel of $$('.brush-palette')) {
     if (panel.hidden) continue;
@@ -564,10 +590,22 @@ document.addEventListener('keydown', e => {
   // 手機排版沒有「?」按鈕，面板也就不開
   if (e.key === '?' && $('#btn-shortcuts').offsetParent) { shortcuts.toggle(); return; }
   if (e.key === 'Delete' || e.key === 'Backspace') { board.deleteSelected(); return; }
-  // 只在選取工具下切換：Q 筆、W 螢光筆、E 套索、R 文字；其他工具按 Esc 回到選取
-  const tools = { q: 'pen', w: 'hl', e: 'lasso', r: 'text' };
-  if (board.tool === 'select' && tools[k] && !e.shiftKey && !e.altKey) setTool(tools[k]);
+  if (e.key === ' ') { e.preventDefault(); setSpacePan(true); return; }
+  if (e.shiftKey || e.altKey) return;
+  $$('#toolbar .tbtn[data-key]').find(b => b.dataset.key === k)?.click();
 });
+
+// 按住空白鍵時，左鍵拖曳＝移動畫布
+function setSpacePan(on) {
+  board.spacePan = on;
+  $('#viewport').classList.toggle('space-pan', on);
+}
+document.addEventListener('keyup', e => {
+  if (e.key !== ' ' || !board.spacePan) return;
+  e.preventDefault(); // 不讓焦點所在的按鈕被空白鍵按下
+  setSpacePan(false);
+});
+window.addEventListener('blur', () => setSpacePan(false));
 
 document.addEventListener('paste', async e => {
   if (typing(document.activeElement) || board.readOnly || $('dialog[open]')) return;
@@ -682,6 +720,7 @@ async function init() {
   try { map = localStorage.getItem('minimap'); } catch { /* ignore */ }
   setMinimap(map ? map === '1' : !isMobile());
   setupAppearance({ board, button: $('#btn-appearance'), panel: $('#appearance-panel'), onCanvas: refreshNav });
+  setupInputMode({ board, panel: $('#appearance-panel'), onChange: onInputMode });
   setupAi({ board, title: () => $('#page-title').value, toast });
   setTool('select');
   notebooks = setupNotebooks({

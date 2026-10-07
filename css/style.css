@@ -378,6 +378,9 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
 #viewport.dark-canvas { --accent: #4daafc; }
 #viewport.no-grid { background-image: none; }
 #viewport[data-tool="select"] { cursor: grab; }
+#viewport[data-input="mouse"][data-tool="select"] { cursor: default; }
+#viewport[data-input="mouse"][data-tool="select"] .item { cursor: move; }
+#viewport.space-pan, #viewport.space-pan .item { cursor: grab; }
 #viewport[data-tool="text"] { cursor: text; }
 
 .world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
@@ -649,9 +652,6 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
 @media (min-width: 768px) {
   .only-mobile { display: none; }
 }
-@media (max-width: 767px) {
-  .only-desktop { display: none; }
-}
 
 @media (max-width: 767px) {
   #sidebar {
@@ -779,3 +779,8 @@ svg.ink path.remote-preview { opacity: .55; }
 .keys dt { white-space: nowrap; color: var(--muted); font-size: 12px; }
 .keys dd { margin: 0; }
 kbd { display: inline-block; min-width: 1.6em; padding: 1px 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; background: var(--hover); color: var(--text); font: 11px/1.5 ui-monospace, Consolas, monospace; text-align: center; }
+/* 快捷鍵只在滑鼠模式顯示（手機、平板通常沒有鍵盤） */
+html:not([data-input="mouse"]) #btn-shortcuts { display: none; }
+.input-modes { display: flex; gap: 6px; }
+.input-modes .chip { flex: 1; }
+.input-note { margin: 8px 0 12px; }

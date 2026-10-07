@@ -188,6 +188,8 @@ export class Board {
     };
     this.canvas = '#ffffff';  // 畫布底色，由 setCanvas 設定
     this.darkCanvas = false;
+    this.mouseMode = false;   // 滑鼠模式：點到物件直接選取並拖動，空白處拖曳＝框選
+    this.spacePan = false;    // 按住空白鍵：左鍵拖曳＝移動畫布
     this.pointers = new Map();
     this.action = null;
     this.editing = null;
@@ -282,6 +284,13 @@ export class Board {
     this.vp.dataset.tool = t;
     this.cursor.hidden = true;
     if (t !== 'select' && t !== 'lasso') this.setSelection([]);
+  }
+
+  // 'touch'：先點選物件才能拖動，空白處拖曳＝移動畫布，比較不會誤觸
+  // 'mouse'：點到物件直接選取並拖動，空白處拖曳＝框選
+  setInputMode(mode) {
+    this.mouseMode = mode === 'mouse';
+    this.vp.dataset.input = mode;
   }
 
   setView(x, y, s, silent = false) {
@@ -590,6 +599,13 @@ export class Board {
       }
       return;
     }
+    if (this.spacePan && e.pointerType === 'mouse' && !this.action) {
+      e.preventDefault();
+      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: 'mouse' });
+      this._startPan(e, null);
+      try { this.vp.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+      return;
+    }
 
     if (this.readOnly) {
       e.preventDefault();
@@ -664,6 +680,7 @@ export class Board {
 
     if (t === 'select' || t === 'lasso') {
       if (handle && itemEl) return this._startResize(base, w, itemEl.dataset.id);
+      if (this.mouseMode) return this._mouseDown(e, base, w);
       // 拖曳已選取的物件（選取框內）＝移動物件；未選取的物件或空白處＝移動畫布。
       // 選取只在放開時（點一下）發生，不在按下時。
       if (this._inSelBox(w)) {
@@ -709,6 +726,10 @@ export class Board {
       if (Math.hypot(w.x - last[0], w.y - last[1]) * this.view.s < 3) return;
       a.pts.push([r1(w.x), r1(w.y)]);
       a.path.setAttribute('d', 'M' + a.pts.map(q => q.join(' ')).join('L') + 'Z');
+    } else if (a.kind === 'marquee') {
+      const w = this.toWorld(e.clientX, e.clientY);
+      a.end = w;
+      a.path.setAttribute('d', `M${a.at.x} ${a.at.y}H${w.x}V${w.y}H${a.at.x}Z`);
     } else if (a.kind === 'pan') {
       const dx = e.clientX - a.sx, dy = e.clientY - a.sy;
       if (!a.moved && Math.hypot(dx, dy) < 6) return;
@@ -759,10 +780,13 @@ export class Board {
       case 'lasso':
         this._endLasso(a);
         break;
+      case 'marquee':
+        this._endMarquee(a);
+        break;
       case 'move':
         if (a.moved) this._finishMove(a);
         else if (a.link) this._openLink(a.link);
-        else this._tapSelect(a.start);
+        else if (!a.picked) this._tapSelect(a.start);
         break;
       case 'transform':
         if (a.changed) this._commit(a.before);
@@ -785,7 +809,7 @@ export class Board {
     const a = this.action;
     this.action = null;
     if (!a) return;
-    if (a.kind === 'draw' || a.kind === 'lasso') a.path.remove();
+    if (a.kind === 'draw' || a.kind === 'lasso' || a.kind === 'marquee') a.path.remove();
     else if (a.kind === 'move' && a.moved) this._finishMove(a);
     else if (a.kind === 'resize' || (a.kind === 'transform' && a.changed) || (a.kind === 'erase' && a.hit)) this._commit(a.before);
     this.cursor.hidden = true;
@@ -974,13 +998,59 @@ export class Board {
     this.els.get(hit.id)?.querySelector('.text-body')?.focus({ preventScroll: true });
   }
 
-  _startLasso(base, w) {
+  // 套索與框選共用的虛線
+  _selPath() {
     const path = document.createElementNS(SVGNS, 'path');
     path.setAttribute('class', 'lasso');
     path.setAttribute('stroke-width', 1.5 / this.view.s);
     path.setAttribute('stroke-dasharray', `${6 / this.view.s} ${4 / this.view.s}`);
     this.svg.append(path);
-    this.action = { ...base, kind: 'lasso', path, at: w, pts: [[r1(w.x), r1(w.y)]] };
+    return path;
+  }
+
+  _startLasso(base, w) {
+    this.action = { ...base, kind: 'lasso', path: this._selPath(), at: w, pts: [[r1(w.x), r1(w.y)]] };
+  }
+
+  // 滑鼠模式按下：點到未選取的物件＝選它並可直接拖動；選取範圍內＝拖動；空白處＝框選。
+  // Shift+點物件＝加選／取消，Shift+框選＝加選。
+  _mouseDown(e, base, w) {
+    const hit = this._hitsAt(w)[0];
+    if (e.shiftKey && hit) {
+      const ids = new Set(this.sel);
+      if (ids.has(hit.id)) ids.delete(hit.id); else ids.add(hit.id);
+      return this.setSelection([...ids]);
+    }
+    if (hit && !this.sel.has(hit.id)) {
+      this.setSelection([hit.id]);
+      this._startMove(base, w);
+      this.action.picked = true;
+      return;
+    }
+    if (this._inSelBox(w)) {
+      this._startMove(base, w);
+      this.action.link = e.target.closest('a.md-link')?.href;
+      return;
+    }
+    this.action = { ...base, kind: 'marquee', path: this._selPath(), at: w, end: w, add: e.shiftKey };
+  }
+
+  _endMarquee(a) {
+    a.path.remove();
+    const x0 = Math.min(a.at.x, a.end.x), x1 = Math.max(a.at.x, a.end.x);
+    const y0 = Math.min(a.at.y, a.end.y), y1 = Math.max(a.at.y, a.end.y);
+    if (Math.max(x1 - x0, y1 - y0) * this.view.s < 4) {
+      if (!a.add) this.setSelection([]);
+      return;
+    }
+    // 筆跡有任一點在框內就算；文字、圖片只要跟框重疊就算
+    const ids = this.items.filter(it => {
+      if (!this.els.has(it.id)) return false;
+      if (it.type === 'stroke') return it.pts.some(([x, y]) => x >= x0 && x <= x1 && y >= y0 && y <= y1);
+      const b = this._box(it);
+      return b.x <= x1 && b.x + b.w >= x0 && b.y <= y1 && b.y + b.h >= y0;
+    }).map(it => it.id);
+    this.setSelection(a.add ? [...new Set([...this.sel, ...ids])] : ids);
   }
 
   _endLasso(a) {
