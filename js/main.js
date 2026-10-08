@@ -955,7 +955,7 @@ async function init() {
   optional('外觀設定', () => setupAppearance({ board, button: $('#btn-appearance'), panel: $('#appearance-panel'), onCanvas: refreshNav }));
   optional('輸入模式', () => setupInputMode({ board, panel: $('#appearance-panel'), onChange: onInputMode }));
   ai = optional('AI', () => setupAi({ board, title: () => $('#page-title').value, toast, showMenu, pasteContent }));
-  optional('匯出', () => setupExport({ board, title: () => $('#page-title').value, toast, showMenu, ai }));
+  optional('匯出', () => setupExport({ board, title: () => $('#page-title').value, toast, ai }));
   search = optional('搜尋', () => setupSearch({
     board, minimap, refreshNav, hideSidebar: closeSidebar, top: () => $('#viewport').offsetTop,
     showSidebar: () => isMobile() ? document.body.classList.add('sb-open') : document.body.classList.remove('sb-collapsed'),

@@ -7,12 +7,12 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Snake Note</title>
 <!-- 版本：scripts/stamp.mjs 產生，不要手改 -->
-<meta name="build" content="a8f09c3370">
+<meta name="build" content="f9c571bd37">
 <script type="importmap">
 {
   "imports": {
     "./js/ai-core.js": "./js/ai-core.js?v=61836b6cf0",
-    "./js/ai-ui.js": "./js/ai-ui.js?v=0f4d93c77c",
+    "./js/ai-ui.js": "./js/ai-ui.js?v=eb073d6aa7",
     "./js/appearance.js": "./js/appearance.js?v=6970172940",
     "./js/board.js": "./js/board.js?v=dd4bbfbea6",
     "./js/collaboration.js": "./js/collaboration.js?v=e39182534f",
@@ -21,11 +21,11 @@
     "./js/diagram.js": "./js/diagram.js?v=2048c1ffb2",
     "./js/drive-config.js": "./js/drive-config.js?v=7c4725f44f",
     "./js/drive.js": "./js/drive.js?v=133f24113c",
-    "./js/export.js": "./js/export.js?v=5c580fdb47",
+    "./js/export.js": "./js/export.js?v=b816ad64ed",
     "./js/highlight.js": "./js/highlight.js?v=1c4fb22def",
     "./js/input-mode.js": "./js/input-mode.js?v=35acee13a1",
     "./js/local-file.js": "./js/local-file.js?v=827a68b121",
-    "./js/main.js": "./js/main.js?v=a4f59a98fd",
+    "./js/main.js": "./js/main.js?v=5d89ca1daf",
     "./js/markdown.js": "./js/markdown.js?v=48793a922b",
     "./js/minimap.js": "./js/minimap.js?v=f557bfac44",
     "./js/notebook-core.js": "./js/notebook-core.js?v=8356661d5a",
@@ -33,12 +33,12 @@
     "./js/search.js": "./js/search.js?v=6e1a9e766b",
     "./js/shortcuts.js": "./js/shortcuts.js?v=8f44b92950",
     "./js/vendor/fflate.js": "./js/vendor/fflate.js?v=89c01a7364",
-    "./js/build.js": "./js/build.js?v=50a70efc35"
+    "./js/build.js": "./js/build.js?v=63c56c4055"
   }
 }
 </script>
 <!-- /版本 -->
-<link rel="stylesheet" href="css/style.css?v=00b7254ebd">
+<link rel="stylesheet" href="css/style.css?v=5a9ecd9dc8">
 <script>
   // 在畫面出來前套用主題，避免先閃一下別的顏色；之後由 js/appearance.js 接手
   // theme 存 'system' 或主題名稱；舊版存 light／dark，主題另外存在 lightPalette／darkPalette
@@ -103,7 +103,7 @@
       <button id="find-button" class="icon-btn" title="搜尋這一頁 (Ctrl+F)" aria-label="搜尋這一頁">
         <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
       </button>
-      <button id="export-button" class="icon-btn" title="匯出：PDF、圖片、交給 AI（有選取就只匯出選取的部分）" aria-label="匯出" aria-haspopup="menu">
+      <button id="export-button" class="icon-btn" title="匯出：交給 AI、圖片、PDF（有選取就只匯出選取的部分）" aria-label="匯出" aria-haspopup="dialog">
         <svg class="i" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>
       </button>
       <button id="btn-shortcuts" class="icon-btn" title="快捷鍵 (?)" aria-label="快捷鍵" aria-expanded="false" aria-controls="shortcuts-panel">
@@ -443,12 +443,12 @@
   <div id="drive-files"></div>
   <p class="drive-actions"><button id="drive-disconnect" class="chip">中斷 Google 連線</button><a href="privacy.html" target="_blank" rel="noopener">隱私權政策</a></p>
 </dialog>
-<dialog id="ai-dialog" aria-labelledby="ai-heading">
-  <div class="collab-heading"><h2 id="ai-heading">AI 分析這一頁</h2><button id="ai-close" class="icon-btn" aria-label="關閉">✕</button></div>
-  <img id="ai-shot-preview" alt="要複製的內容" hidden>
-  <textarea id="ai-request" rows="2" aria-label="想要 AI 做什麼" placeholder="想要 AI 做什麼（可以不填）"></textarea>
-  <p class="ai-actions"><button id="ai-copy" class="collab-primary">複製給 AI</button><button id="ai-shot" class="chip">複製截圖</button></p>
+<dialog id="export-dialog" aria-labelledby="export-heading">
+  <div class="collab-heading"><h2 id="export-heading">匯出整頁</h2><button id="export-close" class="icon-btn" aria-label="關閉">✕</button></div>
+  <img id="export-preview" alt="要匯出的內容" hidden>
+  <textarea id="ai-request" rows="2" aria-label="想要 AI 做什麼" placeholder="想要 AI 做什麼（交給 AI 用，可以不填）"></textarea>
+  <p class="export-actions"><button id="ai-copy" class="collab-primary">✨ 複製給 AI</button><button id="export-image" class="chip">🖼 複製圖片</button><button id="export-pdf" class="chip">📄 匯出 PDF</button></p>
 </dialog>
-<script type="module" src="js/main.js?v=a4f59a98fd"></script>
+<script type="module" src="js/main.js?v=5d89ca1daf"></script>
 </body>
 </html>

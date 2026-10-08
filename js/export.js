@@ -1,4 +1,4 @@
-// 匯出：頂列按鈕的選單（PDF、圖片、交給 AI）。有選取就只匯出選取的物件，沒有就整頁
+// 匯出：頂列按鈕的對話框（截圖預覽、交給 AI、圖片、PDF）。有選取就只匯出選取的物件，沒有就整頁
 const $ = selector => document.querySelector(selector);
 
 const MM = 96 / 25.4;               // 1mm 幾個 CSS px
@@ -62,20 +62,34 @@ export async function copyPng(png, name, toast) {
   }
 }
 
-export function setupExport({ board, title, toast, showMenu, ai }) {
-  const button = $('#export-button');
+// 頂列「匯出」：直接打開對話框，先看到要匯出的截圖，下面選複製給 AI、複製圖片或匯出 PDF。
+// ai：ai-ui.js 的 setupAi；載入失敗時是 null，「複製給 AI」變灰，其他照用
+export function setupExport({ board, title, toast, ai }) {
+  const dialog = $('#export-dialog');
+  const shot = $('#export-preview');
   const name = () => title() || '筆記';
+  let ids = [];        // 要匯出的物件 id；空的＝整頁
+  let png = null;      // 打開時畫好的截圖（Promise<Blob>），預覽和「複製圖片」共用
 
-  button.addEventListener('click', () => {
+  $('#export-button').addEventListener('click', () => {
     board.commitText();
-    const ids = [...board.sel];
+    ids = [...board.sel];
     const set = ids.length ? new Set(ids) : null;
     const area = board.exportArea(set);
-    showMenu(button.getBoundingClientRect(), [
-      { head: !area ? '這頁沒有內容' : set ? `匯出選取的 ${ids.length} 個物件` : '匯出整頁' },
-      { label: '📄 匯出 PDF', disabled: !area, run: () => printPdf(board, ids, name()) },
-      { label: '🖼 複製圖片', disabled: !area, run: () => copyPng(board.toPNG(area, { ids: set }), name(), toast) },
-      { label: '✨ 交給 AI…', disabled: !ai, run: () => ai.open(ids) },
-    ]);
+    $('#export-heading').textContent = !area ? '這頁沒有內容' : set ? `匯出選取的 ${ids.length} 個物件` : '匯出整頁';
+    png = area && board.toPNG(area, { ids: set });
+    URL.revokeObjectURL(shot.src);
+    shot.removeAttribute('src');
+    shot.hidden = !png;
+    png?.then(blob => { shot.src = URL.createObjectURL(blob); }).catch(() => { shot.hidden = true; });
+    $('#ai-copy').disabled = !ai || !area;
+    $('#export-image').disabled = $('#export-pdf').disabled = !area;
+    dialog.showModal();
   });
+
+  $('#export-close').addEventListener('click', () => dialog.close());
+  $('#ai-copy').addEventListener('click', () => ai.toAi(ids, $('#ai-request').value));
+  $('#export-image').addEventListener('click', () => copyPng(png, name(), toast));
+  // 先關對話框再列印，列印畫面才不會被 modal 擋住
+  $('#export-pdf').addEventListener('click', () => { dialog.close(); printPdf(board, ids, name()); });
 }

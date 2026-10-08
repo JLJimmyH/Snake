@@ -40,13 +40,14 @@ with sync_playwright() as pw:
     errors=[];page.on('pageerror',lambda e: errors.append(str(e)))
     def broken(route):
         js=route.fetch().text()
-        route.fulfill(body=js.replace("const dialog = $('#ai-dialog');","const dialog = $('#ai-dialog'); $('#ai-button').addEventListener('click', () => {});"),content_type='text/javascript')
+        route.fulfill(body=js.replace("let size = 18;","let size = 18; $('#ai-button').addEventListener('click', () => {});"),content_type='text/javascript')
     page.route(re.compile(r'/js/ai-ui\.js'),broken)
     page.goto(BASE+'/');page.wait_for_selector('.row.active')
     expect(page.locator('#toast')).to_contain_text('AI功能載入失敗，筆記不受影響')
     expect(page.locator('.text-item').first).to_be_visible()
     page.click('#export-button')
-    expect(page.locator('#menu button',has_text='交給 AI')).to_be_disabled()
+    expect(page.locator('#ai-copy')).to_be_disabled()
+    expect(page.locator('#export-image')).to_be_enabled()
     assert not errors,errors
     print('PASS: a broken optional feature does not block loading the notes')
     browser.close()

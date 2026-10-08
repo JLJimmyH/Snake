@@ -85,7 +85,7 @@ with sync_playwright() as pw:
 
     # Copy image: the export draws code and diagram (canvas is not tainted).
     page.click('#export-button')
-    page.locator('#menu button',has_text='複製圖片').click()
+    page.click('#export-image')
     expect(page.locator('#toast')).to_contain_text('已複製圖片')
     png=page.evaluate("""async () => {
       const [item]=await navigator.clipboard.read(), blob=await item.getType('image/png');

@@ -1,4 +1,4 @@
-"""Verify AI collaboration and copy/paste: right-click copies the selection (or everything), the export menu's 「交給 AI」 previews and exports just the selected region, the AI reply is pasted with Ctrl+V at the cursor, undo, missing images, persistence, and pasting copied items on another page."""
+"""Verify AI collaboration and copy/paste: right-click copies the selection (or everything), the export dialog's 「複製給 AI」 previews and exports just the selected region, the AI reply is pasted with Ctrl+V at the cursor, undo, missing images, persistence, and pasting copied items on another page."""
 import json, os, re
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8050')
@@ -63,14 +63,14 @@ with sync_playwright() as pw:
     data=json.loads(page.evaluate('navigator.clipboard.readText()'))
     assert data['format']=='snake-note-ai' and len(data['items'])==1 and len(data['items'][0]['pts'])==10,data
 
-    # 選取後按「匯出 → 交給 AI」：只把這一塊交給 AI
-    page.click('#export-button'); menu(page,'交給 AI')
-    expect(page.locator('#ai-dialog')).to_be_visible()
-    expect(page.locator('#ai-heading')).to_have_text('AI 分析選取的 1 個物件')
+    # 選取後按「匯出」→「複製給 AI」：只把這一塊交給 AI
+    page.click('#export-button')
+    expect(page.locator('#export-dialog')).to_be_visible()
+    expect(page.locator('#export-heading')).to_have_text('匯出選取的 1 個物件')
     # 預覽：只畫選取的那一塊
-    expect(page.locator('#ai-shot-preview')).to_be_visible()
-    page.wait_for_function("document.querySelector('#ai-shot-preview').naturalWidth>0")
-    nw,nh=page.locator('#ai-shot-preview').evaluate('el => [el.naturalWidth, el.naturalHeight]')
+    expect(page.locator('#export-preview')).to_be_visible()
+    page.wait_for_function("document.querySelector('#export-preview').naturalWidth>0")
+    nw,nh=page.locator('#export-preview').evaluate('el => [el.naturalWidth, el.naturalHeight]')
     assert nw<400 and nh<200,(nw,nh)
     prompt=copy(page,'轉成文字')
     assert '轉成文字' in prompt and '"items"' in prompt and '框選' in prompt,prompt[:300]
@@ -82,12 +82,12 @@ with sync_playwright() as pw:
     expect(page.locator('#toast')).to_contain_text('截圖')
 
     # 截圖：只畫選取的那一塊（headless 不支援時會改成下載）
-    page.click('#ai-shot')
+    page.click('#export-image')
     expect(page.locator('#toast')).to_have_text(re.compile('已複製圖片|改成下載'))
     if SHOTS:
-        page.screenshot(path=os.path.join(SHOTS,'ai-dialog.png'))
+        page.screenshot(path=os.path.join(SHOTS,'export-dialog.png'))
 
-    page.click('#ai-close')
+    page.click('#export-close')
 
     # AI 的回覆：在畫布上 Ctrl+V，外框左上角放在游標位置
     page.evaluate('t => navigator.clipboard.writeText(t)','以下是結果：\n```json\n'+json.dumps(REPLY,ensure_ascii=False)+'\n```')
@@ -131,14 +131,14 @@ with sync_playwright() as pw:
     page.keyboard.press('Control+V')
     expect(page.locator('.text-item .text-body',has_text='一般文字')).to_have_count(1)
 
-    # 沒有選取時「交給 AI」＝整頁
+    # 沒有選取時「複製給 AI」＝整頁
     page.keyboard.press('Escape')
     page.mouse.click(box['x']+700,box['y']+300)
-    page.click('#export-button'); menu(page,'交給 AI')
-    expect(page.locator('#ai-heading')).to_have_text('AI 分析這一頁')
+    page.click('#export-button')
+    expect(page.locator('#export-heading')).to_have_text('匯出整頁')
     data=region_json(copy(page))
     assert data['scope']=='page' and len(data['items'])==len(texts(page))+strokes(page),data['scope']
-    page.click('#ai-close')
+    page.click('#export-close')
 
     # 重新整理後保留
     expect(page.locator('#save-state')).to_have_text('已儲存')

@@ -73,19 +73,22 @@ with sync_playwright() as pw:
     assert p['selected']==0 and 'A4 landscape' in p['page'] and p['title']==title,p
     expect(page.locator('#print-root')).to_be_hidden()  # 平常不顯示
 
-    # 頂列「匯出」：有選取＝選取的部分
+    # 頂列「匯出」：直接打開對話框，先看到截圖；有選取＝選取的部分
     page.click('#export-button')
-    expect(page.locator('#menu .menu-head')).to_have_text('匯出選取的 1 個物件')
-    expect(page.locator('#menu button')).to_have_text(['📄 匯出 PDF','🖼 複製圖片','✨ 交給 AI…'])
-    menu(page,'複製圖片')
+    expect(page.locator('#export-heading')).to_have_text('匯出選取的 1 個物件')
+    expect(page.locator('#export-preview')).to_be_visible()
+    expect(page.locator('.export-actions button')).to_have_text(['✨ 複製給 AI','🖼 複製圖片','📄 匯出 PDF'])
+    page.click('#export-image')
     expect(page.locator('#toast')).to_have_text(re.compile('已複製圖片|改成下載'))
+    page.click('#export-close')
 
     # 沒有選取＝整頁，所有物件都在、文字不能編輯、圖片載入完成
     page.keyboard.press('Escape')
     page.mouse.click(box['x']+700,box['y']+300)
     page.click('#export-button')
-    expect(page.locator('#menu .menu-head')).to_have_text('匯出整頁')
-    menu(page,'匯出 PDF')
+    expect(page.locator('#export-heading')).to_have_text('匯出整頁')
+    page.click('#export-pdf')
+    expect(page.locator('#export-dialog')).to_be_hidden()  # 先關對話框再列印
     p=printed(page,2)
     s=on_screen(page)
     assert len(p['strokes'])==s['strokes'] and p['texts']==s['texts']>3 and len(p['images'])==s['images']==1,(p,s)
@@ -112,11 +115,11 @@ with sync_playwright() as pw:
     menu(page,'匯出 PDF')
     assert printed(page,3)['strokes']==['#1f2937']
 
-    # 交給 AI：打開原本的 AI 對話框
+    # 交給 AI：同一個對話框，選取的部分
     page.click('#export-button')
-    menu(page,'交給 AI')
-    expect(page.locator('#ai-heading')).to_have_text('AI 分析選取的 1 個物件')
-    page.click('#ai-close')
+    expect(page.locator('#export-heading')).to_have_text('匯出選取的 1 個物件')
+    expect(page.locator('#ai-copy')).to_be_enabled()
+    page.click('#export-close')
 
     # 手機：匯出按鈕在頂列裡，頂列沒有被擠爆
     page.set_viewport_size({'width':390,'height':844})

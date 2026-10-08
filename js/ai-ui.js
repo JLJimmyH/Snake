@@ -1,54 +1,31 @@
 import { uid } from './db.js';
 import { exportRegion, copyText, buildPrompt, replyItems, placeItems, itemsBox, copiedOrigin } from './ai-core.js';
-import { copyPng, printPdf } from './export.js';
+import { printPdf } from './export.js';
 
 const $ = selector => document.querySelector(selector);
 
-// AI 協作：框選一塊（或整頁）→ 匯出選單「交給 AI」→ 看一眼要交出去的內容 → 複製給 ChatGPT／Claude。
+// AI 協作：框選一塊（或整頁）→ 匯出對話框看一眼要交出去的內容 →「複製給 AI」貼給 ChatGPT／Claude（對話框在 export.js）。
 // AI 回的 {"items":[…]} 由使用者在畫布上 Ctrl+V 貼回，原本的內容不會被改動。右鍵選單（剪下／複製／貼上）、Ctrl+C／Ctrl+X 也在這裡。
 // pasteContent：main.js 的貼上（圖片、物件、文字），右鍵的各種貼上都交給它
 export function setupAi({ board, title, toast, showMenu, pasteContent }) {
-  const dialog = $('#ai-dialog');
-  const shot = $('#ai-shot-preview');
-  let scope = null;     // 要交給 AI 的物件 id（Set）；null＝整頁
-  let png = null;       // 打開時畫好的截圖（Promise<Blob>），預覽和「複製截圖」共用
   let size = 18;        // 貼上時沒給字級用的字級：上次交給 AI 的範圍裡最常見的字級
 
-  const scoped = () => scope ? board.items.filter(it => scope.has(it.id)) : board.items;
-
-  function open(ids = null) {
+  // 匯出對話框的「複製給 AI」：ids 的物件（null＝整頁）加上 request 包成提示詞，複製到剪貼簿
+  async function toAi(ids, request) {
     board.commitText();
-    scope = ids?.length ? new Set(ids) : null;
-    $('#ai-heading').textContent = scope ? `AI 分析選取的 ${scope.size} 個物件` : 'AI 分析這一頁';
-    const area = board.exportArea(scope);
-    png = area && board.toPNG(area, { ids: scope });
-    URL.revokeObjectURL(shot.src);
-    shot.removeAttribute('src');
-    shot.hidden = !png;
-    png?.then(blob => { shot.src = URL.createObjectURL(blob); }).catch(() => { shot.hidden = true; });
-    dialog.showModal();
-  }
-
-  $('#ai-close').addEventListener('click', () => dialog.close());
-
-  $('#ai-copy').addEventListener('click', async () => {
-    const items = scoped();
+    const scope = ids?.length ? new Set(ids) : null;
+    const items = scope ? board.items.filter(it => scope.has(it.id)) : board.items;
     if (!items.length) { toast('沒有內容可以複製'); return; }
     const exported = exportRegion({ title: title(), items, area: board.exportArea(scope), selected: !!scope });
     const sizes = items.filter(it => it.type === 'text').map(it => it.size);
     if (sizes.length) size = mostCommon(sizes);
     try {
-      await navigator.clipboard.writeText(buildPrompt(exported, $('#ai-request').value));
+      await navigator.clipboard.writeText(buildPrompt(exported, request));
       toast(items.some(it => it.type !== 'text') ? '已複製，有手寫的話也附上截圖' : '已複製，貼給 AI 吧');
     } catch {
       toast('無法存取剪貼簿，請改用 https 或 localhost 開啟');
     }
-  });
-
-  $('#ai-shot').addEventListener('click', () => {
-    if (!png) { toast('沒有內容可以複製'); return; }
-    copyPng(png, title() || '筆記', toast);
-  });
+  }
 
   // at：外框左上角要放的位置；null＝座標已經是畫布座標（原位貼上）
   async function insert(items, at) {
@@ -164,7 +141,7 @@ export function setupAi({ board, title, toast, showMenu, pasteContent }) {
     return items && items.filter(it => it.type === 'text').sort((a, b) => a.y - b.y || a.x - b.x).map(it => it.text).join('\n\n');
   }
 
-  return { open, paste, objectText };
+  return { toAi, paste, objectText };
 }
 
 // 已經允許網站讀剪貼簿（Chrome）就先讀，選單才知道哪些貼上選項用得到；還沒允許就不要在按右鍵時跳出詢問
