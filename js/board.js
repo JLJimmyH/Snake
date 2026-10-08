@@ -338,6 +338,7 @@ export class Board {
   }
 
   setTool(t) {
+    this._flushStrokeEdit();
     this.commitText();
     this.endCrop();
     this.tool = t;
@@ -461,6 +462,7 @@ export class Board {
   }
 
   setSelection(ids) {
+    this._flushStrokeEdit();
     if (this.cropping && !(ids.length === 1 && ids[0] === this.cropping.id)) this.endCrop();
     for (const id of this.sel) this.els.get(id)?.classList.remove('selected');
     this.sel = new Set(ids);
@@ -473,6 +475,44 @@ export class Board {
   // 選取中的物件類型
   selectedTypes() {
     return new Set([...this.sel].map(id => this._item(id)?.type).filter(Boolean));
+  }
+
+  // ---------- 筆跡格式 ----------
+  // 選取工具下選中的筆跡，tool 是 'pen' 或 'hl'
+  strokeTargets(tool) {
+    if (this.readOnly || (this.tool !== 'select' && this.tool !== 'lasso')) return [];
+    return [...this.sel].filter(id => { const it = this._item(id); return it?.type === 'stroke' && it.tool === tool; });
+  }
+
+  // 第一條選中筆跡的顏色與粗細；沒有回傳 null
+  strokeFormat(tool) {
+    const id = this.strokeTargets(tool)[0], it = id && this._item(id);
+    return it ? { color: it.color, width: it.width } : null;
+  }
+
+  // 改選中筆跡的顏色或粗細。拖滑桿、色盤時 live 只改畫面，放開才存成一步（復原才不會一格一格）
+  setStrokeStyle(tool, key, value, live = false) {
+    const ids = this.strokeTargets(tool);
+    if (!ids.length) return;
+    const before = this.strokeEdit ?? this._snap();
+    for (const id of ids) {
+      const item = this._own(id), el = this.els.get(id);
+      item[key] = value;
+      el?.setAttribute('stroke', this.inkColor(item));
+      el?.setAttribute('stroke-width', item.width);
+    }
+    this.strokeEdit = live ? before : null;
+    if (!live) this._commit(before);
+    this._updateSelBox();
+    this.cb.onContext?.();
+  }
+
+  // 還沒放開的筆跡調整先存起來（選取改變時）
+  _flushStrokeEdit() {
+    const before = this.strokeEdit;
+    if (!before) return;
+    this.strokeEdit = null;
+    this._commit(before);
   }
 
   // ---------- 文字格式 ----------

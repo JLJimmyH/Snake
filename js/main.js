@@ -478,15 +478,26 @@ function closeBrushPalettes(restoreFocus = false) {
   }
 }
 
-function updateBrushColor(group, value) {
-  board.style[group.dataset.for].color = value;
-  group.querySelector('input[type=color]').value = value;
-  group.querySelector('.palette-toggle').style.setProperty('--brush-color', value);
+// 選取工具下選中筆跡時，筆／螢光筆的設定改的是那些筆跡，工具還是選取；不然改的是畫筆
+const brushValue = group => board.strokeFormat(group.dataset.for) ?? board.style[group.dataset.for];
+
+function setBrush(group, key, value, live = false) {
+  const tool = group.dataset.for;
+  if (board.strokeTargets(tool).length) board.setStrokeStyle(tool, key, value, live);
+  else { board.style[tool][key] = value; syncBrush(group); }
+}
+
+function syncBrush(group) {
+  const { color, width } = brushValue(group);
+  group.querySelector('input[type=color]').value = color;
+  group.querySelector('.palette-toggle').style.setProperty('--brush-color', color);
   group.querySelectorAll('.swatch').forEach(button => {
-    const active = button.dataset.color === value;
+    const active = button.dataset.color === color;
     button.classList.toggle('active', active);
     button.setAttribute('aria-pressed', String(active));
   });
+  group.querySelector('input[type=range]').value = width;
+  group.querySelector('output').textContent = width;
 }
 
 document.addEventListener('pointerdown', event => {
@@ -524,7 +535,7 @@ $$('.opts').forEach(group => {
       style.mode = md.dataset.mode;
       group.querySelectorAll('[data-mode]').forEach(x => x.classList.toggle('on', x === md));
     } else if (sw) {
-      updateBrushColor(group, sw.dataset.color);
+      setBrush(group, 'color', sw.dataset.color);
       closeBrushPalettes(true);
     } else if (wb) {
       // Eraser still uses size presets; drawing brushes use their sole slider.
@@ -535,7 +546,6 @@ $$('.opts').forEach(group => {
 });
 
 for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) {
-  const style = board.style[group.dataset.for];
   const color = group.querySelector('input[type=color]');
   const slider = group.querySelector('input[type=range]');
   const preview = $('#brush-preview');
@@ -544,7 +554,7 @@ for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) {
     const rect = slider.getBoundingClientRect();
     preview.style.left = Math.max(8, Math.min(innerWidth - 140, rect.left + rect.width / 2 - 66)) + 'px';
     preview.style.top = Math.min(innerHeight - 148, rect.bottom + 10) + 'px';
-    const dot = preview.querySelector('.brush-dot');
+    const dot = preview.querySelector('.brush-dot'), style = brushValue(group);
     // 筆寬是畫布上的大小，預覽畫成目前縮放下實際看到的粗細
     dot.style.width = dot.style.height = style.width * board.view.s + 'px';
     // 預覽底色＝畫布底色，筆點顏色跟畫在畫布上一樣
@@ -553,14 +563,15 @@ for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) {
     preview.querySelector('.brush-caption').textContent = style.width + ' px';
     preview.hidden = false;
   };
-  color.addEventListener('input', () => {
-    updateBrushColor(group, color.value);
-  });
+  // 拖色盤、滑桿時 input 一直觸發；改選中筆跡時放開（change）才存成一步
+  color.addEventListener('input', () => setBrush(group, 'color', color.value, true));
+  color.addEventListener('change', () => setBrush(group, 'color', color.value));
+  const width = () => Math.round(Number(slider.value) * 100) / 100;
   slider.addEventListener('input', () => {
-    style.width = Math.round(Number(slider.value) * 100) / 100;
-    group.querySelector('output').textContent = style.width;
+    setBrush(group, 'width', width(), true);
     showPreview();
   });
+  slider.addEventListener('change', () => setBrush(group, 'width', width()));
   slider.addEventListener('pointerdown', showPreview);
   slider.addEventListener('focus', showPreview);
   slider.addEventListener('blur', () => { preview.hidden = true; });
@@ -591,8 +602,10 @@ function refreshContext() {
   const format = board.textFormat();
   const types = board.selectedTypes();
   const images = !board.readOnly && (board.tool === 'select' || board.tool === 'lasso') && types.size === 1 && types.has('image');
-  $('#toolbar').dataset.ctx = [format && 'text', images && 'image'].filter(Boolean).join(' ');
-  if (!format && !images) closeBrushPalettes();
+  const strokes = ['pen', 'hl'].filter(t => board.strokeTargets(t).length);
+  $('#toolbar').dataset.ctx = [format && 'text', images && 'image', ...strokes].filter(Boolean).join(' ');
+  if (!format && !images && !strokes.length) closeBrushPalettes();
+  for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) syncBrush(group);
   if (format) {
     const press = (el, on) => el.setAttribute('aria-pressed', String(on));
     press(textGroup.querySelector('[data-fmt=bold]'), format.bold);

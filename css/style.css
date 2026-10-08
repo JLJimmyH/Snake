@@ -311,8 +311,8 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
 
 .tb-group { flex: none; display: flex; align-items: center; gap: 2px; }
 .tb-sep { flex: none; width: 1px; height: 24px; margin: 0 6px; background: var(--border); }
-#toolbar:not([data-tool="pen"]) .opts[data-for="pen"],
-#toolbar:not([data-tool="hl"]) .opts[data-for="hl"],
+#toolbar:not([data-tool="pen"]):not([data-ctx~="pen"]) .opts[data-for="pen"],
+#toolbar:not([data-tool="hl"]):not([data-ctx~="hl"]) .opts[data-for="hl"],
 #toolbar:not([data-tool="eraser"]) .opts[data-for="eraser"],
 #toolbar:not([data-ctx~="text"]) .ctx[data-ctx="text"],
 #toolbar:not([data-ctx~="image"]) .ctx[data-ctx="image"] { display: none; }
