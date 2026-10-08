@@ -262,3 +262,12 @@ python tests/browser_smoke.py
 - [x] 新文字框的字級＝最後一次調整的字級（A−／A+、字級選單、拉把手縮放），存在這台裝置的 localStorage（textSize）。
 - [x] A− 與 A+ 中間加字級選單：顯示目前大小，常用 12～96 與自訂數字，固定寬度的文字框寬度等比例跟著變；文字工具沒選文字框時只改新文字框的預設。
 - [x] tests/text_size_smoke.py；format_smoke 的新文字框字級改成沿用最後的字級。
+
+## 💾 儲存與同步重新整理＋同步到本機檔案（2026-10-08）
+- [x] 筆記本選單只留：筆記本清單（右邊圖示 ☁＝Drive、💾＝本機檔案、•＝有變更未存）、新增、開啟…（Google Drive／本機檔案）、儲存與同步…、重新命名、關閉。
+- [x] 「儲存與同步」視窗：Google Drive（存到 Drive／儲存／從 Drive 同步）、本機檔案（選擇檔案／狀態／停止同步）、另存副本到 Drive、下載 zip、中斷 Google 連線、隱私權政策；都沒連結時提醒只存在這個瀏覽器。
+- [x] 頂列兩個雲朵合成一個按鈕：有變更就存到所有連結的地方（Ctrl+S 相同）；沒連結或需要處理（⚠）時打開視窗。
+- [x] js/local-file.js：File System Access API（只有電腦版 Chrome／Edge），一本一個 zip，停手 5 秒或切走分頁時整本覆寫；寫入不會結束文字編輯（main.js persist）；navigator.locks 讓多分頁排隊。
+- [x] 檔案在別處被改過（例如 OneDrive）：這台沒變更就自動載入，兩邊都改過暫停並讓使用者選「用這台覆蓋／載入檔案內容」；重開瀏覽器要重新允許時顯示「繼續同步」；檔案不見提示重新選擇。關閉有同步的筆記本不會說「永久刪除」，檔案保留。
+- [x] tests/local_file_smoke.py（OPFS 檔案代替選檔視窗）、notebook_smoke 改走新選單與視窗；隱私權政策補本機檔案說明。
+- [ ] 實機驗收：Chrome／Edge 真的選檔、重開瀏覽器後「每次造訪都允許」、放在 OneDrive／Dropbox 資料夾跨電腦同步。

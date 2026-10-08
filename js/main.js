@@ -95,11 +95,16 @@ async function saveNow() {
 async function markChanged() {
   if (!notebookId) return;
   await db.update('notebooks', notebookId, nb => nb && { ...nb, changes: nb.changes + 1 });
-  notebooks?.render();
+  notebooks?.changed();
 }
 
 async function flush() {
   board.commitText();
+  await persist();
+}
+
+// 存進 IndexedDB 但不結束正在編輯的文字框（背景自動同步用）
+async function persist() {
   if (saveTimer) await saveNow();
 }
 
@@ -342,8 +347,14 @@ function showMenu(rect, entries) {
       m.append(d);
       continue;
     }
+    if (en.sep) {
+      m.append(Object.assign(document.createElement('hr'), { className: 'menu-sep' }));
+      continue;
+    }
     const b = document.createElement('button');
     b.textContent = en.label;
+    // hint：靠右的小字（例如筆記本的儲存狀態圖示）
+    if (en.hint) b.append(Object.assign(document.createElement('span'), { className: 'menu-hint', textContent: en.hint }));
     b.disabled = !!en.disabled;
     if (en.danger) b.className = 'danger';
     b.addEventListener('click', () => { hideMenu(); en.run(); });
@@ -830,7 +841,7 @@ async function init() {
   optional('匯出', () => setupExport({ board, title: () => $('#page-title').value, toast, showMenu, ai }));
   setTool('select');
   notebooks = optional('筆記本選單', () => setupNotebooks({
-    current: () => notebookId, switchTo: switchNotebook, reload: reloadNotebook, create: createNotebook, flush, showMenu, toast,
+    current: () => notebookId, switchTo: switchNotebook, reload: reloadNotebook, create: createNotebook, flush, persist, showMenu, toast,
   }));
   await switchNotebook(await initialNotebook());
   try {

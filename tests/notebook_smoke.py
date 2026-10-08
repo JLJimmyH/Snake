@@ -83,6 +83,17 @@ def menu(page, label):
     page.locator('#nb-button').click()
     page.locator('#menu button', has_text=label).first.click()
 
+def sync_click(page, label):
+    """Click a button in the 儲存與同步 dialog (opening it from the notebook menu first), then close the dialog."""
+    if not page.locator('#sync-dialog').is_visible(): menu(page, '儲存與同步')
+    page.locator('#sync-dialog button', has_text=label).first.click()
+    if page.locator('#sync-dialog').is_visible(): page.locator('#sync-close').click()
+
+def open_from(page, label):
+    menu(page, '開啟'); page.locator('#menu button', has_text=label).click()
+
+SAVED, UNSAVED = '已儲存', '儲存 (Ctrl+S)'
+
 def toast(page, text):
     expect(page.locator('#toast')).to_contain_text(text, timeout=15000)
 
@@ -125,7 +136,7 @@ with sync_playwright() as pw:
         '1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082')})
     expect(page.locator('#viewport img')).to_be_visible()
     expect(page.locator('#save-state')).to_have_text('已儲存')
-    with page.expect_download() as download_info: menu(page, '匯出 zip')
+    with page.expect_download() as download_info: sync_click(page, '下載 zip')
     download = download_info.value
     assert download.suggested_filename == '專案 A.zip', download.suggested_filename
     zip_path = download.path()
@@ -144,100 +155,104 @@ with sync_playwright() as pw:
 
     # 3. Save to Drive (local → bound), edit marks unsaved, save overwrites the same file.
     menu(page, '專案 A'); expect(page.locator('#nb-name')).to_have_text('專案 A')
-    page.locator('#drive-save').click()
+    # 還沒連結任何地方：頂列按鈕打開「儲存與同步」，提醒只存在這個瀏覽器
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', re.compile('只存在這個瀏覽器'))
+    page.locator('#sync-button').click()
+    expect(page.locator('#sync-warn')).to_be_visible()
+    sync_click(page, '存到 Drive')
     toast(page, '已儲存到 alice@example.test 的 Drive')
-    expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     assert [f['name'] for f in fake.files['alice'].values()] == ['專案 A.zip']
     file_id = next(iter(fake.files['alice']))
     assert [f['name'] for f in fake.folders['alice'].values()] == ['SnakeNote'], fake.folders
     folder_id = next(iter(fake.folders['alice']))
     assert fake.files['alice'][file_id]['parents'] == [folder_id]
     draw(page, 60)
-    expect(page.locator('#drive-save')).to_have_attribute('aria-label','儲存到 Drive')
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', UNSAVED)
     expect(page.locator('#nb-dirty')).to_be_visible()
+    page.locator('#nb-button').click(); expect(page.locator('#menu button', has_text='專案 A').locator('.menu-hint')).to_have_text('☁•'); page.evaluate("document.querySelector('#menu').hidden = true")
     page.keyboard.press('Control+s')
     toast(page, '已儲存到')
-    expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     assert list(fake.files['alice']) == [file_id] and fake.uploads == 2
     # Panning only is not a change.
     page.locator('#zoom-in').click(); page.wait_for_timeout(700)
-    expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     # Rename syncs the Drive file name on the next save.
     dialogs.answers = ['專案 A 改名']; menu(page, '重新命名')
     expect(page.locator('#nb-name')).to_have_text('專案 A 改名')
-    expect(page.locator('#drive-save')).to_have_attribute('aria-label','儲存到 Drive')
-    page.locator('#drive-save').click(); expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', UNSAVED)
+    page.locator('#sync-button').click(); expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     assert fake.files['alice'][file_id]['name'] == '專案 A 改名.zip'
 
     # 4. Another device opens it from Drive, edits and saves.
     other = new_context(browser, fake); device = other.new_page(); device.on('pageerror', lambda e: errors.append(str(e))); Dialogs(device)
     device.goto(BASE); expect(device.locator('#nb-name')).to_have_text('我的筆記')
-    fake.fail_list = True; menu(device, '從 Drive 開啟')
+    fake.fail_list = True; open_from(device, 'Google Drive')
     expect(device.locator('#drive-files')).to_contain_text('Drive 請求失敗 (500)')
     device.locator('#drive-close').click(); fake.fail_list = False
     fake.files['alice']['stray'] = {**fake.files['alice'][file_id], 'id': 'stray', 'name': '資料夾外.zip', 'parents': ['root']}
-    menu(device, '從 Drive 開啟')
+    open_from(device, 'Google Drive')
     expect(device.locator('.drive-file')).to_have_count(1)
     expect(device.locator('#drive-account')).to_contain_text('alice@example.test')
     row = device.locator('.drive-file', has_text='專案 A 改名'); row.locator('button').click()
     expect(device.locator('#nb-name')).to_have_text('專案 A 改名')
     expect(device.locator('#page-title')).to_have_value('A 的頁面')
     expect(device.locator('#viewport img')).to_be_visible()
-    expect(device.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
+    expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     del fake.files['alice']['stray']
-    menu(device, '從 Drive 開啟'); device.locator('.drive-file', has_text='專案 A 改名').locator('button', has_text='切換').click()
+    open_from(device, 'Google Drive'); device.locator('.drive-file', has_text='專案 A 改名').locator('button', has_text='切換').click()
     expect(device.locator('#drive-dialog')).not_to_be_visible()
     assert len(notebooks(device)) == 2, 'opening an already open file switches instead of duplicating'
-    draw(device, 120); device.locator('#drive-save').click(); expect(device.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
+    draw(device, 120); device.locator('#sync-button').click(); expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
 
     # 5. First device is now stale. Sync pulls the other device's strokes and
     # stays on the same page; syncing again is a no-op.
     uploads = fake.uploads; strokes = page.locator('.ink path').count()
-    expect(page.locator('#drive-sync')).to_be_visible()
-    page.locator('#drive-sync').click(); toast(page, '已同步 Drive 上最新的「專案 A 改名」')
+    sync_click(page, '從 Drive 同步'); toast(page, '已同步 Drive 上最新的「專案 A 改名」')
     expect(page.locator('.ink path')).to_have_count(strokes + 1)
     expect(page.locator('#page-title')).to_have_value('A 的頁面')
-    expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     assert titles(page) == ['A 的頁面'], titles(page)
-    page.locator('#drive-sync').click(); toast(page, '已是最新內容')
+    sync_click(page, '從 Drive 同步'); toast(page, '已是最新內容')
     assert fake.uploads == uploads
     # Unsaved local edits: cancelling the sync keeps them.
-    draw(device, 150); device.locator('#drive-save').click(); expect(device.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
+    draw(device, 150); device.locator('#sync-button').click(); expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     uploads = fake.uploads
     draw(page, 180); strokes = page.locator('.ink path').count()
-    dialogs.answers = [False]; page.locator('#drive-sync').click()
+    dialogs.answers = [False]; sync_click(page, '從 Drive 同步')
     assert '尚未存到 Drive 的變更' in dialogs.last(page)
-    expect(page.locator('#drive-sync')).to_be_enabled()
+    expect(page.locator('#sync-button')).to_be_enabled()
     expect(page.locator('.ink path')).to_have_count(strokes)
-    expect(page.locator('#drive-save')).to_have_attribute('aria-label','儲存到 Drive')
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', UNSAVED)
     # Saving while stale: cancel keeps Drive untouched, confirm overwrites.
-    dialogs.answers = [False]; page.locator('#drive-save').click()
+    dialogs.answers = [False]; page.locator('#sync-button').click()
     assert '已被其他裝置修改' in dialogs.last(page)
-    expect(page.locator('#drive-save')).to_be_enabled(); page.wait_for_timeout(300)
+    expect(page.locator('#sync-button')).to_be_enabled(); page.wait_for_timeout(300)
     assert fake.uploads == uploads
-    dialogs.answers = [True]; page.locator('#drive-save').click(); expect(page.locator('#drive-save')).to_have_attribute('aria-label','已存到 Drive')
+    dialogs.answers = [True]; page.locator('#sync-button').click(); expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     assert fake.uploads == uploads + 1
 
     # 6. Save a copy: new file, current notebook still bound to the original.
-    dialogs.answers = ['備份一']; menu(page, '另存副本到 Drive'); toast(page, '已在 alice@example.test 的 Drive 建立「備份一」')
+    dialogs.answers = ['備份一']; sync_click(page, '另存副本到 Drive'); toast(page, '已在 alice@example.test 的 Drive 建立「備份一」')
     assert sorted(f['name'] for f in fake.files['alice'].values()) == ['備份一.zip', '專案 A 改名.zip']
     assert len(fake.folders['alice']) == 1 and all(f['parents'] == [folder_id] for f in fake.files['alice'].values())
     assert notebooks(page)[1]['drive']['fileId'] == file_id
 
     # 7. A different Google account cannot overwrite alice's file.
     page.evaluate("window.testAccount='bob'")
-    menu(page, '中斷 Google 連線'); toast(page, '已中斷')
-    draw(page, 240); page.locator('#drive-save').click(); toast(page, '存在 alice@example.test 的 Drive')
+    sync_click(page, '中斷 Google 連線'); toast(page, '已中斷')
+    draw(page, 240); page.locator('#sync-button').click(); toast(page, '存在 alice@example.test 的 Drive')
 
     # 8. Closing: unsaved Drive changes and local-only notebooks ask first; last one is replaced by an empty notebook.
     dialogs.answers = [False]; menu(page, '關閉筆記本')
-    assert '尚未存到 Drive' in dialogs.last(page); expect(page.locator('#nb-name')).to_have_text('專案 A 改名')
+    assert '還沒存到Drive' in dialogs.last(page); expect(page.locator('#nb-name')).to_have_text('專案 A 改名')
     dialogs.answers = [True]; menu(page, '關閉筆記本'); toast(page, '已關閉「專案 A 改名」')
     expect(page.locator('#nb-name')).to_have_text('我的筆記')
     for _ in range(2):
         dialogs.answers = [True]; menu(page, '關閉筆記本')
-        assert '只存在這台裝置' in dialogs.last(page)
-        expect(page.locator('#drive-save')).to_be_enabled()
+        assert '只存在這個瀏覽器' in dialogs.last(page)
+        expect(page.locator('#sync-button')).to_be_enabled()
     expect(page.locator('#nb-name')).to_have_text('未命名筆記本')
     assert [b['name'] for b in notebooks(page)] == ['未命名筆記本']
     left = page.evaluate("""async()=>{const {db}=await import('./js/db.js');return {pages:(await db.getAll('pages')).length,docs:(await db.getAll('docs')).length,blobs:(await db.getAll('blobs')).length}}""")

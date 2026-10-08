@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Snake Note</title>
 <!-- 版本：scripts/stamp.mjs 產生，不要手改 -->
-<meta name="build" content="44c4029298">
+<meta name="build" content="a7cabd463f">
 <script type="importmap">
 {
   "imports": {
@@ -22,19 +22,20 @@
     "./js/drive.js": "./js/drive.js?v=133f24113c",
     "./js/export.js": "./js/export.js?v=5c580fdb47",
     "./js/input-mode.js": "./js/input-mode.js?v=35acee13a1",
-    "./js/main.js": "./js/main.js?v=95144ce66f",
+    "./js/local-file.js": "./js/local-file.js?v=827a68b121",
+    "./js/main.js": "./js/main.js?v=124a345f42",
     "./js/markdown.js": "./js/markdown.js?v=06db38e2ae",
     "./js/minimap.js": "./js/minimap.js?v=1a13398d7d",
     "./js/notebook-core.js": "./js/notebook-core.js?v=8356661d5a",
-    "./js/notebook-ui.js": "./js/notebook-ui.js?v=482a3c3a44",
+    "./js/notebook-ui.js": "./js/notebook-ui.js?v=77b5746f30",
     "./js/shortcuts.js": "./js/shortcuts.js?v=8f44b92950",
     "./js/vendor/fflate.js": "./js/vendor/fflate.js?v=89c01a7364",
-    "./js/build.js": "./js/build.js?v=7b4512ed60"
+    "./js/build.js": "./js/build.js?v=6cf51c8fa5"
   }
 }
 </script>
 <!-- /版本 -->
-<link rel="stylesheet" href="css/style.css?v=9d0aca91b8">
+<link rel="stylesheet" href="css/style.css?v=49c8ffd2ee">
 <script>
   // 在畫面出來前套用主題，避免先閃一下別的顏色；之後由 js/appearance.js 接手
   // theme 存 'system' 或主題名稱；舊版存 light／dark，主題另外存在 lightPalette／darkPalette
@@ -57,7 +58,7 @@
 <div id="app">
   <aside id="sidebar">
     <div class="sb-head">
-      <button id="nb-button" class="sb-brand" aria-haspopup="menu">📒 <span id="nb-name">我的筆記</span><span id="nb-dirty" title="有尚未存到 Drive 的變更" hidden>●</span><span class="nb-caret">▾</span></button>
+      <button id="nb-button" class="sb-brand" aria-haspopup="menu">📒 <span id="nb-name">我的筆記</span><span id="nb-dirty" title="有變更還沒存" hidden>●</span><span class="nb-caret">▾</span></button>
       <button id="sb-close" class="icon-btn only-mobile" aria-label="關閉側欄">✕</button>
     </div>
     <div id="tree"></div>
@@ -78,11 +79,9 @@
       <span id="collab-state" role="status" aria-live="polite"></span>
       <span id="collab-presence" hidden></span>
       <button id="collab-leave" class="chip" hidden>回本機</button>
-      <button id="drive-sync" class="icon-btn" title="從 Drive 同步：載入其他裝置存的最新內容" aria-label="從 Drive 同步" hidden>
-        <svg class="i" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 01-.5-9A6 6 0 0118 9.5a4 4 0 01-.5 8.5"/><path d="M12 12v8M9 17l3 3 3-3"/></svg>
-      </button>
-      <button id="drive-save" class="icon-btn" title="存到 Drive (Ctrl+S)" aria-label="存到 Drive">
-        <svg class="i" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 01-.5-9A6 6 0 0118 9.5a4 4 0 01-.5 8.5"/><path d="M12 20v-8M9 15l3-3 3 3"/></svg>
+      <button id="sync-button" class="icon-btn" title="儲存與同步" aria-label="儲存與同步">
+        <svg class="i i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 01-.5-9A6 6 0 0118 9.5a4 4 0 01-.5 8.5"/><path d="M12 20v-8M9 15l3-3 3 3"/></svg>
+        <svg class="i i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9L2.4 17.5A2 2 0 004.1 20.5h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
       </button>
       <button id="export-button" class="icon-btn" title="匯出：PDF、圖片、交給 AI（有選取就只匯出選取的部分）" aria-label="匯出" aria-haspopup="menu">
         <svg class="i" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>
@@ -352,6 +351,14 @@
     <button id="share-submit" class="collab-primary" type="submit">儲存分享</button>
   </form>
 </dialog>
+<dialog id="sync-dialog" aria-labelledby="sync-heading">
+  <div class="collab-heading"><h2 id="sync-heading">儲存與同步 <small id="sync-name"></small></h2><button id="sync-close" class="icon-btn" aria-label="關閉">✕</button></div>
+  <p id="sync-warn" class="sync-warn" hidden>只存在這個瀏覽器，建議連結 Drive 或本機檔案</p>
+  <section id="sync-drive" class="sync-place"></section>
+  <section id="sync-local" class="sync-place" hidden></section>
+  <p id="sync-links" class="sync-links"></p>
+  <p id="sync-foot" class="sync-links sync-foot"></p>
+</dialog>
 <dialog id="drive-dialog" aria-labelledby="drive-heading">
   <div class="collab-heading"><h2 id="drive-heading">從 Google Drive 開啟</h2><button id="drive-close" class="icon-btn" aria-label="關閉">✕</button></div>
   <p id="drive-account"></p>
@@ -365,6 +372,6 @@
   <textarea id="ai-request" rows="2" aria-label="想要 AI 做什麼" placeholder="想要 AI 做什麼（可以不填）"></textarea>
   <p class="ai-actions"><button id="ai-copy" class="collab-primary">複製給 AI</button><button id="ai-shot" class="chip">複製截圖</button></p>
 </dialog>
-<script type="module" src="js/main.js?v=95144ce66f"></script>
+<script type="module" src="js/main.js?v=124a345f42"></script>
 </body>
 </html>
