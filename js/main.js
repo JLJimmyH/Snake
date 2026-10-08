@@ -6,10 +6,10 @@ import { Board, FONTS } from './board.js';
 import { Minimap } from './minimap.js';
 import { cleanName } from './notebook-core.js';
 import { setupNotebooks } from './notebook-ui.js';
-import { setupAi } from './ai-ui.js';
+import { setupAi, peekClipboard } from './ai-ui.js';
 import { setupExport } from './export.js';
 import { setupSearch } from './search.js';
-import { htmlToMarkdown } from './markdown.js';
+import { htmlToMarkdown, htmlToText } from './markdown.js';
 import { BUILD } from './build.js';
 
 // index.html 跟 JS 不是同一版（瀏覽器快取了舊的 index.html，見 scripts/stamp.mjs）：
@@ -761,7 +761,7 @@ document.addEventListener('keydown', e => {
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? board.redo() : board.undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); board.redo(); return; }
   if (mod && (k === 'b' || k === 'i') && board.textFormat()) { e.preventDefault(); board.toggleMark(k === 'b' ? 'bold' : 'italic'); return; }
-  if (mod && k === 'v') plainPaste = e.shiftKey;  // 接著的 paste 事件看這個：Ctrl+Shift+V＝貼上為純文字
+  if (mod && k === 'v') plainPaste = e.shiftKey;  // 接著的 paste 事件看這個：Ctrl+Shift+V＝純文字貼上
   if (mod) return;
   if (e.key === 'Enter' && board.cropping) { e.preventDefault(); board.endCrop(); return; }
   if (e.shiftKey && e.code === 'Digit1') { board.fitContent(); return; }
@@ -788,7 +788,7 @@ document.addEventListener('keyup', e => {
 window.addEventListener('blur', () => setSpacePan(false));
 
 let plainPaste = false;
-document.addEventListener('paste', e => {
+document.addEventListener('paste', async e => {
   const plain = plainPaste;
   plainPaste = false;
   if (typing(document.activeElement) || board.readOnly || $('dialog[open]')) return;
@@ -798,12 +798,16 @@ document.addEventListener('paste', e => {
   const text = clipboard.getData('text/plain');
   if (!files.length && !text) return;
   e.preventDefault();
-  pasteContent({ files, text }, board.pastePosition(), plain ? 'plain' : 'auto');
+  const position = board.pastePosition();
+  // Ctrl+Shift+V 的 paste 事件只給純文字（可能是 markdown）；允許讀剪貼簿的話改讀完整內容，才能從 HTML 取文字
+  if (plain) pasteContent((await peekClipboard()) ?? { files, text }, position, 'plain');
+  else pasteContent({ files, text }, position, 'auto');
 });
 
 // 貼上剪貼簿的內容（Ctrl+V 和右鍵選單共用）。mode：
-// auto＝圖片、複製的物件或 AI 回覆、文字，看剪貼簿裡有什麼；plain＝一律變成一個文字框；
-// format＝網頁、文件的粗體、標題、清單轉成 markdown；inplace＝複製的物件放回原本的位置
+// auto＝貼上：圖片、複製的物件或 AI 回覆、文字，看剪貼簿裡有什麼；
+// plain＝純文字貼上：一律變成一個沒有格式的文字框，有 HTML 就從 HTML 取看得到的文字；
+// format＝原始格式貼上：網頁、文件的粗體、標題、清單轉成 markdown；inplace＝原位貼上：複製的物件放回原本的位置
 async function pasteContent({ files = [], text = '', html = '' }, position, mode = 'auto') {
   if (board.readOnly) return;
   setTool('select');
@@ -812,7 +816,8 @@ async function pasteContent({ files = [], text = '', html = '' }, position, mode
     return;
   }
   if (mode === 'plain') {
-    if (text) board.addText(text, position); else toast('剪貼簿裡沒有文字');
+    const plain = (html && htmlToText(html)) || text;
+    if (plain) board.addText(plain, position); else toast('剪貼簿裡沒有文字');
     return;
   }
   const formatted = mode === 'format' && html && htmlToMarkdown(html);

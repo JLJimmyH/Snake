@@ -97,7 +97,9 @@ export function toggleTask(text, at) {
   return text.slice(0, at) + (done ? ' ' : 'x') + text.slice(at + 1);
 }
 
-// 「保留格式貼上」：網頁、Word、Google 文件複製來的 HTML → 文字框的 markdown。
+// 「原始格式貼上」：網頁、Word、Google 文件複製來的 HTML → 文字框的 markdown。
+// 「純文字貼上」用 htmlToText：同一份 HTML 只留看得到的文字，不加任何 markdown 記號。
+// ChatGPT 這類網站給的純文字本身就是 markdown，直接貼會變成有格式，所以有 HTML 時一律從 HTML 取文字。
 // DOMParser 產生的文件不會執行腳本、也不會載入圖片，這裡只讀文字和標籤。
 // 區塊的邊界先記成 \0、空白段落記成 \u0001、清單縮排記成 \u0002，最後才換成換行和空白，
 // 原始 HTML 排版用的空白和換行就不會變成多餘的空行
@@ -105,9 +107,12 @@ const BLOCKS = new Set(['P', 'DIV', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER', 'N
   'BLOCKQUOTE', 'ADDRESS', 'DL', 'DT', 'DD', 'TABLE', 'THEAD', 'TBODY', 'TFOOT', 'HR', 'FORM', 'FIELDSET', 'DETAILS', 'SUMMARY', 'CAPTION']);
 const SKIP = new Set(['HEAD', 'STYLE', 'SCRIPT', 'TITLE', 'META', 'LINK', 'TEMPLATE', 'NOSCRIPT', 'SVG', 'IMG', 'INPUT', 'BUTTON', 'SELECT', 'TEXTAREA']);
 
-export function htmlToMarkdown(html) {
+export const htmlToMarkdown = html => fromHtml(html, false);
+export const htmlToText = html => fromHtml(html, true);
+
+function fromHtml(html, plain) {
   const doc = new DOMParser().parseFromString(html, 'text/html');
-  const out = convert(doc.body, { depth: 0 })
+  const out = convert(doc.body, { depth: 0, plain })
     .replace(/[ \n]*\0[\0 \n]*/g, run => '\n'.repeat(1 + (run.slice(run.indexOf('\0')).match(/\n/g)?.length ?? 0)))
     .replace(/\u0001/g, '')
     .split('\n').map(line => line.trimEnd().replace(/^ +/, '').replace(/\u0002/g, ' ')).join('\n');
@@ -123,14 +128,14 @@ function convert(node, ctx) {
   if (tag === 'PRE') return '\0' + node.textContent.replace(/^ +/gm, s => '\u0002'.repeat(s.length)) + '\0';
   if (/^H[1-6]$/.test(tag)) {
     const text = oneLine(inner({ bold: true }));
-    return text ? `\0${'#'.repeat(+tag[1])} ${text}\0` : '';
+    return text ? `\0${ctx.plain ? '' : '#'.repeat(+tag[1]) + ' '}${text}\0` : '';
   }
   if (tag === 'UL' || tag === 'OL') {
     let n = +node.getAttribute('start') || 1;
     return '\0' + [...node.children].filter(c => c.tagName === 'LI')
-      .map(li => listItem(li, tag === 'OL' ? `${n++}. ` : '- ', ctx)).join('\0') + '\0';
+      .map(li => listItem(li, tag === 'OL' ? `${n++}. ` : bullet(ctx), ctx)).join('\0') + '\0';
   }
-  if (tag === 'LI') return listItem(node, '- ', ctx);
+  if (tag === 'LI') return listItem(node, bullet(ctx), ctx);
   if (tag === 'TR') return '\0' + [...node.children].map(cell => oneLine(convert(cell, ctx))).join(' | ') + '\0';
   if (BLOCKS.has(tag)) {
     const text = inner().replace(/\n$/, '');  // 區塊最後的 <br> 不會多出一行
@@ -138,12 +143,13 @@ function convert(node, ctx) {
   }
   if (!ctx.pre && (tag === 'CODE' || tag === 'KBD' || tag === 'SAMP')) {
     const text = oneLine(node.textContent);
-    return text ? '`' + text + '`' : '';
+    return text && !ctx.plain ? '`' + text + '`' : text;
   }
   const style = node.style ?? {};
   const bold = !ctx.bold && (style.fontWeight ? /^(bold|bolder|[6-9]00)$/.test(style.fontWeight) : tag === 'B' || tag === 'STRONG');
   const italic = !ctx.italic && (style.fontStyle ? style.fontStyle === 'italic' : tag === 'I' || tag === 'EM');
   let text = inner({ bold: ctx.bold || bold, italic: ctx.italic || italic });
+  if (ctx.plain) return text;
   if (bold) text = mark(text, '**');
   if (italic) text = mark(text, '*');
   const href = tag === 'A' && node.getAttribute('href');
@@ -151,9 +157,12 @@ function convert(node, ctx) {
   return text;
 }
 
+// 純文字的項目符號用「•」，不是 markdown 的「-」，貼上後不會變成清單格式
+const bullet = ctx => ctx.plain ? '• ' : '- ';
+
 // 清單項目：縮排 + 符號（待辦就加 [ ]／[x]），裡面的子清單再縮一層
 function listItem(li, bullet, ctx) {
-  const box = [...li.querySelectorAll('input[type=checkbox]')].find(b => b.closest('li') === li);
+  const box = !ctx.plain && [...li.querySelectorAll('input[type=checkbox]')].find(b => b.closest('li') === li);
   const text = [...li.childNodes].map(c => convert(c, { ...ctx, depth: ctx.depth + 1 })).join('').replace(/^[\s\0\u0001]+/, '');
   return '\u0002'.repeat(ctx.depth * 2) + bullet + (box ? (box.hasAttribute('checked') ? '[x] ' : '[ ] ') : '') + text;
 }

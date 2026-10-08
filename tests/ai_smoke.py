@@ -57,7 +57,7 @@ with sync_playwright() as pw:
     # 右鍵點筆跡：選取它，選單只有「複製」，複製的是完整的筆跡
     page.mouse.click(sx+30,sy,button='right')
     expect(page.locator('#menu button')).to_have_count(8)
-    assert labels(page)==['剪下','複製（1 個物件）','刪除','貼上','原位貼上','貼上為純文字','保留格式貼上','匯出 PDF'],labels(page)
+    assert labels(page)==['剪下','複製（1 個物件）','刪除','貼上','純文字貼上','原始格式貼上','原位貼上','匯出 PDF'],labels(page)
     menu(page,'複製（1 個物件）')
     expect(page.locator('#toast')).to_contain_text('已複製 1 個物件')
     data=json.loads(page.evaluate('navigator.clipboard.readText()'))
@@ -150,7 +150,7 @@ with sync_playwright() as pw:
     # 右鍵空白處是「複製全部」和貼上選項，貼到別頁會整份貼上
     page.mouse.click(box['x']+700,box['y']+300,button='right')
     expect(page.locator('#menu button')).to_have_count(6)
-    assert labels(page)==['複製全部','貼上','原位貼上','貼上為純文字','保留格式貼上','匯出整頁 PDF'],labels(page)
+    assert labels(page)==['複製全部','貼上','純文字貼上','原始格式貼上','原位貼上','匯出整頁 PDF'],labels(page)
     menu(page,'複製全部')
     expect(page.locator('#toast')).to_contain_text('已複製全部')
     data=json.loads(page.evaluate('navigator.clipboard.readText()'))

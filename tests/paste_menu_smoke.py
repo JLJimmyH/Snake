@@ -12,6 +12,9 @@ HTML=('<meta charset="utf-8"><h2>標題 <b>粗</b></h2>\n  <p><b>粗體</b> 和 
 MARKDOWN=('## 標題 粗\n**粗體** 和 *斜體*，`x = 1`\n- 一\n- 二\n  - 三\n- [x] 做完了\n3. 第三\n\n'
           '第一行\n第二行 [連結](https://example.com/a%20b) 壞\n**文件粗**一般\nA | B')
 
+PLAIN=('標題 粗\n粗體 和 斜體，x = 1\n• 一\n• 二\n  • 三\n• 做完了\n3. 第三\n\n'
+       '第一行\n第二行 連結 壞\n文件粗一般\nA | B')
+
 def items(page):
     return page.evaluate("""async () => {
       const {db}=await import('./js/db.js');
@@ -60,12 +63,12 @@ with sync_playwright() as pw:
     src=page.locator('[data-id=src]').bounding_box()
     sx,sy=src['x']+src['width']/2,src['y']+src['height']/2
 
-    # 右鍵物件：剪下／複製／刪除、四種貼上、匯出；剪貼簿是一般文字時「原位貼上」「保留格式貼上」是灰的
+    # 右鍵物件：剪下／複製／刪除、四種貼上、匯出；剪貼簿是一般文字時「原始格式貼上」「原位貼上」是灰的
     write(page,'一般文字')
     right(page,sx,sy)
     expect(page.locator('#menu button')).to_have_count(8)
-    assert labels(page)==['剪下','複製（1 個物件）','刪除','貼上','原位貼上','貼上為純文字','保留格式貼上','匯出 PDF'],labels(page)
-    assert disabled(page)==['原位貼上','保留格式貼上'],disabled(page)
+    assert labels(page)==['剪下','複製（1 個物件）','刪除','貼上','純文字貼上','原始格式貼上','原位貼上','匯出 PDF'],labels(page)
+    assert disabled(page)==['原始格式貼上','原位貼上'],disabled(page)
     expect(page.locator('#menu button').first.locator('.menu-hint')).to_have_text('Ctrl+X')
     pick(page,'複製（1 個物件）')
     expect(page.locator('#toast')).to_contain_text('已複製 1 個物件')
@@ -73,7 +76,7 @@ with sync_playwright() as pw:
     # 貼上：外框左上角放在按右鍵的地方
     px,py=vp['x']+500,vp['y']+400
     right(page,px,py)
-    assert disabled(page)==['保留格式貼上'],disabled(page)
+    assert disabled(page)==['原始格式貼上'],disabled(page)
     pick(page,'貼上')
     expect(page.locator('.text-item')).to_have_count(2)
     added=page.locator('.text-item').last.bounding_box()
@@ -87,9 +90,9 @@ with sync_playwright() as pw:
     placed=[(it['x'],it['y']) for it in items(page)]
     assert placed[0]==(120,120) and placed[2]==(120,120) and placed[1]!=(120,120),placed
 
-    # 貼上為純文字：複製的物件也只是一段文字
+    # 純文字貼上：複製的物件也只是一段文字
     right(page,px,py+150)
-    pick(page,'貼上為純文字')
+    pick(page,'純文字貼上')
     expect(page.locator('.text-item')).to_have_count(4)
     saved(page)
     assert json.loads(items(page)[3]['text'])['items'][0]['text']=='來源'
@@ -107,7 +110,7 @@ with sync_playwright() as pw:
     expect(page.locator('.text-item')).to_have_count(3)
     assert json.loads(page.evaluate('navigator.clipboard.readText()'))['items'][0]['text']=='來源'
 
-    # Ctrl+X 也是剪下；Ctrl+Shift+V 是貼上為純文字
+    # Ctrl+X 也是剪下；Ctrl+Shift+V 是純文字貼上
     page.keyboard.press('Escape')
     page.mouse.click(sx,sy)  # 疊在最上面的是原位貼上的那一個
     page.keyboard.press('Control+X')
@@ -121,12 +124,12 @@ with sync_playwright() as pw:
     expect(page.locator('.text-item')).to_have_count(4)
     assert texts(page).count('來源')==2,texts(page)
 
-    # 保留格式貼上：HTML 的標題、粗斜體、清單、連結變成 markdown；「貼上」還是純文字
+    # 原始格式貼上：HTML 的標題、粗斜體、清單、連結變成 markdown；「貼上」還是純文字
     write(page,'純文字版本',HTML)
     page.keyboard.press('Escape')
     right(page,vp['x']+300,vp['y']+250)
     assert disabled(page)==['原位貼上'],disabled(page)
-    pick(page,'保留格式貼上')
+    pick(page,'原始格式貼上')
     expect(page.locator('.text-item')).to_have_count(5)
     saved(page)
     assert items(page)[-1]['text']==MARKDOWN,items(page)[-1]['text']
@@ -139,6 +142,24 @@ with sync_playwright() as pw:
     pick(page,'貼上')
     expect(page.locator('.text-item .text-body',has_text='純文字版本')).to_have_count(1)
 
+    # 純文字貼上：ChatGPT 這類網站的純文字是 markdown，要從 HTML 取看得到的文字，不能有任何格式
+    write(page,'## 標題 **粗**\n**粗體** 和 *斜體*',HTML)
+    page.keyboard.press('Escape')
+    right(page,vp['x']+700,vp['y']+450)
+    pick(page,'純文字貼上')
+    expect(page.locator('.text-item')).to_have_count(7)
+    saved(page)
+    assert items(page)[-1]['text']==PLAIN,items(page)[-1]['text']
+    body=page.locator('.text-item').last.locator('.text-body')
+    expect(body.locator('strong, em, code, a, .md-h1, .md-h2, .md-h3, .md-bullet, .md-check')).to_have_count(0)
+    # Ctrl+Shift+V 一樣
+    page.keyboard.press('Escape')
+    page.mouse.click(vp['x']+150,vp['y']+650)
+    page.keyboard.press('Control+Shift+V')
+    expect(page.locator('.text-item')).to_have_count(8)
+    saved(page)
+    assert items(page)[-1]['text']==PLAIN,items(page)[-1]['text']
+
     # 空白的頁面也有貼上選項
     page.evaluate("""async () => {
       const {db}=await import('./js/db.js');
@@ -149,7 +170,7 @@ with sync_playwright() as pw:
     expect(page.locator('.text-item')).to_have_count(0)
     right(page,vp['x']+400,vp['y']+300)
     expect(page.locator('#menu button')).to_have_count(4)
-    assert labels(page)==['貼上','原位貼上','貼上為純文字','保留格式貼上'],labels(page)
+    assert labels(page)==['貼上','純文字貼上','原始格式貼上','原位貼上'],labels(page)
 
     assert not errors,errors
     browser.close()

@@ -94,9 +94,9 @@ export function setupAi({ board, title, toast, showMenu, pasteContent }) {
     const entry = (label, hint, mode, ok) => ({ label, hint, disabled: !has(ok), run: () => pasteAt(clip, at, mode) });
     return [
       entry('貼上', 'Ctrl+V', 'auto', c => c.files.length || c.text),
+      entry('純文字貼上', 'Ctrl+Shift+V', 'plain', c => c.text || c.html),
+      entry('原始格式貼上', '', 'format', c => c.html),
       entry('原位貼上', '', 'inplace', c => copiedOrigin(c.text)),
-      entry('貼上為純文字', 'Ctrl+Shift+V', 'plain', c => c.text),
-      entry('保留格式貼上', '', 'format', c => c.html),
     ];
   }
 
@@ -162,7 +162,7 @@ export function setupAi({ board, title, toast, showMenu, pasteContent }) {
 }
 
 // 已經允許網站讀剪貼簿（Chrome）就先讀，選單才知道哪些貼上選項用得到；還沒允許就不要在按右鍵時跳出詢問
-async function peekClipboard() {
+export async function peekClipboard() {
   try {
     if ((await navigator.permissions.query({ name: 'clipboard-read' })).state !== 'granted') return null;
     return await readClipboard();
