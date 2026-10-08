@@ -836,6 +836,12 @@ export class Board {
     return this._hitsAt(this.toWorld(cx, cy))[0] ?? null;
   }
 
+  // 正在打字的文字框裡（右鍵留給瀏覽器的剪下／貼上選單）；文字框平常也是 contenteditable，沒 focus 就不算
+  typingIn(target) {
+    const a = document.activeElement;
+    return !!a?.isContentEditable && a.contains(target);
+  }
+
   selectionHas(cx, cy) {
     return this.sel.size > 0 && this._inSelBox(this.toWorld(cx, cy));
   }
@@ -974,7 +980,7 @@ export class Board {
     vp.addEventListener('pointerleave', e => { if (!this.action) this.cursor.hidden = true; });
     vp.addEventListener('dblclick', e => this._dblEdit(e));
     vp.addEventListener('wheel', e => this._wheel(e), { passive: false });
-    vp.addEventListener('contextmenu', e => { if (!e.target.isContentEditable) e.preventDefault(); });
+    vp.addEventListener('contextmenu', e => { if (!this.typingIn(e.target)) e.preventDefault(); });
     // focus 到文字框時瀏覽器可能偷偷捲動 overflow:hidden 的容器，強制歸零
     vp.addEventListener('scroll', () => { vp.scrollTop = 0; vp.scrollLeft = 0; });
     this.textLayer.addEventListener('focusin', e => this._focusIn(e));
@@ -1030,6 +1036,8 @@ export class Board {
         this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: 'mouse' });
         this._startPan(e, null);
       }
+      // 右鍵不要 focus 到文字框（文字框平常就是 contenteditable），選單才是畫布的選單
+      if (e.button === 2 && !this.typingIn(e.target)) e.preventDefault();
       return;
     }
     if (this.spacePan && e.pointerType === 'mouse' && !this.action) {

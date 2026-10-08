@@ -29,6 +29,9 @@ def copy(page, request=''):
 def region_json(prompt):
     return json.loads(re.search(r'```json\n(.*)\n```',prompt,re.S).group(1))
 
+def labels(page):
+    return page.eval_on_selector_all('#menu button','bs => bs.map(b => b.firstChild.textContent)')  # 不含右邊的快捷鍵提示
+
 def menu(page, label):
     page.locator('#menu button',has_text=label).click()
 
@@ -53,7 +56,8 @@ with sync_playwright() as pw:
 
     # 右鍵點筆跡：選取它，選單只有「複製」，複製的是完整的筆跡
     page.mouse.click(sx+30,sy,button='right')
-    expect(page.locator('#menu button')).to_have_text(['複製（1 個物件）','匯出 PDF'])
+    expect(page.locator('#menu button')).to_have_count(8)
+    assert labels(page)==['剪下','複製（1 個物件）','刪除','貼上','原位貼上','貼上為純文字','保留格式貼上','匯出 PDF'],labels(page)
     menu(page,'複製（1 個物件）')
     expect(page.locator('#toast')).to_contain_text('已複製 1 個物件')
     data=json.loads(page.evaluate('navigator.clipboard.readText()'))
@@ -143,9 +147,10 @@ with sync_playwright() as pw:
     page.wait_for_selector('.row.active')
     assert texts(page)==final and strokes(page)==before_strokes+2,texts(page)
 
-    # 右鍵空白處只有「複製全部」，貼到別頁會整份貼上
+    # 右鍵空白處是「複製全部」和貼上選項，貼到別頁會整份貼上
     page.mouse.click(box['x']+700,box['y']+300,button='right')
-    expect(page.locator('#menu button')).to_have_text(['複製全部','匯出整頁 PDF'])
+    expect(page.locator('#menu button')).to_have_count(6)
+    assert labels(page)==['複製全部','貼上','原位貼上','貼上為純文字','保留格式貼上','匯出整頁 PDF'],labels(page)
     menu(page,'複製全部')
     expect(page.locator('#toast')).to_contain_text('已複製全部')
     data=json.loads(page.evaluate('navigator.clipboard.readText()'))

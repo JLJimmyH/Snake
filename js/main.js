@@ -9,6 +9,7 @@ import { setupNotebooks } from './notebook-ui.js';
 import { setupAi } from './ai-ui.js';
 import { setupExport } from './export.js';
 import { setupSearch } from './search.js';
+import { htmlToMarkdown } from './markdown.js';
 import { BUILD } from './build.js';
 
 // index.html 跟 JS 不是同一版（瀏覽器快取了舊的 index.html，見 scripts/stamp.mjs）：
@@ -741,6 +742,7 @@ document.addEventListener('keydown', e => {
   if (mod && k === 'z') { e.preventDefault(); e.shiftKey ? board.redo() : board.undo(); return; }
   if (mod && k === 'y') { e.preventDefault(); board.redo(); return; }
   if (mod && (k === 'b' || k === 'i') && board.textFormat()) { e.preventDefault(); board.toggleMark(k === 'b' ? 'bold' : 'italic'); return; }
+  if (mod && k === 'v') plainPaste = e.shiftKey;  // 接著的 paste 事件看這個：Ctrl+Shift+V＝貼上為純文字
   if (mod) return;
   if (e.key === 'Enter' && board.cropping) { e.preventDefault(); board.endCrop(); return; }
   if (e.shiftKey && e.code === 'Digit1') { board.fitContent(); return; }
@@ -766,7 +768,10 @@ document.addEventListener('keyup', e => {
 });
 window.addEventListener('blur', () => setSpacePan(false));
 
-document.addEventListener('paste', async e => {
+let plainPaste = false;
+document.addEventListener('paste', e => {
+  const plain = plainPaste;
+  plainPaste = false;
   if (typing(document.activeElement) || board.readOnly || $('dialog[open]')) return;
   const clipboard = e.clipboardData;
   if (!clipboard) return;
@@ -774,15 +779,33 @@ document.addEventListener('paste', async e => {
   const text = clipboard.getData('text/plain');
   if (!files.length && !text) return;
   e.preventDefault();
+  pasteContent({ files, text }, board.pastePosition(), plain ? 'plain' : 'auto');
+});
+
+// 貼上剪貼簿的內容（Ctrl+V 和右鍵選單共用）。mode：
+// auto＝圖片、複製的物件或 AI 回覆、文字，看剪貼簿裡有什麼；plain＝一律變成一個文字框；
+// format＝網頁、文件的粗體、標題、清單轉成 markdown；inplace＝複製的物件放回原本的位置
+async function pasteContent({ files = [], text = '', html = '' }, position, mode = 'auto') {
+  if (board.readOnly) return;
   setTool('select');
-  const position = board.pastePosition();
+  if (mode === 'inplace') {
+    if (!ai?.paste(text, position, { inPlace: true })) toast('剪貼簿裡沒有從筆記複製的物件');
+    return;
+  }
+  if (mode === 'plain') {
+    if (text) board.addText(text, position); else toast('剪貼簿裡沒有文字');
+    return;
+  }
+  const formatted = mode === 'format' && html && htmlToMarkdown(html);
+  if (formatted) { board.addText(formatted, position); return; }
   if (files.length) {
     for (let i = 0; i < files.length; i++) {
       try { await board.addImage(files[i], { x: position.x + i * 24, y: position.y + i * 24 }); }
       catch (error) { toast(error.message); }
     }
-  } else if (!ai?.paste(text, position)) board.addText(text, position);
-});
+  } else if (!text) toast('剪貼簿是空的');
+  else if (!ai?.paste(text, position)) board.addText(text, position);
+}
 
 // 手機鍵盤彈出時 visualViewport 會變小：讓整個 app 貼齊可見範圍，再把游標捲進畫面
 const vv = window.visualViewport;
@@ -891,7 +914,7 @@ async function init() {
   setMinimap(map ? map === '1' : !isMobile());
   optional('外觀設定', () => setupAppearance({ board, button: $('#btn-appearance'), panel: $('#appearance-panel'), onCanvas: refreshNav }));
   optional('輸入模式', () => setupInputMode({ board, panel: $('#appearance-panel'), onChange: onInputMode }));
-  ai = optional('AI', () => setupAi({ board, title: () => $('#page-title').value, toast, showMenu }));
+  ai = optional('AI', () => setupAi({ board, title: () => $('#page-title').value, toast, showMenu, pasteContent }));
   optional('匯出', () => setupExport({ board, title: () => $('#page-title').value, toast, showMenu, ai }));
   search = optional('搜尋', () => setupSearch({
     board, minimap, refreshNav, hideSidebar: closeSidebar, top: () => $('#viewport').offsetTop,

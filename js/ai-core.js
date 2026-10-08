@@ -76,13 +76,15 @@ export function exportRegion({ title, items, area, selected = false }) {
   };
 }
 
-// 複製物件：完整保留（筆跡不簡化、圖片帶 blob），座標以 area 左上角為原點
+// 複製物件：完整保留（筆跡不簡化、圖片帶 blob），座標以 area 左上角為原點；
+// origin 記住 area 在畫布上的位置，「原位貼上」才放得回原處
 export function copyText(items, area) {
   const at = (x, y) => [r1(x - area.x), r1(y - area.y)];
   return regionJson({
     format: FORMAT,
     note: 'Snake Note 白板物件，座標以左上角為原點、往右往下。回傳同樣格式的 {"items":[…]}（text、stroke）就能貼回畫布。',
     area: { w: Math.round(area.w), h: Math.round(area.h) },
+    origin: { x: r1(area.x), y: r1(area.y) },
     items: items.map(it => {
       if (it.type === 'stroke') return { type: 'stroke', color: it.color, width: it.width, ...(it.tool === 'hl' && { highlighter: true }), pts: it.pts.map(([x, y]) => at(x, y)) };
       const [x, y] = at(it.x, it.y);
@@ -257,6 +259,14 @@ export function placeItems(items, at) {
   return items.map(it => it.type === 'stroke'
     ? { ...it, pts: it.pts.map(([x, y]) => [r1(x + dx), r1(y + dy)]) }
     : { ...it, x: r1(it.x + dx), y: r1(it.y + dy) });
+}
+
+// 從這個 app 複製的物件原本在畫布上的位置；AI 的回覆沒有，回傳 null
+export function copiedOrigin(text) {
+  try {
+    const origin = JSON.parse(text)?.origin;
+    return origin && num(origin.x) && num(origin.y) ? { x: origin.x, y: origin.y } : null;
+  } catch { return null; }
 }
 
 // 貼上的文字是不是複製的物件或 AI 的回覆：是就回傳元件，不是就回傳 null（當一般文字貼上）

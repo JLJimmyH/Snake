@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { exportRegion, copyText, regionJson, buildPrompt, parseReply, toItems, replyItems, placeItems, itemsBox, simplify, FORMAT } from '../js/ai-core.js';
+import { exportRegion, copyText, regionJson, buildPrompt, parseReply, toItems, replyItems, placeItems, itemsBox, simplify, copiedOrigin, FORMAT } from '../js/ai-core.js';
 
 const items = () => [
   { id: 't1', type: 'text', x: 100, y: 100, size: 18, text: '# 會議\n重點' },
@@ -145,6 +145,12 @@ test('copied items keep full detail and paste back as new items', () => {
   // 外框左上角是螢光筆的 (90,90)（筆寬 20），整組平移 910
   assert.deepEqual(placed[0], { ...source[0], id: pasted[0].id, x: 1010, y: 1010 }, 'relative layout survives the round trip');
   assert.deepEqual(placed[2].pts, source[2].pts.map(([x, y]) => [x + 910, y + 910]));
+  // 原位貼上：origin＋區域座標＝原本的畫布座標；AI 的回覆和一般文字沒有 origin
+  assert.deepEqual(copiedOrigin(text), { x: area.x, y: area.y });
+  const back = placeItems(pasted, { x: area.x + itemsBox(pasted).x, y: area.y + itemsBox(pasted).y });
+  assert.deepEqual(back[2].pts, source[2].pts);
+  assert.equal(copiedOrigin('{"items":[]}'), null);
+  assert.equal(copiedOrigin('一般文字'), null);
   assert.throws(() => toItems([{ type: 'image', x: 0, y: 0, w: 0, h: 1, blob: 'b' }]), /圖片位置/);
   assert.throws(() => toItems([{ type: 'image', x: 0, y: 0, w: 1, h: 1, blob: '../x' }]), /不能新增圖片/);
 });

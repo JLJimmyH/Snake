@@ -66,7 +66,7 @@ with sync_playwright() as pw:
 
     # 右鍵筆跡：匯出 PDF 只印這一條，原本的顏色、白紙、橫向 A4
     page.mouse.click(x+40,y+8,button='right')
-    expect(page.locator('#menu button')).to_have_text(['複製（1 個物件）','匯出 PDF'])
+    expect(page.locator('#menu button')).to_have_count(8)
     menu(page,'匯出 PDF')
     p=printed(page,1)
     assert p['strokes']==['#1f2937'] and p['texts']==0 and p['images']==[],p
