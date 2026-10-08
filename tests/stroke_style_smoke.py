@@ -44,7 +44,7 @@ with sync_playwright() as pw:
     page.mouse.click(ox+250,oy+300)
     expect(pen_bar).to_be_visible();expect(hl_bar).to_be_hidden()
     expect(toolbar).to_have_attribute('data-tool','select')
-    expect(pen_bar.locator('output')).to_have_text('6')
+    expect(pen_bar.locator('.width-input')).to_have_value('6')
     expect(pen_bar.locator('input[type=color]')).to_have_value('#123456')
     pen_bar.locator('.palette-toggle').click()
     page.locator('#pen-palette [data-color="#dc2626"]').click();saved(page)
@@ -67,6 +67,25 @@ with sync_playwright() as pw:
     assert item(page,'a')['color']=='#123456'
     print('PASS: slider drag restyles the stroke as one undo step')
 
+    # Typing an exact size: 2.71 sticks, out-of-range is clamped, junk is reverted; each is one undo step.
+    box_in=pen_bar.locator('.width-input')
+    box_in.fill('2.71');box_in.press('Enter');saved(page)
+    assert item(page,'a')['width']==2.71,item(page,'a')
+    expect(box_in).to_have_value('2.71')
+    assert abs(float(slider.input_value())-2.71)<1e-9,slider.input_value()
+    box_in.fill('500');box_in.press('Enter');saved(page)
+    assert item(page,'a')['width']==100
+    box_in.fill('abc');box_in.press('Enter')
+    expect(box_in).to_have_value('100')
+    box_in.fill('9');box_in.press('Escape')
+    expect(box_in).to_have_value('100')
+    assert item(page,'a')['width']==100
+    page.locator('#btn-undo').click();saved(page)
+    assert item(page,'a')['width']==2.71
+    page.locator('#btn-undo').click();saved(page)
+    assert item(page,'a')['width']==6
+    print('PASS: typing a size sets it exactly')
+
     # Box-select everything: both groups show; each only changes its own kind of stroke.
     page.mouse.click(ox+700,oy+700)
     expect(pen_bar).to_be_hidden()
@@ -83,10 +102,21 @@ with sync_playwright() as pw:
     # The brush itself is untouched: switching to the pen shows the default brush settings.
     page.click('.tool[data-tool=pen]')
     expect(pen_bar).to_be_visible();expect(hl_bar).to_be_hidden()
-    expect(pen_bar.locator('output')).to_have_text('3')
+    expect(pen_bar.locator('.width-input')).to_have_value('3')
     expect(pen_bar.locator('input[type=color]')).to_have_value('#1f2937')
     assert page.evaluate("() => document.querySelector('.opts[data-for=pen] .palette-toggle').style.getPropertyValue('--brush-color')")=='#1f2937'
     print('PASS: brush settings are separate from the selected strokes')
+
+    # The pen brush takes a typed size too, and the next stroke uses it.
+    pen_bar.locator('.width-input').fill('2.71');pen_bar.locator('.width-input').press('Enter')
+    assert page.evaluate("() => document.querySelector('.opts[data-for=pen] input[type=range]').value")=='2.71'
+    page.mouse.move(ox+500,oy+600);page.mouse.down();page.mouse.move(ox+600,oy+620,steps=5);page.mouse.up();saved(page)
+    widths=[it['width'] for it in page.evaluate('''async () => {
+      const {db}=await import('./js/db.js');
+      return (await db.get('docs',(await db.get('notebooks',sessionStorage.getItem('notebook'))).lastPage)).items;
+    }''') if it['type']=='stroke']
+    assert widths[-1]==2.71,widths
+    print('PASS: typed brush size is used for new strokes')
 
     assert not errors,errors
     browser.close()

@@ -498,8 +498,13 @@ function syncBrush(group) {
     button.setAttribute('aria-pressed', String(active));
   });
   group.querySelector('input[type=range]').value = width;
-  group.querySelector('output').textContent = width;
+  const box = group.querySelector('.width-input');
+  if (document.activeElement !== box) box.value = width;  // 正在輸入時不要蓋掉
 }
+
+// 筆寬：滑桿和輸入框都是 0.5–100，取到小數第二位
+const MIN_WIDTH = 0.5, MAX_WIDTH = 100;
+const roundWidth = value => Math.round(Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, value)) * 100) / 100;
 
 document.addEventListener('pointerdown', event => {
   if (!event.target.closest('.brush-palette, .palette-toggle')) closeBrushPalettes();
@@ -567,9 +572,11 @@ for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) {
   // 拖色盤、滑桿時 input 一直觸發；改選中筆跡時放開（change）才存成一步
   color.addEventListener('input', () => setBrush(group, 'color', color.value, true));
   color.addEventListener('change', () => setBrush(group, 'color', color.value));
-  const width = () => Math.round(Number(slider.value) * 100) / 100;
+  const box = group.querySelector('.width-input');
+  const width = () => roundWidth(Number(slider.value));
   slider.addEventListener('input', () => {
     setBrush(group, 'width', width(), true);
+    box.value = width();
     showPreview();
   });
   slider.addEventListener('change', () => setBrush(group, 'width', width()));
@@ -578,6 +585,18 @@ for (const group of $$('.opts[data-for=pen], .opts[data-for=hl]')) {
   slider.addEventListener('blur', () => { preview.hidden = true; });
   slider.addEventListener('pointerup', () => { preview.hidden = true; });
   slider.addEventListener('pointercancel', () => { preview.hidden = true; });
+  // 直接輸入大小（例如 2.71），Enter 或離開就套用；不是數字就還原
+  box.addEventListener('focus', () => box.select());
+  box.addEventListener('change', () => {
+    const value = Number(box.value.trim());
+    if (box.value.trim() && Number.isFinite(value)) setBrush(group, 'width', roundWidth(value));
+    box.value = brushValue(group).width;
+    slider.value = box.value;
+  });
+  box.addEventListener('keydown', e => {
+    if (e.key === 'Enter') box.blur();
+    else if (e.key === 'Escape') { box.value = brushValue(group).width; box.blur(); }
+  });
 }
 
 $('#btn-image').addEventListener('click', () => $('#file').click());

@@ -885,8 +885,9 @@ svg.ink path.remote-preview { opacity: .55; }
 .brush-color { display: flex; align-items: center; justify-content: space-between; border-top: 1px solid var(--border); padding-top: 10px; font-size: 13px; }
 .brush-color input { width: 32px; height: 32px; padding: 2px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); cursor: pointer; }
 .brush-size { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-.brush-size input { width: 110px; accent-color: var(--accent); }
-.brush-size output { min-width: 44px; font-variant-numeric: tabular-nums; }
+.brush-size input[type=range] { width: 110px; accent-color: var(--accent); }
+.width-input { flex: none; width: 46px; height: 26px; padding: 0 2px; border: 1.5px solid var(--border); border-radius: 6px; font: inherit; font-size: 13px; font-variant-numeric: tabular-nums; text-align: center; color: var(--text); background: var(--surface); }
+.width-input:focus { border-color: var(--accent); outline: none; }
 #brush-preview { position: fixed; z-index: 70; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; width: 132px; height: 140px; border: 1px solid var(--border); border-radius: 12px; background: var(--board); box-shadow: 0 4px 16px var(--shadow); pointer-events: none; }
 .brush-dot { display: block; border-radius: 50%; flex: none; }
 .brush-caption { font-size: 12px; color: var(--muted); }
