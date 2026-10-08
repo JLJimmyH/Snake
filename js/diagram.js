@@ -19,6 +19,7 @@ const DARK = {
 let mermaid, queue = Promise.resolve(), seq = 0;
 const cache = new Map();  // `${dark}\n${code}` → Promise<{ src, w, h, taints } | { error }>
 
+// 升級 Mermaid 要換資料夾名稱：.mjs 不在 scripts/stamp.mjs 的版本號裡，靠路徑不同才不會用到快取的舊檔
 function load() {
   return mermaid ??= import(new URL('./vendor/mermaid-12.1.0/mermaid.esm.min.mjs', import.meta.url)).then(m => m.default);
 }
