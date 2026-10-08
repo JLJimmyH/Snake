@@ -14,6 +14,8 @@
 
 📋 右鍵「複製」選取的物件（空白處＝複製全部）→ Ctrl+V 貼到別頁，或直接貼給 ChatGPT／Claude；AI 回的 JSON 也能 Ctrl+V 貼回畫布
 
+💻 文字框裡用 ` ```語言 ` 寫程式碼區塊（上色、Tab 縮排、一鍵複製）、` ```mermaid ` 畫流程圖；從 VS Code 直接 Ctrl+V 也會變成程式碼區塊
+
 <kbd>V</kbd> <kbd>L</kbd> <kbd>P</kbd> <kbd>H</kbd> <kbd>E</kbd> <kbd>T</kbd> 工具　<kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> 復原　<kbd>Ctrl</kbd>+<kbd>S</kbd> 存到 Drive　<kbd>M</kbd> 小地圖
 
 <sub>開發：`python server.py` ・ [協作設定](collaboration/README.md) ・ [Drive 設定](docs/GOOGLE_DRIVE_SETUP.md)</sub>

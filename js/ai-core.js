@@ -110,7 +110,7 @@ export function buildPrompt(exported, request = '') {
 
 ## 筆記格式
 - 座標：以這塊區域的左上角為 (0,0)，x 往右、y 往下，單位是畫布像素。area 是區域大小。
-- text：文字框，x、y 是左上角。text 是 Markdown（# 標題、**粗體**、*斜體*、- 清單、- [ ] 待辦、- [x] 已完成、[文字](網址)、\`程式碼\`）。size 是字級，w 是固定寬度（沒有 w 就自動寬度，最寬約 32 個字）。color（#rrggbb）、bold、italic 是整個文字框的顏色、粗體、斜體。border（#rrggbb）是框線顏色，borderW 是框線粗細（預設 2），borderStyle 是 dashed（虛線）或 dotted（點線），沒有就是實線；fill（#rrggbb）是底色。
+- text：文字框，x、y 是左上角。text 是 Markdown（# 標題、**粗體**、*斜體*、- 清單、- [ ] 待辦、- [x] 已完成、[文字](網址)、\`程式碼\`、\`\`\`語言 開頭的程式碼區塊、\`\`\`mermaid 開頭的 Mermaid 流程圖）。size 是字級，w 是固定寬度（沒有 w 就自動寬度，最寬約 32 個字；有程式碼區塊或流程圖時跟著區塊變寬）。要畫流程圖、時序圖、狀態圖時優先用 Mermaid，不要用筆跡拼。color（#rrggbb）、bold、italic 是整個文字框的顏色、粗體、斜體。border（#rrggbb）是框線顏色，borderW 是框線粗細（預設 2），borderStyle 是 dashed（虛線）或 dotted（點線），沒有就是實線；fill（#rrggbb）是底色。
 - stroke：手寫筆跡。${strokesHavePts ? 'pts 是筆畫經過的點（已簡化）。' : '只提供外框 x/y/w/h，看不到寫了什麼。'}width 是筆寬，highlighter 表示螢光筆。
 - image：圖片，只提供外框。
 - 如果我附上截圖，截圖範圍就是這塊區域，可以依比例對照座標。

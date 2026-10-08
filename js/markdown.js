@@ -1,10 +1,13 @@
-// 文字框的精簡 markdown：標題、粗體／斜體、清單、待辦、行內程式碼、連結。
+// 文字框的精簡 markdown：標題、粗體／斜體、清單、待辦、行內程式碼、連結、```程式碼區塊、```mermaid 流程圖。
 // 只用 DOM API 產生節點、文字一律走 textContent，不會有 HTML 注入。
 // 每個顯示出來的文字節點都記住它在原始文字的位置，切回編輯時游標才能放回點到的地方。
+import { highlight } from './highlight.js';
+import { diagram, DIAGRAM_EM } from './diagram.js';
 
 const BLOCK = /^(?:(#{1,6}) +|(\s*)[-*+] +(?:\[([ xX])\] +)?)/;
 const INLINE = /(`+)(.+?)\1|\*\*(.+?)\*\*|\*([^*\s](?:[^*]*[^*\s])?)\*|\[([^\]\n]+)\]\(([^)\s]+)\)/g;
 const SAFE_URL = /^(https?:|mailto:)/i;
+const FENCE = /^ {0,3}(`{3,}|~{3,})[ \t]*([^\s`]*)[^`]*$/;
 
 function node(tag, cls) {
   const e = document.createElement(tag);
@@ -12,8 +15,27 @@ function node(tag, cls) {
   return e;
 }
 
-// text → 內容放進 body；回傳 Map(文字節點 → 在原始文字的起點)
-export function renderMarkdown(body, text) {
+// ``` 或 ~~~ 圍起來的區塊（行號範圍，含前後的 ``` 行）；沒有結尾的一直到最後一行
+function fences(lines) {
+  const out = [];
+  for (let i = 0; i < lines.length; i++) {
+    const m = FENCE.exec(lines[i]);
+    if (!m) continue;
+    let end = i + 1;
+    while (end < lines.length) {
+      const c = /^ {0,3}(`{3,}|~{3,})[ \t]*$/.exec(lines[end]);
+      if (c && c[1][0] === m[1][0] && c[1].length >= m[1].length) break;
+      end++;
+    }
+    out.push({ start: i, end: Math.min(end + 1, lines.length), close: end, lang: m[2].toLowerCase() });
+    i = end;
+  }
+  return out;
+}
+
+// text → 內容放進 body；回傳 Map(文字節點 → 在原始文字的起點)。
+// dark：流程圖用深色主題；onResize：流程圖畫好、文字框大小變了
+export function renderMarkdown(body, text, { dark = false, onResize } = {}) {
   const map = new Map();
   const frag = document.createDocumentFragment();
   const plain = (parent, str, at) => {
@@ -48,37 +70,113 @@ export function renderMarkdown(body, text) {
     plain(parent, str.slice(last), at + last);
   };
 
-  let at = 0;
-  for (const [i, line] of text.split('\n').entries()) {
-    if (i) { plain(frag, '\n', at - 1); }
-    const m = BLOCK.exec(line);
-    let parent = frag, rest = m ? m[0].length : 0;
-    if (m?.[1]) {
-      parent = node('span', 'md-h' + Math.min(m[1].length, 3));
-      frag.append(parent);
-    } else if (m) {
-      plain(frag, m[2], at);
-      if (m[3]) {
-        const box = node('span', 'md-check');
-        box.dataset.at = at + m[0].indexOf('[') + 1;
-        box.setAttribute('role', 'checkbox');
-        box.setAttribute('aria-checked', String(m[3] !== ' '));
-        frag.append(box, ' ');
-        if (m[3] !== ' ') { parent = node('span', 'md-done'); frag.append(parent); }
-      } else {
-        frag.append(node('span', 'md-bullet'));
+  // 一般的文字行（從原始文字第 at 個字元開始）放進 to
+  const prose = (to, lines, at) => {
+    for (const [i, line] of lines.entries()) {
+      if (i) { plain(to, '\n', at - 1); }
+      const m = BLOCK.exec(line);
+      let parent = to, rest = m ? m[0].length : 0;
+      if (m?.[1]) {
+        parent = node('span', 'md-h' + Math.min(m[1].length, 3));
+        to.append(parent);
+      } else if (m) {
+        plain(to, m[2], at);
+        if (m[3]) {
+          const box = node('span', 'md-check');
+          box.dataset.at = at + m[0].indexOf('[') + 1;
+          box.setAttribute('role', 'checkbox');
+          box.setAttribute('aria-checked', String(m[3] !== ' '));
+          to.append(box, ' ');
+          if (m[3] !== ' ') { parent = node('span', 'md-done'); to.append(parent); }
+        } else {
+          to.append(node('span', 'md-bullet'));
+        }
       }
+      inline(parent, line.slice(rest), at + rest);
+      at += line.length + 1;
     }
-    inline(parent, line.slice(rest), at + rest);
-    at += line.length + 1;
+  };
+  // 程式碼區塊、流程圖：data-from／data-to 是程式碼在原始文字的範圍（右上角「複製」用）
+  const block = (cls, code, at) => {
+    const el = node('div', cls);
+    el.dataset.from = at;
+    el.dataset.to = at + code.length;
+    const copy = node('span', 'md-copy');
+    copy.contentEditable = 'false';
+    copy.title = '複製';
+    el.append(copy);
+    return el;
+  };
+  const codeBlock = (code, lang, at) => {
+    const el = block('md-pre', code, at), c = node('code');
+    for (const [cls, part] of highlight(code, lang)) {
+      if (cls) { const s = node('span', cls); plain(s, part, at); c.append(s); } else plain(c, part, at);
+      at += part.length;
+    }
+    el.append(c);
+    return el;
+  };
+  const mermaid = (code, at) => {
+    const el = block('md-mermaid', code, at), wait = node('div', 'md-diagram-wait');
+    wait.textContent = '畫流程圖中…';
+    el.append(wait);
+    diagram(code, dark).then(r => {
+      if (!body.contains(el)) return;  // 已經切到編輯或重畫了
+      let out;
+      if (r.error) {
+        out = node('div', 'md-diagram-error');
+        out.textContent = '流程圖畫不出來：' + r.error;
+      } else {
+        out = new Image(r.w, r.h);
+        out.className = 'md-diagram';
+        out.alt = '流程圖';
+        out.draggable = false;
+        out.src = r.src;
+        out.style.width = r.w / DIAGRAM_EM + 'em';
+        if (r.taints) out.dataset.taints = '';
+      }
+      wait.replaceWith(out);
+      onResize?.();
+    });
+    return el;
+  };
+
+  const lines = text.split('\n'), starts = [];
+  for (let i = 0, at = 0; i < lines.length; at += lines[i++].length + 1) starts.push(at);
+  const blocks = fences(lines);
+  if (!blocks.length) prose(frag, lines, 0);
+  else {
+    // 有區塊時，前後的文字各包成一段（.md-seg）：文字照樣在 32 個字寬換行，區塊可以更寬
+    let i = 0;
+    const seg = end => {
+      if (end <= i) return;
+      const el = node('div', 'md-seg');
+      prose(el, lines.slice(i, end), starts[i]);
+      frag.append(el);
+    };
+    for (const b of blocks) {
+      seg(b.start);
+      const code = lines.slice(b.start + 1, b.close).join('\n'), at = starts[b.start + 1] ?? text.length;
+      frag.append(b.lang === 'mermaid' ? mermaid(code, at) : codeBlock(code, b.lang, at));
+      i = b.end;
+    }
+    seg(lines.length);
   }
   body.replaceChildren(frag);
   return map;
 }
 
+// 原始文字裡第 from～to 個字元（程式碼區塊的「複製」）
+export function blockSource(text, el) {
+  return text.slice(Number(el.dataset.from), Number(el.dataset.to));
+}
+
 // 顯示畫面中的游標位置 (node, offset) → 原始文字的位置
 export function sourceOffset(body, map, container, offset) {
   if (map.has(container)) return map.get(container) + offset;
+  // 點在流程圖上：游標放在流程圖原始碼的開頭
+  const diagramBox = (container.nodeType === 1 ? container : container.parentElement)?.closest?.('.md-mermaid');
+  if (diagramBox && body.contains(diagramBox)) return Number(diagramBox.dataset.from);
   const caret = document.createRange();
   caret.setStart(container, offset);
   const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
@@ -116,7 +214,13 @@ function fromHtml(html, plain) {
     .replace(/[ \n]*\0[\0 \n]*/g, run => '\n'.repeat(1 + (run.slice(run.indexOf('\0')).match(/\n/g)?.length ?? 0)))
     .replace(/\u0001/g, '')
     .split('\n').map(line => line.trimEnd().replace(/^ +/, '').replace(/\u0002/g, ' ')).join('\n');
-  return out.replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '');
+  return out.replace(/\n{3,}/g, '\n\n').replace(/^\n+|\n+$/g, '').replace(/\u0003/g, '\n');
+}
+
+// 程式碼包成 ``` 區塊；程式碼裡本來就有 ``` 的話，外面的 ` 多一個
+export function fenceCode(code, lang = '') {
+  const ticks = '`'.repeat(Math.max(3, ...[...code.matchAll(/`{3,}/g)].map(m => m[0].length + 1)));
+  return `${ticks}${lang}\n${code.replace(/\n+$/, '')}\n${ticks}`;
 }
 
 function convert(node, ctx) {
@@ -125,7 +229,16 @@ function convert(node, ctx) {
   const tag = node.tagName;
   const inner = (more = {}) => [...node.childNodes].map(c => convert(c, { ...ctx, ...more })).join('');
   if (tag === 'BR') return '\n';
-  if (tag === 'PRE') return '\0' + node.textContent.replace(/^ +/gm, s => '\u0002'.repeat(s.length)) + '\0';
+  // 程式碼：網頁的 <pre>；VS Code 複製的是 white-space: pre 的等寬字 <div>，一行一個 <div>。
+  // 換行先記成 \u0003，後面整理空白、合併空行時才不會動到程式碼
+  const style = node.style ?? {};
+  const editor = tag === 'DIV' && style.whiteSpace === 'pre' && /mono|consolas|courier|menlo/i.test(style.fontFamily);
+  if (tag === 'PRE' || editor) {
+    const lines = editor && node.children.length ? [...node.children].map(c => c.textContent) : [node.textContent];
+    const lang = /(?:language|lang|highlight-source)-([\w+#-]+)/.exec(`${node.className} ${node.querySelector('code')?.className ?? ''} ${node.parentElement?.className ?? ''}`)?.[1];
+    const code = lines.join('\n');
+    return '\0' + (ctx.plain ? code.replace(/\n+$/, '') : fenceCode(code, lang)).replace(/\n/g, '\u0003') + '\0';
+  }
   if (/^H[1-6]$/.test(tag)) {
     const text = oneLine(inner({ bold: true }));
     return text ? `\0${ctx.plain ? '' : '#'.repeat(+tag[1]) + ' '}${text}\0` : '';
@@ -145,7 +258,6 @@ function convert(node, ctx) {
     const text = oneLine(node.textContent);
     return text && !ctx.plain ? '`' + text + '`' : text;
   }
-  const style = node.style ?? {};
   const bold = !ctx.bold && (style.fontWeight ? /^(bold|bolder|[6-9]00)$/.test(style.fontWeight) : tag === 'B' || tag === 'STRONG');
   const italic = !ctx.italic && (style.fontStyle ? style.fontStyle === 'italic' : tag === 'I' || tag === 'EM');
   let text = inner({ bold: ctx.bold || bold, italic: ctx.italic || italic });

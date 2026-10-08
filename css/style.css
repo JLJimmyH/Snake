@@ -493,6 +493,59 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
 .md-check[aria-checked=true] { background: var(--accent); border-color: var(--accent); }
 .md-check[aria-checked=true]::after { content: "✓"; position: absolute; inset: 0; color: #fff; font-size: .75em; font-weight: 700; line-height: 1.15; text-align: center; }
 .md-done { color: var(--muted); text-decoration: line-through; }
+/* ```程式碼區塊、```mermaid 流程圖。文字框照樣在 32 個字寬換行（.md-seg），區塊可以更寬（不折行） */
+.text-item.has-block:not(.fixed-w) { max-width: none; }
+.md-seg { max-width: 32em; }
+.md-pre, .md-mermaid { position: relative; margin: .3em 0; border-radius: 6px; }
+.md-pre {
+  --tok-k: #a626a4; --tok-s: #50a14f; --tok-n: #986801; --tok-c: #a0a1a7; --tok-f: #4078f2; --tok-m: #e45649;
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: .55em .9em;
+  background: #f3f4f6;
+  color: #383a42;
+  font-family: ui-monospace, Consolas, "Cascadia Mono", "Courier New", monospace;
+  font-size: .85em;
+  font-weight: 400;
+  font-style: normal;
+  line-height: 1.5;
+  white-space: pre;
+  tab-size: 4;
+}
+.md-pre code { display: block; min-height: 1.5em; font: inherit; }
+.text-item.fixed-w .md-pre { width: auto; white-space: pre-wrap; }
+.dark-canvas .md-pre {
+  --tok-k: #c678dd; --tok-s: #98c379; --tok-n: #d19a66; --tok-c: #7f848e; --tok-f: #61afef; --tok-m: #e06c75;
+  background: #282c34;
+  color: #abb2bf;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08);
+}
+.tok-k { color: var(--tok-k); }
+.tok-s { color: var(--tok-s); }
+.tok-n { color: var(--tok-n); }
+.tok-c { color: var(--tok-c); font-style: italic; }
+.tok-f { color: var(--tok-f); }
+.tok-m { color: var(--tok-m); }
+.md-mermaid { width: max-content; min-width: 100%; }
+.md-diagram { display: block; height: auto; max-width: none; }
+.text-item.fixed-w .md-mermaid { width: auto; }
+.text-item.fixed-w .md-diagram { max-width: 100%; }
+.md-diagram-wait, .md-diagram-error { padding: .4em .6em; font-size: .85em; color: var(--muted); white-space: pre-wrap; }
+.md-diagram-error { color: #e45649; }
+/* 右上角的「複製」：滑鼠移過去或選取時才出現（列印、截圖不會有） */
+.md-copy {
+  position: absolute; top: .35em; right: .35em;
+  padding: .1em .5em; border-radius: 4px;
+  font: 600 11px/1.6 -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+  color: #fff; background: rgba(40, 44, 52, .75);
+  cursor: pointer; user-select: none; -webkit-user-select: none;
+  opacity: 0; transition: opacity .15s;
+}
+.md-copy::before { content: "複製"; }
+.md-copy[data-done]::before { content: "已複製"; }
+.text-item:hover .md-copy, .text-item.selected .md-copy { opacity: 1; }
+.text-item:focus-within .md-copy { display: none; }
 #viewport[data-tool="select"] .text-item:not(:focus-within) {
   cursor: grab;
   -webkit-user-select: none;

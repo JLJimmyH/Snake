@@ -2,7 +2,7 @@
 // 座標系：item 都存「世界座標」，畫面用 translate(x,y) scale(s) 呈現
 import { db, uid } from './db.js';
 import { isDark, readableInk } from './color.js';
-import { renderMarkdown, sourceOffset, toggleTask } from './markdown.js';
+import { renderMarkdown, sourceOffset, toggleTask, blockSource } from './markdown.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 const MIN_S = 0.1, MAX_S = 8, GRID = 24, HISTORY = 100;
@@ -26,6 +26,9 @@ export const FONTS = {
 };
 const PAPER = '#ffffff'; // 列印／匯出 PDF 的紙色
 const BORDER = '#1f2937', BORDER_W = 2; // 只選粗細或樣式、還沒有框線時的顏色；沒存粗細時的粗細
+const INDENT = '    ';  // Tab 插入的空白
+// 一整行（不是畫面上折行後的一行）的頭尾；Firefox 的 Selection.modify 不認得 paragraphboundary
+const LINE = /Firefox\//.test(navigator.userAgent) ? 'lineboundary' : 'paragraphboundary';
 
 // 文字框的框線、底色、字色。框線畫在框外（outline），不影響文字框大小和換行；
 // 有底色時字色對底色挑，沒指定字色就看底色深淺用深字或淺字。canvas＝框線外面的底色
@@ -323,12 +326,15 @@ export class Board {
 
   // 換畫布底色：跟底色太接近的筆跡改用看得清楚的顏色重畫（只改顯示，不改資料）
   setCanvas(color) {
+    const wasDark = this.darkCanvas;
     this.canvas = color;
     this.darkCanvas = isDark(color);
     this.vp.classList.toggle('dark-canvas', this.darkCanvas);
     for (const it of this.items) {
       if (it.type === 'stroke') this.els.get(it.id)?.setAttribute('stroke', this.inkColor(it));
       else if (it.type === 'text' && (it.color || it.border)) this._place(it);
+      // 流程圖換成深色／淺色主題重畫（編輯中的是原始文字，結束編輯時就會用新的主題）
+      if (it.type === 'text' && wasDark !== this.darkCanvas && this.editing?.id !== it.id && this.els.get(it.id)?.querySelector('.md-mermaid')) this._renderText(it.id);
     }
   }
 
@@ -586,6 +592,46 @@ export class Board {
       return;
     }
     this.setTextStyle(key, !this.textFormat()?.[key]);
+  }
+
+  // 編輯中按 Tab：插入四個空白；選了好幾行就整行縮排，Shift+Tab 整行取消縮排。
+  // 一律走 execCommand('insertText')，瀏覽器的 Ctrl+Z 才復原得了。
+  // 整行的範圍用 Selection.modify 找：編輯中的內容是 Chrome 換行產生的 <div>、<br>，自己算位置不可靠
+  _indent(out) {
+    const sel = getSelection();
+    if (!sel.rangeCount) return;
+    const multi = sel.toString().includes('\n');
+    if (!out && !multi) { document.execCommand('insertText', false, INDENT); return; }
+    const r = sel.getRangeAt(0).cloneRange(), caret = sel.isCollapsed;
+    const point = (node, offset, dir) => {
+      sel.collapse(node, offset);
+      sel.modify('move', dir, LINE);
+      return [sel.focusNode, sel.focusOffset];
+    };
+    const start = point(r.startContainer, r.startOffset, 'backward');
+    const col = caret ? (() => { const c = document.createRange(); c.setStart(...start); c.setEnd(r.startContainer, r.startOffset); return c.toString().length; })() : 0;
+    const end = point(r.endContainer, r.endOffset, 'forward');
+    sel.setBaseAndExtent(...start, ...end);
+    const text = sel.toString();
+    let removed = 0;
+    const next = text.split('\n').map((line, i) => {
+      if (!out) return line && INDENT + line;
+      const n = line.startsWith('\t') ? 1 : /^ {0,4}/.exec(line)[0].length;
+      if (!i) removed = n;
+      return line.slice(n);
+    }).join('\n');
+    if (next === text) { sel.removeAllRanges(); sel.addRange(r); return; }
+    document.execCommand('insertText', false, next);
+    if (caret) {
+      // 游標留在原本的字前面
+      for (let k = next.length - Math.max(0, col - removed); k > 0; k--) sel.modify('move', 'backward', 'character');
+    } else {
+      // 縮排過的行保持選取，可以連按
+      for (const [i] of next.split('\n').entries()) {
+        if (i) sel.modify('extend', 'backward', 'character');
+        sel.modify('extend', 'backward', LINE);
+      }
+    }
   }
 
   _styleText(fn) {
@@ -901,6 +947,7 @@ export class Board {
         ctx.beginPath();
         ctx.rect(it.x, it.y, w, ht);
         ctx.clip();
+        if (el.classList.contains('has-block')) { this._drawBlocks(ctx, it, el, body); ctx.restore(); continue; }
         ctx.font = `${it.italic ? 'italic ' : ''}${it.bold ? 'bold ' : ''}${it.size}px ${FONTS[it.font] ?? css.fontFamily}`;
         ctx.fillStyle = textLook(it, this.canvas).color || css.color;
         ctx.textBaseline = 'middle';
@@ -911,6 +958,45 @@ export class Board {
       }
     }
     return new Promise((resolve, reject) => c.toBlob(b => b ? resolve(b) : reject(new Error('無法產生截圖')), 'image/png'));
+  }
+
+  // 有程式碼區塊、流程圖的文字框畫進截圖：照畫面上每個字的位置畫，區塊有自己的底色、字型、顏色。
+  // 流程圖的 SVG 有 foreignObject 的話畫進去 canvas 就不能輸出，只好略過
+  _drawBlocks(ctx, it, el, body) {
+    const s = this.view.s, base = el.getBoundingClientRect();
+    const world = r => ({ x: it.x + (r.left - base.left) / s, y: it.y + (r.top - base.top) / s, w: r.width / s, h: r.height / s });
+    for (const pre of body.querySelectorAll('.md-pre')) {
+      const b = world(pre.getBoundingClientRect()), css = getComputedStyle(pre);
+      ctx.fillStyle = css.backgroundColor;
+      ctx.beginPath();
+      ctx.roundRect(b.x, b.y, b.w, b.h, parseFloat(css.borderTopLeftRadius) || 0);
+      ctx.fill();
+    }
+    for (const img of body.querySelectorAll('img.md-diagram')) {
+      const b = world(img.getBoundingClientRect());
+      if (img.complete && img.naturalWidth && !('taints' in img.dataset)) ctx.drawImage(img, b.x, b.y, b.w, b.h);
+    }
+    ctx.textBaseline = 'middle';
+    const walker = document.createTreeWalker(body, NodeFilter.SHOW_TEXT), range = document.createRange();
+    for (let t; (t = walker.nextNode());) {
+      const css = getComputedStyle(t.parentElement);
+      ctx.font = `${css.fontStyle} ${css.fontWeight} ${css.fontSize} ${css.fontFamily}`;
+      ctx.fillStyle = css.color;
+      // 同一行連續的字一起畫；換行、Tab 斷開，下一段從畫面上的位置重新開始
+      let run = '', start = null;
+      const flush = () => { if (run.trim()) ctx.fillText(run, start.x, start.y + start.h / 2); run = ''; start = null; };
+      for (let i = 0; i < t.length;) {
+        const n = t.data.codePointAt(i) > 0xffff ? 2 : 1, ch = t.data.slice(i, i + n);
+        range.setStart(t, i);
+        range.setEnd(t, i += n);
+        if (ch === '\n' || ch === '\t') { flush(); continue; }
+        const b = world(range.getBoundingClientRect());
+        if (start && Math.abs(b.y - start.y) > 1) flush();
+        start ??= b;
+        run += ch;
+      }
+      flush();
+    }
   }
 
   // 把 area 範圍複製成一塊 DOM（給列印／匯出 PDF），ids 有給就只放那些物件。
@@ -988,6 +1074,11 @@ export class Board {
     this.textLayer.addEventListener('input', () => this._input());
     // Ctrl+B／Ctrl+I：瀏覽器預設會插入 <b>／<i>，改成 Markdown 或整個文字框的格式
     this.textLayer.addEventListener('keydown', e => {
+      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing && this.editing) {
+        e.preventDefault();
+        this._indent(e.shiftKey);
+        return;
+      }
       const k = (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase();
       if (k !== 'b' && k !== 'i') return;
       e.preventDefault();
@@ -1053,6 +1144,13 @@ export class Board {
     if (isPen) this._penIn();
     else if (isTouch && (this.penNear || performance.now() - this.penLeftAt < PALM_GRACE)) return;
 
+    // 程式碼區塊的「複製」：唯讀也可以按；畫筆、橡皮擦照樣畫，不會誤按到看不見的按鈕
+    const copy = e.target.closest('.md-copy');
+    if (copy && !copy.closest('.text-item').contains(document.activeElement) && (this.readOnly || ['select', 'lasso', 'text'].includes(this.tool))) {
+      e.preventDefault();
+      this._copyBlock(copy);
+      return;
+    }
     if (this.readOnly) {
       e.preventDefault();
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, type: e.pointerType });
@@ -1807,9 +1905,28 @@ export class Board {
   _renderText(id) {
     const el = this.els.get(id), item = this._item(id);
     if (!el || !item) return;
-    const body = el.querySelector('.text-body');
-    sources.set(body, renderMarkdown(body, item.text));
+    this._markdown(el, item);
     if (this.sel.has(id)) this._updateSelBox();
+  }
+
+  // 文字框的 markdown 顯示。有程式碼區塊、流程圖（.has-block）時文字框可以比 32 個字寬，寬度跟著區塊
+  _markdown(el, item) {
+    const body = el.querySelector('.text-body');
+    const onResize = () => { if (this.sel.has(item.id)) this._updateSelBox(); };
+    sources.set(body, renderMarkdown(body, item.text, { dark: this.darkCanvas, onResize }));
+    el.classList.toggle('has-block', !!body.querySelector('.md-pre, .md-mermaid'));
+    if (!item.w) el.style.width = '';  // 編輯時暫時固定的寬度（見 _focusIn）
+  }
+
+  // 程式碼區塊、流程圖右上角的「複製」：複製原始碼
+  _copyBlock(button) {
+    const it = this._item(button.closest('.text-item')?.dataset.id);
+    if (!it) return;
+    navigator.clipboard.writeText(blockSource(it.text, button.parentElement)).then(() => {
+      button.dataset.done = '';
+      setTimeout(() => delete button.dataset.done, 1200);
+    }, () => {});
+    this.noFocusUntil = performance.now() + 800;
   }
 
   _toggleTask(id, at) {
@@ -1841,6 +1958,8 @@ export class Board {
     // 換成原始 markdown 編輯，游標放回點到的字；瀏覽器之後可能再依新版面放一次，所以下一輪再放一次
     const body = e.target;
     const at = this._tapOffset(body);
+    // 有區塊的文字框寬度跟著區塊；編輯原始文字時先固定成目前的寬度，不會一下變窄
+    if (el.classList.contains('has-block') && !item.w) el.style.width = el.offsetWidth + 'px';
     sources.delete(body);
     body.innerText = item.text;
     this._setCaret(body, at);
@@ -1896,8 +2015,8 @@ export class Board {
       const body = h('div', 'text-body');
       body.contentEditable = String(!this.readOnly);
       body.spellcheck = false;
-      sources.set(body, renderMarkdown(body, item.text));
       el.append(body);
+      this._markdown(el, item);
       this.textLayer.append(el);
     } else if (item.type === 'image') {
       el = h('div', 'item img-item');

@@ -9,7 +9,7 @@ import { setupNotebooks } from './notebook-ui.js';
 import { setupAi, peekClipboard } from './ai-ui.js';
 import { setupExport } from './export.js';
 import { setupSearch } from './search.js';
-import { htmlToMarkdown, htmlToText } from './markdown.js';
+import { htmlToMarkdown, htmlToText, fenceCode } from './markdown.js';
 import { BUILD } from './build.js';
 
 // index.html 跟 JS 不是同一版（瀏覽器快取了舊的 index.html，見 scripts/stamp.mjs）：
@@ -801,8 +801,18 @@ document.addEventListener('paste', async e => {
   const position = board.pastePosition();
   // Ctrl+Shift+V 的 paste 事件只給純文字（可能是 markdown）；允許讀剪貼簿的話改讀完整內容，才能從 HTML 取文字
   if (plain) pasteContent((await peekClipboard()) ?? { files, text }, position, 'plain');
-  else pasteContent({ files, text }, position, 'auto');
+  else pasteContent({ files, text: editorCode(text, clipboard.getData('vscode-editor-data')) }, position, 'auto');
 });
+
+// 從 VS Code 複製的程式碼：剪貼簿裡有 vscode-editor-data（裡面有語言），包成 ``` 程式碼區塊
+const EDITOR_LANG = { shellscript: 'sh', plaintext: '', markdown: null };
+function editorCode(text, data) {
+  let mode;
+  try { mode = JSON.parse(data).mode; } catch { return text; }
+  if (typeof mode !== 'string' || !text.trim()) return text;
+  const lang = mode in EDITOR_LANG ? EDITOR_LANG[mode] : mode;
+  return lang === null ? text : fenceCode(text, lang);
+}
 
 // 貼上剪貼簿的內容（Ctrl+V 和右鍵選單共用）。mode：
 // auto＝貼上：圖片、複製的物件或 AI 回覆、文字，看剪貼簿裡有什麼；
