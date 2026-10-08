@@ -8,6 +8,7 @@ import { cleanName } from './notebook-core.js';
 import { setupNotebooks } from './notebook-ui.js';
 import { setupAi } from './ai-ui.js';
 import { setupExport } from './export.js';
+import { setupSearch } from './search.js';
 import { BUILD } from './build.js';
 
 // index.html 跟 JS 不是同一版（瀏覽器快取了舊的 index.html，見 scripts/stamp.mjs）：
@@ -36,15 +37,18 @@ let saveTimer = null;
 let contentChanged = false;
 let collaboration = null;
 let ai = null;
+let search = null;
 let lastLocalPage = null;
 let contextReady = false; // Board 建構時就會通知，等工具列的元素都準備好再更新
 
 const board = new Board($('#viewport'), {
-  onChange: () => { contentChanged = true; scheduleSave(); refreshNav(); },
-  onRemote: refreshNav,
+  onChange: () => { contentChanged = true; scheduleSave(); refreshNav(); search?.changed(); },
+  onRemote: () => { refreshNav(); search?.changed(); },
+  onLoad: () => search?.loaded(),
   onView: (v, silent) => {
     $('#zoom').textContent = Math.round(v.s * 100) + '%';
     refreshNav();
+    search?.view(v);
     if (!silent) scheduleSave();
   },
   onSelect: count => { $('#btn-del').disabled = !count; },
@@ -867,6 +871,11 @@ async function init() {
   optional('輸入模式', () => setupInputMode({ board, panel: $('#appearance-panel'), onChange: onInputMode }));
   ai = optional('AI', () => setupAi({ board, title: () => $('#page-title').value, toast, showMenu }));
   optional('匯出', () => setupExport({ board, title: () => $('#page-title').value, toast, showMenu, ai }));
+  search = optional('搜尋', () => setupSearch({
+    board, minimap, refreshNav, hideSidebar: closeSidebar, top: () => $('#viewport').offsetTop,
+    showSidebar: () => isMobile() ? document.body.classList.add('sb-open') : document.body.classList.remove('sb-collapsed'),
+  }));
+  $('#find-button').addEventListener('click', () => search?.open());
   setTool('select');
   notebooks = optional('筆記本選單', () => setupNotebooks({
     current: () => notebookId, switchTo: switchNotebook, reload: reloadNotebook, create: createNotebook, flush, persist, showMenu, toast,

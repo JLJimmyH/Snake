@@ -267,6 +267,7 @@ export class Board {
     const v = doc?.view ?? { x: 40, y: 40, s: 1 };
     this.setView(v.x, v.y, v.s, true);
     this._history();
+    this.cb.onLoad?.();
   }
 
   setReadOnly(value) {
@@ -393,8 +394,13 @@ export class Board {
   fitContent() {
     const b = this.contentBounds();
     if (!b) return this.animateView(40, 40, 1);
+    this.fitBounds(b);
+  }
+
+  // 縮放到看得見 b（世界座標 {x0, y0, x1, y1}），最多放大到 maxS
+  fitBounds(b, maxS = 1) {
     const w = this.vp.clientWidth, ht = this.vp.clientHeight, pad = 48;
-    const s = clamp(Math.min((w - pad * 2) / (b.x1 - b.x0 || 1), (ht - pad * 2) / (b.y1 - b.y0 || 1)), MIN_S, 1);
+    const s = clamp(Math.min((w - pad * 2) / (b.x1 - b.x0 || 1), (ht - pad * 2) / (b.y1 - b.y0 || 1)), MIN_S, maxS);
     this.animateView(w / 2 - (b.x0 + b.x1) / 2 * s, ht / 2 - (b.y0 + b.y1) / 2 * s, s);
   }
 

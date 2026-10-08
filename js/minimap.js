@@ -13,6 +13,7 @@ export class Minimap {
     this.paths = new WeakMap(); // stroke item -> Path2D；item 不可變，改過就是新物件，快取自然失效
     this.map = null;            // 世界座標 -> 地圖座標：x * k + ox
     this.drag = null;
+    this.marks = null;          // 搜尋結果：{ boxes: [{x0, y0, x1, y1}], cur }，由 js/search.js 設定
     canvas.addEventListener('pointerdown', e => this._down(e));
     canvas.addEventListener('pointermove', e => this._move(e));
     canvas.addEventListener('pointerup', e => this._up(e));
@@ -56,6 +57,7 @@ export class Minimap {
       ctx.textAlign = 'center';
       ctx.fillText('這頁還沒有內容', w / 2, h / 2 + 4);
     }
+    if (this.marks) this._drawMarks(m);
     // 目前畫面的框，放很大時也至少 6px 才點得到
     const rw = Math.max(6, (v.x1 - v.x0) * m.k), rh = Math.max(6, (v.y1 - v.y0) * m.k);
     const rx = (v.x0 + v.x1) / 2 * m.k + m.ox - rw / 2, ry = (v.y0 + v.y1) / 2 * m.k + m.oy - rh / 2;
@@ -109,6 +111,23 @@ export class Minimap {
         ctx.fillRect(it.x, it.y + i * lh + lh * .25, last ? tw * .6 : tw, Math.max(lh * .5, 1 / k));
       }
     }
+  }
+
+  // 搜尋結果畫成固定大小的點，目前那一個大一點、橘色、畫在最上面
+  _drawMarks(m) {
+    const ctx = this.ctx, { boxes, cur } = this.marks;
+    const dot = (b, r, fill) => {
+      ctx.beginPath();
+      ctx.arc((b.x0 + b.x1) / 2 * m.k + m.ox, (b.y0 + b.y1) / 2 * m.k + m.oy, r, 0, Math.PI * 2);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      ctx.stroke();
+    };
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = 'rgba(0, 0, 0, .55)';
+    ctx.lineWidth = 1;
+    boxes.forEach((b, i) => { if (i !== cur) dot(b, 3, '#facc15'); });
+    if (boxes[cur]) dot(boxes[cur], 4.5, '#ff8c00');
   }
 
   _point(e) {
