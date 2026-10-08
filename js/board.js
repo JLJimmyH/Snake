@@ -1506,20 +1506,23 @@ export class Board {
 
   // 滑鼠模式按下：點到未選取的物件＝選它並可直接拖動；選取範圍內＝拖動；空白處＝框選。
   // Shift+點物件＝加選／取消，Shift+框選＝加選。
+  // 重疊時點下去先看已選取的：循環切到下層後要能直接拖它，不能又被最上層搶走。
   _mouseDown(e, base, w) {
-    const hit = this._hitsAt(w)[0];
+    const hits = this._hitsAt(w);
+    const hit = hits[0];
     if (e.shiftKey && hit) {
       const ids = new Set(this.sel);
       if (ids.has(hit.id)) ids.delete(hit.id); else ids.add(hit.id);
       return this.setSelection([...ids]);
     }
-    if (hit && !this.sel.has(hit.id)) {
+    const onSel = hits.some(it => this.sel.has(it.id));
+    if (hit && !onSel) {
       this.setSelection([hit.id]);
       this._startMove(base, w);
       this.action.picked = true;
       return;
     }
-    if (this._inSelBox(w)) {
+    if (onSel || this._inSelBox(w)) {
       this._startMove(base, w);
       this.action.link = e.target.closest('a.md-link')?.href;
       return;

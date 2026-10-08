@@ -89,6 +89,36 @@ with sync_playwright() as pw:
     page.locator('#btn-undo').click();saved(page)
     print('PASS: shift+click adds to the selection')
 
+    # 重疊時再點一下換選下層，接著拖曳要移動下層，不能又被上層搶走
+    page.evaluate("""async () => {
+      const {db}=await import('./js/db.js');
+      const id=(await db.get('notebooks',sessionStorage.getItem('notebook'))).lastPage;
+      const doc=await db.get('docs',id);
+      doc.items.push({id:'over',type:'stroke',tool:'pen',width:4,color:'#654321',pts:[[330,0],[330,300]]});
+      await db.put('docs',doc);
+    }""")
+    page.reload();expect(page.locator('.ink path[data-id=over]')).to_have_count(1)
+    vp=page.locator('#viewport').bounding_box()
+    page.mouse.click(vp['x']+700,vp['y']+500)
+    before=state(page);view=before['view']
+    _,y=center(page.locator('.text-item'));x=vp['x']+view['x']+330*view['s']
+    page.mouse.click(x,y);expect(page.locator('.text-item.selected')).to_have_count(1)
+    page.mouse.click(x,y);expect(page.locator('.text-item.selected')).to_have_count(0)
+    drag(page,x,y,40,20);saved(page)
+    after=state(page)
+    assert after['items'][1]==before['items'][1],'top object stole the drag'
+    assert after['items'][2]['pts']==[[370,20],[370,320]],after['items'][2]
+    page.mouse.click(x+40,y);expect(page.locator('.text-item.selected')).to_have_count(1)
+    page.locator('#btn-undo').click();saved(page)
+    page.evaluate("""async () => {
+      const {db}=await import('./js/db.js');
+      const id=(await db.get('notebooks',sessionStorage.getItem('notebook'))).lastPage;
+      const doc=await db.get('docs',id);doc.items=doc.items.filter(it=>it.id!=='over');await db.put('docs',doc);
+    }""")
+    page.reload();expect(page.locator('.ink path[data-id=over]')).to_have_count(0)
+    vp=page.locator('#viewport').bounding_box()
+    print('PASS: clicking again cycles overlapped objects and the drag moves the picked one')
+
     # 按住空白鍵拖曳＝移動畫布
     before=state(page)
     page.keyboard.down(' ');x,y=center(page.locator('.text-item'));drag(page,x,y,30,25);page.keyboard.up(' ');saved(page)
