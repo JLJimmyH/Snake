@@ -1,4 +1,4 @@
-"""Verify page search: Ctrl+F bar, jumping between far-apart hits, dots when zoomed out, minimap marks, the sidebar list."""
+"""Verify search: Ctrl+F on this page (jumps, dots when zoomed out, minimap marks), Ctrl+Shift+F over the whole notebook."""
 import os
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8050')
@@ -39,6 +39,10 @@ with sync_playwright() as pw:
         {id:'b',type:'text',x:5000,y:3000,size:18,text:'**Apple** pie'},
         {id:'c',type:'text',x:-4000,y:6000,size:18,text:'nothing here\\napple and apple'},
         {id:'ink',type:'stroke',tool:'pen',width:3,color:'#1f2937',pts:[[0,100],[200,100]]}
+      ]});
+      const meeting=(await db.getAll('pages')).find(p=>p.title==='會議記錄');
+      await db.put('docs',{pageId:meeting.id,view:{x:0,y:0,s:1},items:[
+        {id:'m',type:'text',x:3000,y:2000,size:18,text:'# apple meeting'}
       ]});
     }""")
     page.reload();expect(page.locator('.text-item')).to_have_count(3)
@@ -94,20 +98,42 @@ with sync_playwright() as pw:
     expect(page.locator('#sp-input')).to_have_value('apple')
     print('PASS: show all and match case')
 
-    # Ctrl+Shift+F lists the hits in the sidebar; clicking one jumps to it.
+    # Ctrl+Shift+F searches the whole notebook, grouped by page in tree order.
     page.keyboard.press('Control+Shift+F')
     expect(page.locator('#search-pane')).to_be_visible()
     expect(page.locator('#tree')).to_be_hidden()
     expect(page.locator('#sp-input')).to_be_focused()
-    expect(page.locator('#sp-summary')).to_have_text('這一頁有 3 個結果')
-    rows=page.locator('.sp-hit');expect(rows).to_have_count(3)
+    expect(page.locator('#sp-summary')).to_have_text('2 頁共 4 個結果')
+    groups=page.locator('.sp-page');expect(groups).to_have_count(2)
+    expect(groups.nth(0).locator('.sp-title')).to_have_text('歡迎使用')
+    expect(groups.nth(0)).to_have_class('sp-page here')
+    expect(groups.nth(1).locator('.sp-title')).to_have_text('會議記錄')
+    expect(groups.nth(1).locator('.sp-crumbs')).to_have_text('工作')
+    rows=page.locator('.sp-hit');expect(rows).to_have_count(4)
     expect(rows.nth(0)).to_have_text('I like apple')
     expect(rows.nth(1).locator('mark')).to_have_text('apple')
+    expect(rows.nth(3)).to_have_text('apple meeting')
     rows.nth(2).click();page.wait_for_timeout(500)
     expect(page.locator('#find-count')).to_have_text('3 / 3')
     expect(rows.nth(2)).to_have_class('sp-hit current')
     assert current_visible(page)
-    print('PASS: sidebar list')
+    # A hit on another page opens that page and jumps to it.
+    rows.nth(3).click()
+    expect(page.locator('#page-title')).to_have_value('會議記錄')
+    expect(page.locator('#find-count')).to_have_text('1 / 1')
+    page.wait_for_timeout(500);assert current_visible(page)
+    expect(page.locator('.sp-page.here .sp-title')).to_have_text('會議記錄')
+    expect(page.locator('.sp-hit.current')).to_have_text('apple meeting')
+    # Enter in the sidebar goes on in list order, back to the first page.
+    page.locator('#sp-input').press('Enter')
+    expect(page.locator('#page-title')).to_have_value('歡迎使用')
+    expect(page.locator('#find-count')).to_have_text('1 / 3')
+    expect(page.locator('.sp-hit.current')).to_have_text('I like apple')
+    page.wait_for_timeout(500)
+    # Page headers fold their hits.
+    groups.nth(1).locator('.sp-page-head').click()
+    expect(rows.nth(3)).to_be_hidden()
+    print('PASS: whole-notebook search in the sidebar')
 
     # Hits follow edits.
     page.locator('#find-input').fill('like');page.locator('#find-input').press('Enter');page.wait_for_timeout(500)
@@ -119,7 +145,8 @@ with sync_playwright() as pw:
     page.keyboard.press('Escape')
     expect(page.locator('.search-hit')).to_have_count(2)
     # Ctrl+F while editing text opens our bar with the selected word.
-    page.locator('.text-item[data-id=a] .text-body').dblclick()
+    # 進入編輯後下一輪才把游標放回點到的地方，等它放好再全選
+    page.locator('.text-item[data-id=a] .text-body').dblclick();page.wait_for_timeout(100)
     page.keyboard.press('Control+a');page.keyboard.press('Control+f')
     expect(page.locator('#find-input')).to_be_focused()
     expect(page.locator('#find-input')).to_have_value('I like apple pie')

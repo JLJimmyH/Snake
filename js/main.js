@@ -120,6 +120,14 @@ const byId = id => pages.find(p => p.id === id);
 const kids = pid => pages.filter(p => (p.parentId ?? null) === pid).sort((a, b) => a.order - b.order);
 const savePage = p => db.put('pages', p);
 
+// 整本的頁面，照側欄樹的順序
+function treeOrder() {
+  const out = [];
+  const walk = pid => kids(pid).forEach(p => { out.push(p); walk(p.id); });
+  walk(null);
+  return out;
+}
+
 function descendants(id) {
   const out = [];
   const walk = pid => kids(pid).forEach(c => { out.push(c.id); walk(c.id); });
@@ -295,6 +303,7 @@ function renderTree() {
     }
   };
   walk(null, 0);
+  search?.pagesChanged();
 }
 
 function renderHeader() {
@@ -874,6 +883,12 @@ async function init() {
   search = optional('搜尋', () => setupSearch({
     board, minimap, refreshNav, hideSidebar: closeSidebar, top: () => $('#viewport').offsetTop,
     showSidebar: () => isMobile() ? document.body.classList.add('sb-open') : document.body.classList.remove('sb-collapsed'),
+    pages: () => treeOrder().map(p => ({
+      id: p.id, title: p.title || '未命名', crumbs: ancestors(p.id).map(a => a.title || '未命名').join(' / '),
+    })),
+    currentPage: () => current,
+    loadItems: async id => (await db.get('docs', id))?.items ?? [],
+    openPage: id => { if (byId(id)) return openPage(id); },
   }));
   $('#find-button').addEventListener('click', () => search?.open());
   setTool('select');

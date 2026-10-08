@@ -650,10 +650,31 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
 .find-btn[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 #sp-summary { padding: 4px 12px 6px; font-size: 12px; color: var(--muted); }
 #sp-results { flex: 1; overflow-y: auto; padding: 0 6px 8px; }
+/* 整本筆記本的結果：每頁一組，標題點了收合 */
+.sp-page-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  height: 28px;
+  padding: 0 6px 0 2px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.sp-page-head:hover { background: var(--hover); }
+.sp-caret { flex: none; width: 16px; color: var(--muted); font-size: 11px; text-align: center; transition: transform .15s; }
+.sp-page.collapsed .sp-caret { transform: rotate(-90deg); }
+.sp-page.collapsed .sp-hit { display: none; }
+.sp-title { flex: none; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sp-page.here .sp-title { color: var(--accent); }
+.sp-crumbs { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 400; color: var(--muted); }
+.sp-count { flex: none; min-width: 20px; padding: 0 6px; border-radius: 9px; background: var(--chip); font-size: 11px; font-weight: 400; line-height: 18px; text-align: center; color: var(--muted); }
 .sp-hit {
   display: block;
   width: 100%;
-  padding: 6px 8px;
+  padding: 6px 8px 6px 22px;
   border-radius: 6px;
   font-size: 13px;
   text-align: left;

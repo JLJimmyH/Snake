@@ -1,11 +1,14 @@
-// 搜尋這一頁的文字：Ctrl+F 開畫布右上角的搜尋列，Ctrl+Shift+F 開側欄的搜尋面板，兩個共用同一組結果。
+// 搜尋文字：Ctrl+F 開畫布右上角的搜尋列（這一頁），Ctrl+Shift+F 開側欄的搜尋面板（整本筆記本），兩個共用搜尋字。
 // 找的是畫面上顯示的文字（markdown 符號不算），結果用世界座標的框標在畫布上，跟著縮放；
 // 縮小到字看不清楚時改成固定大小的圓點，小地圖上也有標記。手寫筆跡不搜尋。
+// 每個結果的 key＝「文字框 id:框裡第幾個」，畫布和側欄用同一個 key 對應，點別頁的結果才跳得到同一個字。
+import { renderMarkdown } from './markdown.js';
 
 const MAX_HITS = 2000;
-const FAR = 10;       // 結果在螢幕上矮於這麼多 px 就改畫圓點
-const READABLE = 14;  // 跳過去時至少放大到字有這麼高（px）
-const SNIPPET = 24;   // 側欄結果在符合處前面留幾個字
+const FAR = 10;         // 結果在螢幕上矮於這麼多 px 就改畫圓點
+const READABLE = 14;    // 跳過去時至少放大到字有這麼高（px）
+const SNIPPET = 24;     // 側欄結果在符合處前面留幾個字
+const LIST_DELAY = 150; // 打字時等這麼久（毫秒）才搜整本
 
 const escape = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -37,6 +40,22 @@ function locate(parts, i, end) {
   return null;
 }
 
+// 文字框顯示出來的文字（跟畫布上的一樣，給別頁用）；編輯時 item.text 會原地改，所以連原文一起記
+const plainCache = new WeakMap();
+function plainText(it) {
+  let c = plainCache.get(it);
+  if (c?.src !== it.text) {
+    const div = document.createElement('div');
+    renderMarkdown(div, it.text);
+    c = { src: it.text, text: flatten(div).text };
+    plainCache.set(it, c);
+  }
+  return c.text;
+}
+
+// 閱讀順序：由上而下、由左而右
+const textItems = items => items.filter(it => it.type === 'text').sort((a, b) => a.y - b.y || a.x - b.x);
+
 function snippet(text, start, end) {
   const lineStart = text.lastIndexOf('\n', start - 1) + 1;
   let lineEnd = text.indexOf('\n', end);
@@ -49,7 +68,9 @@ function snippet(text, start, end) {
   };
 }
 
-export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSidebar, top }) {
+// pages()：整本的頁面（樹的順序）[{ id, title, crumbs }]；currentPage()：畫布上是哪一頁；
+// loadItems(id)：從資料庫讀某一頁的物件；openPage(id)：換頁
+export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSidebar, top, pages, currentPage, loadItems, openPage }) {
   const $ = s => document.querySelector(s);
   const bar = $('#find'), input = $('#find-input'), count = $('#find-count');
   const pane = $('#search-pane'), paneInput = $('#sp-input'), summary = $('#sp-summary'), list = $('#sp-results');
@@ -58,27 +79,32 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
   board.world.insertBefore(layer, board.uiLayer);
 
   let query = '', caseSensitive = false;
-  let hits = [];   // { id, key, rects: [{x, y, w, h}], box: {x0, y0, x1, y1}, snip, els }
+  let hits = [];   // 畫布（這一頁）：{ id, key, rects: [{x, y, w, h}], box: {x0, y0, x1, y1}, els }
   let cur = -1;
   let timer = 0;
+  let groups = []; // 側欄（整本）：[{ page, hits: [{ key, snip }] }]
+  let total = 0;
+  const docs = new Map(); // 別頁的物件，換頁時清掉重讀；目前這一頁用畫布上的
+  let listTimer = 0, listSeq = 0;
+  let rows = new Map();   // 'pageId|key' → 側欄那一列
 
   const active = () => !bar.hidden || !pane.hidden;
+  const pattern = () => new RegExp(escape(query), caseSensitive ? 'gu' : 'giu');
 
   // ---------- 搜尋 ----------
   function find() {
     if (!query || !active()) return [];
-    const re = new RegExp(escape(query), caseSensitive ? 'gu' : 'giu');
+    const re = pattern();
     const vp = board.vp.getBoundingClientRect(), { x: vx, y: vy, s } = board.view;
     const out = [];
-    const texts = board.items.filter(it => it.type === 'text')
-      .sort((a, b) => a.y - b.y || a.x - b.x);
-    for (const it of texts) {
+    for (const it of textItems(board.items)) {
       const body = board.els.get(it.id)?.querySelector('.text-body');
       if (!body) continue;
       const { text, parts } = flatten(body);
       let n = 0;
       for (const m of text.matchAll(re)) {
         if (!m[0]) continue;
+        const key = it.id + ':' + n++;
         const a = locate(parts, m.index, false), b = locate(parts, m.index + m[0].length, true);
         if (!a || !b) continue;
         const range = document.createRange();
@@ -92,11 +118,48 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
           x0: Math.min(...rects.map(r => r.x)), y0: Math.min(...rects.map(r => r.y)),
           x1: Math.max(...rects.map(r => r.x + r.w)), y1: Math.max(...rects.map(r => r.y + r.h)),
         };
-        out.push({ id: it.id, key: it.id + ':' + n++, rects, box, snip: snippet(text, m.index, m.index + m[0].length) });
+        out.push({ id: it.id, key, rects, box });
         if (out.length >= MAX_HITS) return out;
       }
     }
     return out;
+  }
+
+  // 整本筆記本：別頁從資料庫讀（讀過的先記著），結果照頁面樹的順序分組
+  async function searchNotebook() {
+    clearTimeout(listTimer);
+    listTimer = 0;
+    const seq = ++listSeq;
+    if (!query || pane.hidden) { groups = []; total = 0; return renderList(); }
+    const all = pages(), here = currentPage();
+    await Promise.all(all.filter(p => p.id !== here && !docs.has(p.id))
+      .map(async p => docs.set(p.id, await loadItems(p.id))));
+    if (seq !== listSeq) return; // 等資料的時候搜尋字又變了
+    const re = pattern();
+    groups = [];
+    total = 0;
+    for (const page of all) {
+      const found = [];
+      for (const it of textItems(page.id === here ? board.items : docs.get(page.id) ?? [])) {
+        const text = plainText(it);
+        let n = 0;
+        for (const m of text.matchAll(re)) {
+          if (!m[0]) continue;
+          found.push({ key: it.id + ':' + n++, snip: snippet(text, m.index, m.index + m[0].length) });
+        }
+      }
+      if (!found.length) continue;
+      groups.push({ page, hits: found.slice(0, MAX_HITS - total) });
+      total += Math.min(found.length, MAX_HITS - total);
+      if (total >= MAX_HITS) break;
+    }
+    renderList();
+  }
+
+  function scheduleList() {
+    if (pane.hidden || !query) return;
+    clearTimeout(listTimer);
+    listTimer = setTimeout(searchNotebook, LIST_DELAY);
   }
 
   // 內容變了重新找；目前這一個盡量留在同一個（同一個文字框裡第幾個）
@@ -115,6 +178,7 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
     if (!active() || !query) return;
     clearTimeout(timer);
     timer = setTimeout(refresh, 150);
+    scheduleList();
   }
 
   // ---------- 畫面 ----------
@@ -132,7 +196,7 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
     lastFar = null;
     updateFar(s);
     renderCount();
-    renderList();
+    markRow();
     minimap.marks = hits.length ? { boxes: hits.map(x => x.box), cur } : null;
     refreshNav();
   }
@@ -153,32 +217,50 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
     count.textContent = text;
     bar.classList.toggle('none', !!query && !n);
     for (const id of ['#find-prev', '#find-next', '#find-all']) $(id).disabled = !n;
-    summary.textContent = !query ? '輸入文字搜尋這一頁（手寫筆跡不會被搜尋）' : !n ? '這一頁沒有符合的文字' : `這一頁有 ${n}${more} 個結果`;
   }
 
+  // 側欄：每頁一組，標題點了可以收合；目前這一頁那組標出來
   function renderList() {
-    list.replaceChildren(...hits.map((hit, i) => {
-      const row = h('button', 'sp-hit' + (i === cur ? ' current' : ''));
-      row.dataset.i = i;
-      row.setAttribute('role', 'option');
-      row.setAttribute('aria-selected', String(i === cur));
-      row.append(h('span', '', hit.snip.before), h('mark', '', hit.snip.match), h('span', '', hit.snip.after));
-      return row;
+    const more = total >= MAX_HITS ? '+' : '';
+    summary.textContent = !query ? '輸入文字搜尋整本筆記本（手寫筆跡不會被搜尋）'
+      : !total ? '整本筆記本都沒有符合的文字' : `${groups.length} 頁共 ${total}${more} 個結果`;
+    const collapsed = new Set([...list.querySelectorAll('.sp-page.collapsed')].map(g => g.dataset.page));
+    rows = new Map();
+    marked = null;
+    list.replaceChildren(...groups.map(({ page, hits: found }) => {
+      const group = h('div', 'sp-page' + (page.id === currentPage() ? ' here' : '') + (collapsed.has(page.id) ? ' collapsed' : ''));
+      group.dataset.page = page.id;
+      const head = h('button', 'sp-page-head');
+      head.title = page.crumbs ? page.crumbs + ' / ' + page.title : page.title;
+      head.append(h('span', 'sp-caret', '▾'), h('span', 'sp-title', page.title), h('span', 'sp-crumbs', page.crumbs), h('span', 'sp-count', String(found.length)));
+      group.append(head);
+      for (const hit of found) {
+        const row = h('button', 'sp-hit');
+        row.dataset.page = page.id;
+        row.dataset.key = hit.key;
+        row.append(h('span', '', hit.snip.before), h('mark', '', hit.snip.match), h('span', '', hit.snip.after));
+        rows.set(page.id + '|' + hit.key, row);
+        group.append(row);
+      }
+      return group;
     }));
+    markRow();
+  }
+
+  // 畫布上目前那一個 → 側欄對應的那一列
+  let marked = null;
+  function markRow() {
+    marked?.classList.remove('current');
+    marked = hits[cur] ? rows.get(currentPage() + '|' + hits[cur].key) : null;
+    marked?.classList.add('current');
+    if (marked && !marked.parentElement.classList.contains('collapsed')) marked.scrollIntoView({ block: 'nearest' });
   }
 
   function setCurrent(i) {
     hits[cur]?.els.forEach(el => el.classList.remove('current'));
-    list.children[cur]?.classList.remove('current');
-    list.children[cur]?.setAttribute('aria-selected', 'false');
     cur = i;
     hits[cur]?.els.forEach(el => el.classList.add('current'));
-    const row = list.children[cur];
-    if (row) {
-      row.classList.add('current');
-      row.setAttribute('aria-selected', 'true');
-      row.scrollIntoView({ block: 'nearest' });
-    }
+    markRow();
     renderCount();
     if (minimap.marks) minimap.marks.cur = cur;
     refreshNav();
@@ -206,6 +288,24 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
     board.fitBounds(b);
   }
 
+  // 跳到側欄的某個結果：別頁就先換頁（換頁時畫布上的結果會重新找）
+  async function openResult(pageId, key) {
+    if (pageId !== currentPage()) await openPage(pageId);
+    if (pageId !== currentPage()) return;
+    const i = hits.findIndex(x => x.key === key);
+    if (i >= 0) go(i);
+  }
+
+  // 側欄按 Enter：照側欄的順序跳到下一個，會跨頁
+  function step(dir) {
+    const flat = groups.flatMap(g => g.hits.map(x => [g.page.id, x.key]));
+    if (!flat.length) return;
+    const here = currentPage(), key = hits[cur]?.key;
+    let i = flat.findIndex(([p, k]) => p === here && k === key);
+    i = i < 0 ? (dir > 0 ? 0 : flat.length - 1) : (i + dir + flat.length) % flat.length;
+    openResult(...flat[i]);
+  }
+
   // 新的搜尋字：不移動畫面，目前這一個先選畫面裡的第一個
   function setQuery(q, from) {
     query = q;
@@ -215,6 +315,7 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
     const v = board.viewBounds();
     cur = hits.findIndex(x => x.box.x0 >= v.x0 && x.box.x1 <= v.x1 && x.box.y0 >= v.y0 && x.box.y1 <= v.y1);
     render();
+    if (query) scheduleList(); else searchNotebook();
   }
 
   function setCase(on) {
@@ -226,6 +327,10 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
   function clear() {
     hits = [];
     cur = -1;
+    groups = [];
+    total = 0;
+    rows = new Map();
+    marked = null;
     layer.replaceChildren();
     list.replaceChildren();
     minimap.marks = null;
@@ -259,7 +364,7 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
     pane.hidden = !search;
     $('#pages-pane').hidden = search;
     for (const [k, t] of Object.entries(tabs)) t.setAttribute('aria-selected', String(k === name));
-    if (search) { if (query) refresh(); else renderCount(); }
+    if (search) { if (query) refresh(); searchNotebook(); }
     else if (!active()) clear();
   }
 
@@ -276,7 +381,8 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
   for (const el of [input, paneInput]) {
     el.addEventListener('input', () => setQuery(el.value, el));
     el.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); go(e.shiftKey ? cur - 1 : cur < 0 ? 0 : cur + 1); }
+      if (e.key === 'Enter' && el === paneInput) { e.preventDefault(); step(e.shiftKey ? -1 : 1); }
+      else if (e.key === 'Enter') { e.preventDefault(); go(e.shiftKey ? cur - 1 : cur < 0 ? 0 : cur + 1); }
       else if (e.altKey && e.key.toLowerCase() === 'c') { e.preventDefault(); setCase(!caseSensitive); }
       else if (e.key === 'Escape' && el === input) { e.preventDefault(); closeBar(); }
     });
@@ -290,9 +396,11 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
   tabs.pages.addEventListener('click', () => setTab('pages'));
   tabs.search.addEventListener('click', () => { setTab('search'); paneInput.focus(); });
   list.addEventListener('click', e => {
+    const head = e.target.closest('.sp-page-head');
+    if (head) return head.parentElement.classList.toggle('collapsed');
     const row = e.target.closest('.sp-hit');
     if (!row) return;
-    go(+row.dataset.i);
+    openResult(row.dataset.page, row.dataset.key);
     hideSidebar(); // 手機：側欄蓋住畫布，點了結果就收起來
   });
 
@@ -314,9 +422,15 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
 
   return {
     open: openBar,
-    // 換頁：保留搜尋字，結果重新找
-    loaded() { if (query && active()) refresh({ keep: false }); },
+    // 換頁（或換筆記本、從 Drive 重新載入）：保留搜尋字，結果重新找；剛離開的那頁已經存檔，別頁的資料重讀
+    loaded() {
+      docs.clear();
+      if (query && active()) refresh({ keep: false });
+      scheduleList();
+    },
     changed: schedule,
+    // 頁面改名、新增、刪除、搬移：側欄的分組標題跟著變
+    pagesChanged: scheduleList,
     view(v) { updateFar(v.s); },
   };
 }
