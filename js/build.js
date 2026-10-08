@@ -1,2 +1,2 @@
 // scripts/stamp.mjs 產生，不要手改。跟 index.html 的 <meta name="build"> 不一樣＝HTML 是快取的舊版，見 js/main.js
-export const BUILD = 'f9c571bd37';
+export const BUILD = '9b4d0094a0';

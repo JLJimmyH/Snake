@@ -67,7 +67,7 @@ with sync_playwright() as pw:
     write(page,'一般文字')
     right(page,sx,sy)
     expect(page.locator('#menu button')).to_have_count(8)
-    assert labels(page)==['剪下','複製（1 個物件）','刪除','貼上','純文字貼上','原始格式貼上','原位貼上','匯出 PDF'],labels(page)
+    assert labels(page)==['剪下','複製（1 個物件）','刪除','貼上','純文字貼上','原始格式貼上','原位貼上','分享'],labels(page)
     assert disabled(page)==['原始格式貼上','原位貼上'],disabled(page)
     expect(page.locator('#menu button').first.locator('.menu-hint')).to_have_text('Ctrl+X')
     pick(page,'複製（1 個物件）')

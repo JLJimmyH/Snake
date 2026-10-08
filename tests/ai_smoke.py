@@ -57,16 +57,16 @@ with sync_playwright() as pw:
     # 右鍵點筆跡：選取它，選單只有「複製」，複製的是完整的筆跡
     page.mouse.click(sx+30,sy,button='right')
     expect(page.locator('#menu button')).to_have_count(8)
-    assert labels(page)==['剪下','複製（1 個物件）','刪除','貼上','純文字貼上','原始格式貼上','原位貼上','匯出 PDF'],labels(page)
+    assert labels(page)==['剪下','複製（1 個物件）','刪除','貼上','純文字貼上','原始格式貼上','原位貼上','分享'],labels(page)
     menu(page,'複製（1 個物件）')
     expect(page.locator('#toast')).to_contain_text('已複製 1 個物件')
     data=json.loads(page.evaluate('navigator.clipboard.readText()'))
     assert data['format']=='snake-note-ai' and len(data['items'])==1 and len(data['items'][0]['pts'])==10,data
 
-    # 選取後按「匯出」→「複製給 AI」：只把這一塊交給 AI
+    # 選取後按「分享」→「複製給 AI」：只把這一塊交給 AI
     page.click('#export-button')
     expect(page.locator('#export-dialog')).to_be_visible()
-    expect(page.locator('#export-heading')).to_have_text('匯出選取的 1 個物件')
+    expect(page.locator('#export-heading')).to_have_text('分享選取的 1 個物件')
     # 預覽：只畫選取的那一塊
     expect(page.locator('#export-preview')).to_be_visible()
     page.wait_for_function("document.querySelector('#export-preview').naturalWidth>0")
@@ -135,7 +135,7 @@ with sync_playwright() as pw:
     page.keyboard.press('Escape')
     page.mouse.click(box['x']+700,box['y']+300)
     page.click('#export-button')
-    expect(page.locator('#export-heading')).to_have_text('匯出整頁')
+    expect(page.locator('#export-heading')).to_have_text('分享整頁')
     data=region_json(copy(page))
     assert data['scope']=='page' and len(data['items'])==len(texts(page))+strokes(page),data['scope']
     page.click('#export-close')
@@ -150,7 +150,7 @@ with sync_playwright() as pw:
     # 右鍵空白處是「複製全部」和貼上選項，貼到別頁會整份貼上
     page.mouse.click(box['x']+700,box['y']+300,button='right')
     expect(page.locator('#menu button')).to_have_count(6)
-    assert labels(page)==['複製全部','貼上','純文字貼上','原始格式貼上','原位貼上','匯出整頁 PDF'],labels(page)
+    assert labels(page)==['複製全部','貼上','純文字貼上','原始格式貼上','原位貼上','分享整頁'],labels(page)
     menu(page,'複製全部')
     expect(page.locator('#toast')).to_contain_text('已複製全部')
     data=json.loads(page.evaluate('navigator.clipboard.readText()'))

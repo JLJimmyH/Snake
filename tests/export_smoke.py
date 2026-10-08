@@ -64,18 +64,20 @@ with sync_playwright() as pw:
     page.keyboard.press('Escape')
     expect(page.locator('#save-state')).to_have_text('已儲存')
 
-    # 右鍵筆跡：匯出 PDF 只印這一條，原本的顏色、白紙、橫向 A4
+    # 右鍵筆跡「分享」：打開分享對話框，只有這一條；匯出 PDF 只印這一條，原本的顏色、白紙、橫向 A4
     page.mouse.click(x+40,y+8,button='right')
     expect(page.locator('#menu button')).to_have_count(8)
-    menu(page,'匯出 PDF')
+    menu(page,'分享')
+    expect(page.locator('#export-heading')).to_have_text('分享選取的 1 個物件')
+    page.click('#export-pdf')
     p=printed(page,1)
     assert p['strokes']==['#1f2937'] and p['texts']==0 and p['images']==[],p
     assert p['selected']==0 and 'A4 landscape' in p['page'] and p['title']==title,p
     expect(page.locator('#print-root')).to_be_hidden()  # 平常不顯示
 
-    # 頂列「匯出」：直接打開對話框，先看到截圖；有選取＝選取的部分
+    # 頂列「分享」：直接打開對話框，先看到截圖；有選取＝選取的部分
     page.click('#export-button')
-    expect(page.locator('#export-heading')).to_have_text('匯出選取的 1 個物件')
+    expect(page.locator('#export-heading')).to_have_text('分享選取的 1 個物件')
     expect(page.locator('#export-preview')).to_be_visible()
     expect(page.locator('.export-actions button')).to_have_text(['✨ 複製給 AI','🖼 複製圖片','📄 匯出 PDF'])
     page.click('#export-image')
@@ -86,7 +88,7 @@ with sync_playwright() as pw:
     page.keyboard.press('Escape')
     page.mouse.click(box['x']+700,box['y']+300)
     page.click('#export-button')
-    expect(page.locator('#export-heading')).to_have_text('匯出整頁')
+    expect(page.locator('#export-heading')).to_have_text('分享整頁')
     page.click('#export-pdf')
     expect(page.locator('#export-dialog')).to_be_hidden()  # 先關對話框再列印
     p=printed(page,2)
@@ -112,13 +114,22 @@ with sync_playwright() as pw:
     page.keyboard.press('Escape')
     assert page.locator('#viewport svg.ink path:not(.lasso)').last.get_attribute('stroke')!='#1f2937'
     page.mouse.click(x+40,y+8,button='right')
-    menu(page,'匯出 PDF')
+    menu(page,'分享')
+    page.click('#export-pdf')
     assert printed(page,3)['strokes']==['#1f2937']
 
     # 交給 AI：同一個對話框，選取的部分
     page.click('#export-button')
-    expect(page.locator('#export-heading')).to_have_text('匯出選取的 1 個物件')
+    expect(page.locator('#export-heading')).to_have_text('分享選取的 1 個物件')
     expect(page.locator('#ai-copy')).to_be_enabled()
+    page.click('#export-close')
+
+    # 右鍵空白處「分享整頁」：同一個對話框，整頁
+    page.keyboard.press('Escape')
+    page.mouse.click(box['x']+700,box['y']+300,button='right')
+    menu(page,'分享整頁')
+    expect(page.locator('#export-heading')).to_have_text('分享整頁')
+    expect(page.locator('#export-preview')).to_be_visible()
     page.click('#export-close')
 
     # 手機：匯出按鈕在頂列裡，頂列沒有被擠爆

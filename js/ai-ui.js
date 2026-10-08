@@ -1,16 +1,15 @@
 import { uid } from './db.js';
 import { exportRegion, copyText, buildPrompt, replyItems, placeItems, itemsBox, copiedOrigin } from './ai-core.js';
-import { printPdf } from './export.js';
 
 const $ = selector => document.querySelector(selector);
 
-// AI 協作：框選一塊（或整頁）→ 匯出對話框看一眼要交出去的內容 →「複製給 AI」貼給 ChatGPT／Claude（對話框在 export.js）。
+// AI 協作：框選一塊（或整頁）→ 分享對話框看一眼要交出去的內容 →「複製給 AI」貼給 ChatGPT／Claude（對話框在 export.js）。
 // AI 回的 {"items":[…]} 由使用者在畫布上 Ctrl+V 貼回，原本的內容不會被改動。右鍵選單（剪下／複製／貼上）、Ctrl+C／Ctrl+X 也在這裡。
-// pasteContent：main.js 的貼上（圖片、物件、文字），右鍵的各種貼上都交給它
-export function setupAi({ board, title, toast, showMenu, pasteContent }) {
+// pasteContent：main.js 的貼上（圖片、物件、文字），右鍵的各種貼上都交給它；share(ids)：打開分享對話框（export.js），ids 是 null＝整頁
+export function setupAi({ board, title, toast, showMenu, pasteContent, share }) {
   let size = 18;        // 貼上時沒給字級用的字級：上次交給 AI 的範圍裡最常見的字級
 
-  // 匯出對話框的「複製給 AI」：ids 的物件（null＝整頁）加上 request 包成提示詞，複製到剪貼簿
+  // 分享對話框的「複製給 AI」：ids 的物件（null＝整頁）加上 request 包成提示詞，複製到剪貼簿
   async function toAi(ids, request) {
     board.commitText();
     const scope = ids?.length ? new Set(ids) : null;
@@ -40,7 +39,7 @@ export function setupAi({ board, title, toast, showMenu, pasteContent }) {
     toast(`已貼上 ${kept.length} 個物件` + (skipped ? `（${skipped} 張圖片找不到，略過）` : '') + '，可以按復原還原');
   }
 
-  // 右鍵：選取框裡或點到物件＝剪下／複製／刪除／匯出 PDF 這些物件（點到未選取的物件會先選它）；空白處＝整頁。
+  // 右鍵：選取框裡或點到物件＝剪下／複製／刪除／分享這些物件（點到未選取的物件會先選它）；空白處＝整頁。
   // 複製的是 {"items":[…]} JSON，可以貼到別頁，也可以直接貼給 AI。貼上的位置是按右鍵的地方
   $('#viewport').addEventListener('contextmenu', async e => {
     if (board.typingIn(e.target)) return;
@@ -59,7 +58,7 @@ export function setupAi({ board, title, toast, showMenu, pasteContent }) {
         edit && { label: '刪除', hint: 'Delete', danger: true, run: () => board.deleteSelected() },
       ] : [board.items.length && { label: '複製全部', run: () => copy(null) }],
       edit ? pasteEntries(await peekClipboard(), at) : [],
-      [(ids || board.items.length) && { label: ids ? '匯出 PDF' : '匯出整頁 PDF', run: () => printPdf(board, ids, title() || '筆記') }],
+      [(ids || board.items.length) && { label: ids ? '分享' : '分享整頁', run: () => share(ids) }],
     ].map(group => group.filter(Boolean)).filter(group => group.length);
     if (!groups.length) return;
     showMenu({ left: x, right: x, top: y, bottom: y }, groups.flatMap((group, i) => i ? [{ sep: true }, ...group] : group));
