@@ -816,8 +816,8 @@ function editorCode(text, data) {
 
 // 貼上剪貼簿的內容（Ctrl+V 和右鍵選單共用）。mode：
 // auto＝貼上：圖片、複製的物件或 AI 回覆、文字，看剪貼簿裡有什麼；
-// plain＝純文字貼上：一律變成一個沒有格式的文字框，有 HTML 就從 HTML 取看得到的文字；
-// format＝原始格式貼上：網頁、文件的粗體、標題、清單轉成 markdown；inplace＝原位貼上：複製的物件放回原本的位置
+// plain＝純文字貼上：一律變成一個沒有格式的文字框，複製的物件取文字框的文字，有 HTML 就從 HTML 取看得到的文字；
+// format＝原始格式貼上：複製的物件照原樣，網頁、文件的粗體、標題、清單轉成 markdown；inplace＝原位貼上：複製的物件放回原本的位置
 async function pasteContent({ files = [], text = '', html = '' }, position, mode = 'auto') {
   if (board.readOnly) return;
   setTool('select');
@@ -826,12 +826,18 @@ async function pasteContent({ files = [], text = '', html = '' }, position, mode
     return;
   }
   if (mode === 'plain') {
-    const plain = (html && htmlToText(html)) || text;
-    if (plain) board.addText(plain, position); else toast('剪貼簿裡沒有文字');
+    // 複製的物件只取文字框的文字，不是一整段 JSON
+    const objects = ai?.objectText(text);
+    const plain = objects ?? ((html && htmlToText(html)) || text);
+    if (plain) board.addText(plain, position); else toast(objects === '' ? '複製的物件裡沒有文字' : '剪貼簿裡沒有文字');
     return;
   }
-  const formatted = mode === 'format' && html && htmlToMarkdown(html);
-  if (formatted) { board.addText(formatted, position); return; }
+  // 原始格式：複製的物件照原樣（字級、顏色、框線都留著）；網頁、文件的格式轉成 markdown
+  if (mode === 'format') {
+    if (ai?.paste(text, position)) return;
+    const formatted = html && htmlToMarkdown(html);
+    if (formatted) { board.addText(formatted, position); return; }
+  }
   if (files.length) {
     for (let i = 0; i < files.length; i++) {
       try { await board.addImage(files[i], { x: position.x + i * 24, y: position.y + i * 24 }); }

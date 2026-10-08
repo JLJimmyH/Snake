@@ -95,7 +95,7 @@ export function setupAi({ board, title, toast, showMenu, pasteContent }) {
     return [
       entry('貼上', 'Ctrl+V', 'auto', c => c.files.length || c.text),
       entry('純文字貼上', 'Ctrl+Shift+V', 'plain', c => c.text || c.html),
-      entry('原始格式貼上', '', 'format', c => c.html),
+      entry('原始格式貼上', '', 'format', c => c.html || replyItems(c.text)),
       entry('原位貼上', '', 'inplace', c => copiedOrigin(c.text)),
     ];
   }
@@ -158,7 +158,13 @@ export function setupAi({ board, title, toast, showMenu, pasteContent }) {
     return true;
   }
 
-  return { open, paste };
+  // 剪貼簿是複製的物件（或 AI 回覆）時，裡面文字框的文字，由上而下、由左而右；不是物件回傳 null
+  function objectText(text) {
+    const items = replyItems(text, { defaultSize: size });
+    return items && items.filter(it => it.type === 'text').sort((a, b) => a.y - b.y || a.x - b.x).map(it => it.text).join('\n\n');
+  }
+
+  return { open, paste, objectText };
 }
 
 // 已經允許網站讀剪貼簿（Chrome）就先讀，選單才知道哪些貼上選項用得到；還沒允許就不要在按右鍵時跳出詢問

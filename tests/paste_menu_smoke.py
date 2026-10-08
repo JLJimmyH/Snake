@@ -76,7 +76,7 @@ with sync_playwright() as pw:
     # 貼上：外框左上角放在按右鍵的地方
     px,py=vp['x']+500,vp['y']+400
     right(page,px,py)
-    assert disabled(page)==['原始格式貼上'],disabled(page)
+    assert disabled(page)==[],disabled(page)  # 複製的物件：原始格式貼上＝照原樣貼
     pick(page,'貼上')
     expect(page.locator('.text-item')).to_have_count(2)
     added=page.locator('.text-item').last.bounding_box()
@@ -90,12 +90,12 @@ with sync_playwright() as pw:
     placed=[(it['x'],it['y']) for it in items(page)]
     assert placed[0]==(120,120) and placed[2]==(120,120) and placed[1]!=(120,120),placed
 
-    # 純文字貼上：複製的物件也只是一段文字
+    # 純文字貼上：複製的物件只取文字框的文字，不是整段 JSON
     right(page,px,py+150)
     pick(page,'純文字貼上')
     expect(page.locator('.text-item')).to_have_count(4)
     saved(page)
-    assert json.loads(items(page)[3]['text'])['items'][0]['text']=='來源'
+    assert items(page)[3]['text']=='來源',items(page)[3]
 
     # 剪下：拿掉選取的物件，剪貼簿裡是它
     page.keyboard.press('Escape')
@@ -119,10 +119,10 @@ with sync_playwright() as pw:
     page.mouse.click(vp['x']+700,vp['y']+120)
     page.keyboard.press('Control+Shift+V')
     expect(page.locator('.text-item')).to_have_count(3)
-    assert '"items"' in texts(page)[-1],texts(page)
+    assert texts(page)[-1]=='來源',texts(page)
     page.keyboard.press('Control+V')  # 一般的 Ctrl+V 還是貼成物件
     expect(page.locator('.text-item')).to_have_count(4)
-    assert texts(page).count('來源')==2,texts(page)
+    assert texts(page).count('來源')==4,texts(page)
 
     # 原始格式貼上：HTML 的標題、粗斜體、清單、連結變成 markdown；「貼上」還是純文字
     write(page,'純文字版本',HTML)
@@ -171,6 +171,27 @@ with sync_playwright() as pw:
     right(page,vp['x']+400,vp['y']+300)
     expect(page.locator('#menu button')).to_have_count(4)
     assert labels(page)==['貼上','純文字貼上','原始格式貼上','原位貼上'],labels(page)
+
+    # 從筆記複製的物件（剪貼簿只有 JSON 純文字）：原始格式貼上照原樣，純文字貼上只有文字
+    write(page,json.dumps({'format':'snake-note-ai','area':{'w':644,'h':458},'origin':{'x':-245.5,'y':1128.8},'items':[
+        {'type':'text','x':24,'y':200,'size':31.1,'color':'#dc2626','text':'第二段'},
+        {'type':'text','x':24,'y':24,'size':31.1,'bold':True,'text':'原始 RAW\nG = 綠'},
+        {'type':'stroke','pts':[[0,0],[50,50]],'color':'#123456','width':3}]},ensure_ascii=False))
+    page.keyboard.press('Escape')
+    right(page,vp['x']+400,vp['y']+300)
+    assert disabled(page)==[],disabled(page)
+    pick(page,'原始格式貼上')
+    expect(page.locator('.text-item')).to_have_count(2)
+    saved(page)
+    got=items(page)
+    assert [(it['type'],it.get('size'),it.get('bold'),it.get('color')) for it in got]==[
+        ('text',31.1,None,'#dc2626'),('text',31.1,True,None),('stroke',None,None,'#123456')],got
+    right(page,vp['x']+100,vp['y']+600)
+    pick(page,'純文字貼上')
+    expect(page.locator('.text-item')).to_have_count(3)
+    saved(page)
+    plain=items(page)[-1]
+    assert plain['text']=='原始 RAW\nG = 綠\n\n第二段' and plain['size']!=31.1 and 'color' not in plain and 'bold' not in plain,plain
 
     assert not errors,errors
     browser.close()
