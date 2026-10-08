@@ -25,6 +25,18 @@ export const FONTS = {
   mono: 'ui-monospace, Consolas, "Courier New", monospace',
 };
 const PAPER = '#ffffff'; // 列印／匯出 PDF 的紙色
+const BORDER = '#1f2937', BORDER_W = 2; // 只選粗細或樣式、還沒有框線時的顏色；沒存粗細時的粗細
+
+// 文字框的框線、底色、字色。框線畫在框外（outline），不影響文字框大小和換行；
+// 有底色時字色對底色挑，沒指定字色就看底色深淺用深字或淺字。canvas＝框線外面的底色
+function textLook(it, canvas) {
+  const under = it.fill ?? canvas;
+  return {
+    color: it.color ? readableInk(it.color, under) : it.fill ? (isDark(it.fill) ? '#f3f4f6' : '#1f2937') : '',
+    backgroundColor: it.fill ?? '',
+    outline: it.border ? `${it.borderW ?? BORDER_W}px ${it.borderStyle ?? 'solid'} ${readableInk(it.border, canvas)}` : '',
+  };
+}
 
 const r1 = n => Math.round(n * 10) / 10;
 const r2 = n => Math.round(n * 100) / 100;
@@ -315,7 +327,7 @@ export class Board {
     this.vp.classList.toggle('dark-canvas', this.darkCanvas);
     for (const it of this.items) {
       if (it.type === 'stroke') this.els.get(it.id)?.setAttribute('stroke', this.inkColor(it));
-      else if (it.type === 'text' && it.color) this._place(it);
+      else if (it.type === 'text' && (it.color || it.border)) this._place(it);
     }
   }
 
@@ -469,19 +481,32 @@ export class Board {
     if (this.readOnly) return null;
     const id = this.textTargets()[0];
     const it = id ? this._item(id) : this.tool === 'text' ? this.style.text : null;
-    return it && { bold: !!it.bold, italic: !!it.italic, color: it.color ?? null, font: it.font ?? null, size: it.size };
+    return it && {
+      bold: !!it.bold, italic: !!it.italic, color: it.color ?? null, font: it.font ?? null, size: it.size,
+      box: !!id, border: it.border ?? null, borderW: it.borderW ?? BORDER_W, borderStyle: it.borderStyle ?? '', fill: it.fill ?? null,
+    };
   }
 
   setTextStyle(key, value) {
     this._styleText(it => { if (value) it[key] = value; else delete it[key]; });
   }
 
-  // 放大／縮小字級，固定寬度的文字框寬度跟著等比例縮放
-  stepTextSize(dir) {
-    const f = dir > 0 ? 1.25 : 0.8;
+  // 框線（border、borderW、borderStyle）和底色（fill）：只改現有的文字框，不記成新文字框的格式
+  setTextBox(key, value) {
+    if (!this.textTargets().length) return;
     this._styleText(it => {
-      it.size = clamp(r2(it.size * f), 1, 2000);
-      if (it.w) it.w = r1(it.w * f);
+      if (value) it[key] = value; else delete it[key];
+      if (key === 'border' && !value) { delete it.borderW; delete it.borderStyle; }
+      if ((key === 'borderW' || key === 'borderStyle') && !it.border) it.border = BORDER;
+    });
+  }
+
+  // 字級加減 1（小數先取整），固定寬度的文字框寬度跟著等比例縮放
+  stepTextSize(dir) {
+    this._styleText(it => {
+      const size = clamp(dir > 0 ? Math.floor(it.size) + 1 : Math.ceil(it.size) - 1, 1, 2000);
+      if (it.w) it.w = r1(it.w * size / it.size);
+      it.size = size;
     });
     this._rememberSize();
   }
@@ -801,15 +826,35 @@ export class Board {
         // 畫顯示出來的文字（沒有 Markdown 符號），超出文字框的部分裁掉，避免疊到下一個框
         const el = this.els.get(it.id), lh = it.size * 1.45;
         if (!el) continue;
+        const body = el.querySelector('.text-body'), w = el.offsetWidth, ht = el.offsetHeight;
+        const pad = getComputedStyle(body), px = parseFloat(pad.paddingLeft), py = parseFloat(pad.paddingTop);
         ctx.save();
+        if (it.fill) {
+          ctx.fillStyle = it.fill;
+          ctx.beginPath();
+          ctx.roundRect(it.x, it.y, w, ht, 4);
+          ctx.fill();
+        }
+        if (it.border) {
+          // 跟 outline 一樣畫在框外
+          const bw = it.borderW ?? BORDER_W;
+          ctx.strokeStyle = readableInk(it.border, this.canvas);
+          ctx.lineWidth = bw;
+          ctx.lineCap = it.borderStyle === 'dotted' ? 'round' : 'butt';
+          ctx.setLineDash(it.borderStyle === 'dashed' ? [bw * 3, bw * 2] : it.borderStyle === 'dotted' ? [0, bw * 2] : []);
+          ctx.beginPath();
+          ctx.roundRect(it.x - bw / 2, it.y - bw / 2, w + bw, ht + bw, 4 + bw / 2);
+          ctx.stroke();
+        }
         ctx.beginPath();
-        ctx.rect(it.x, it.y, el.offsetWidth, el.offsetHeight);
+        ctx.rect(it.x, it.y, w, ht);
         ctx.clip();
         ctx.font = `${it.italic ? 'italic ' : ''}${it.bold ? 'bold ' : ''}${it.size}px ${FONTS[it.font] ?? css.fontFamily}`;
-        ctx.fillStyle = it.color ? readableInk(it.color, this.canvas) : css.color;
+        ctx.fillStyle = textLook(it, this.canvas).color || css.color;
         ctx.textBaseline = 'middle';
-        let y = it.y + 2 + lh / 2;
-        for (const line of wrapText(ctx, el.querySelector('.text-body').innerText, el.offsetWidth - 8)) { ctx.fillText(line, it.x + 4, y); y += lh; }
+        let y = it.y + py + lh / 2;
+        // offsetWidth 是取整過的，padding 用 em 時會比實際窄一點點，多給 1px 才不會提早換行
+        for (const line of wrapText(ctx, body.innerText, w - px * 2 + 1)) { ctx.fillText(line, it.x + px, y); y += lh; }
         ctx.restore();
       }
     }
@@ -837,7 +882,7 @@ export class Board {
       if (it.type === 'stroke') copy.setAttribute('stroke', it.tool === 'hl' ? it.color : readableInk(it.color, PAPER));
       if (it.type === 'text') {
         copy.querySelector('.text-body').removeAttribute('contenteditable');
-        if (it.color) copy.style.color = readableInk(it.color, PAPER);
+        Object.assign(copy.style, textLook(it, PAPER));
       }
       to.append(copy);
     }
@@ -1836,13 +1881,15 @@ export class Board {
       });
     } else {
       el.classList.toggle('fixed-w', !!item.w);
+      el.classList.toggle('boxed', !!(item.border || item.fill));
+      el.style.setProperty('--bw', item.border ? (item.borderW ?? BORDER_W) + 'px' : '');
       Object.assign(el.style, {
         width: item.w ? item.w + 'px' : '',
         fontSize: item.size + 'px',
         fontWeight: item.bold ? '700' : '',
         fontStyle: item.italic ? 'italic' : '',
         fontFamily: FONTS[item.font] ?? '',
-        color: item.color ? readableInk(item.color, this.canvas) : '',
+        ...textLook(item, this.canvas),
       });
     }
   }

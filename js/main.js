@@ -569,6 +569,7 @@ $('#file').addEventListener('change', async e => {
 // ---------- 文字格式、圖片：跟著選取的物件出現 ----------
 const textGroup = $('.ctx[data-ctx=text]');
 const imageGroup = $('.ctx[data-ctx=image]');
+const sizeInput = textGroup.querySelector('.size-input');
 for (const b of $$('.font-opt')) b.style.fontFamily = FONTS[b.dataset.font] ?? '';
 contextReady = true;
 refreshContext();
@@ -585,11 +586,24 @@ function refreshContext() {
     press(textGroup.querySelector('[data-fmt=italic]'), format.italic);
     textGroup.querySelector('[aria-controls=text-palette]').style.setProperty('--brush-color', format.color ?? 'var(--text)');
     const size = Math.round(format.size * 10) / 10;
-    textGroup.querySelector('.size-name').textContent = size;
     for (const b of $$('.size-opt')) press(b, +b.dataset.size === size);
-    textGroup.querySelector('.size-input').value = size;
-    for (const sw of textGroup.querySelectorAll('.swatch')) press(sw, sw.dataset.color === (format.color ?? ''));
-    if (format.color) textGroup.querySelector('input[type=color]').value = format.color;
+    sizeInput.value = size;
+    for (const sw of $$('#text-palette .swatch')) press(sw, sw.dataset.color === (format.color ?? ''));
+    if (format.color) $('#text-palette input[type=color]').value = format.color;
+    // 框線與底色只給已經有的文字框（不記成新文字框的格式）
+    const boxToggle = textGroup.querySelector('.box-toggle');
+    boxToggle.hidden = !format.box;
+    if (!format.box && !$('#box-menu').hidden) closeBrushPalettes();
+    Object.assign(boxToggle.querySelector('.box-preview').style, {
+      background: format.fill ?? 'transparent',
+      border: format.border ? `2px ${format.borderStyle || 'solid'} ${format.border}` : '1.5px solid var(--muted)',
+    });
+    for (const key of ['border', 'fill']) {
+      for (const sw of $$(`#box-menu [data-box=${key}] .swatch`)) press(sw, sw.dataset.color === (format[key] ?? ''));
+      if (format[key]) $(`#box-menu input[data-box=${key}]`).value = format[key];
+    }
+    for (const b of $$('#box-menu [data-bw]')) press(b, !!format.border && +b.dataset.bw === format.borderW);
+    for (const b of $$('#box-menu [data-bs]')) press(b, !!format.border && b.dataset.bs === format.borderStyle);
     for (const b of $$('.font-opt')) press(b, b.dataset.font === (format.font ?? ''));
     const font = $(`.font-opt[data-font="${format.font ?? ''}"]`) ?? $('.font-opt[data-font=""]');
     textGroup.querySelector('.font-name').textContent = font.textContent.split(' ')[0];
@@ -608,18 +622,32 @@ textGroup.addEventListener('click', e => {
   const sw = e.target.closest('.swatch');
   const font = e.target.closest('.font-opt');
   const size = e.target.closest('.size-opt');
+  const line = e.target.closest('.line-opt');
+  const box = sw?.closest('[data-box]')?.dataset.box;
   if (toggle) togglePalette(toggle);
   else if (size) { board.setTextSize(+size.dataset.size); closeBrushPalettes(); }
   else if (fmt?.dataset.fmt === 'bigger' || fmt?.dataset.fmt === 'smaller') board.stepTextSize(fmt.dataset.fmt === 'bigger' ? 1 : -1);
   else if (fmt) board.toggleMark(fmt.dataset.fmt);
+  else if (box) board.setTextBox(box, sw.dataset.color); // 框線、底色常常一起改，色盤不關
   else if (sw) { board.setTextStyle('color', sw.dataset.color); closeBrushPalettes(); }
+  else if (line) line.dataset.bw ? board.setTextBox('borderW', +line.dataset.bw) : board.setTextBox('borderStyle', line.dataset.bs);
   else if (font) { board.setTextStyle('font', font.dataset.font); closeBrushPalettes(); }
 });
 // 拖色盤時 input 會一直觸發，選定（change）才存，復原才不會一格一格
-textGroup.querySelector('input[type=color]').addEventListener('change', e => board.setTextStyle('color', e.target.value));
-textGroup.querySelector('.size-input').addEventListener('change', e => {
-  const size = Number(e.target.value);
+$('#text-palette input[type=color]').addEventListener('change', e => board.setTextStyle('color', e.target.value));
+for (const input of $$('#box-menu input[type=color]')) input.addEventListener('change', () => board.setTextBox(input.dataset.box, input.value));
+// 字級框：點了打開預設字級清單，也可以直接輸入數字按 Enter
+sizeInput.addEventListener('focus', () => sizeInput.select());
+sizeInput.addEventListener('click', () => {
+  if (!$('#size-menu').hidden) return;
+  togglePalette(sizeInput);
+  sizeInput.select();
+});
+sizeInput.addEventListener('change', () => {
+  const size = Number(sizeInput.value);
   if (size > 0) board.setTextSize(size);
+  else refreshContext();
+  closeBrushPalettes();
 });
 
 imageGroup.addEventListener('click', e => {

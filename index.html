@@ -7,14 +7,14 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Snake Note</title>
 <!-- 版本：scripts/stamp.mjs 產生，不要手改 -->
-<meta name="build" content="a7cabd463f">
+<meta name="build" content="c8506de8cb">
 <script type="importmap">
 {
   "imports": {
-    "./js/ai-core.js": "./js/ai-core.js?v=4cd36dedf8",
+    "./js/ai-core.js": "./js/ai-core.js?v=d64fc3b79d",
     "./js/ai-ui.js": "./js/ai-ui.js?v=78b4075923",
     "./js/appearance.js": "./js/appearance.js?v=6970172940",
-    "./js/board.js": "./js/board.js?v=5a238672a4",
+    "./js/board.js": "./js/board.js?v=e4615dfbfc",
     "./js/collaboration.js": "./js/collaboration.js?v=e39182534f",
     "./js/color.js": "./js/color.js?v=9ed004b7a7",
     "./js/db.js": "./js/db.js?v=678d8bb427",
@@ -23,19 +23,19 @@
     "./js/export.js": "./js/export.js?v=5c580fdb47",
     "./js/input-mode.js": "./js/input-mode.js?v=35acee13a1",
     "./js/local-file.js": "./js/local-file.js?v=827a68b121",
-    "./js/main.js": "./js/main.js?v=124a345f42",
+    "./js/main.js": "./js/main.js?v=9bd4c1451a",
     "./js/markdown.js": "./js/markdown.js?v=06db38e2ae",
     "./js/minimap.js": "./js/minimap.js?v=1a13398d7d",
     "./js/notebook-core.js": "./js/notebook-core.js?v=8356661d5a",
     "./js/notebook-ui.js": "./js/notebook-ui.js?v=77b5746f30",
     "./js/shortcuts.js": "./js/shortcuts.js?v=8f44b92950",
     "./js/vendor/fflate.js": "./js/vendor/fflate.js?v=89c01a7364",
-    "./js/build.js": "./js/build.js?v=6cf51c8fa5"
+    "./js/build.js": "./js/build.js?v=467aaf698b"
   }
 }
 </script>
 <!-- /版本 -->
-<link rel="stylesheet" href="css/style.css?v=49c8ffd2ee">
+<link rel="stylesheet" href="css/style.css?v=f694dcf73d">
 <script>
   // 在畫面出來前套用主題，避免先閃一下別的顏色；之後由 js/appearance.js 接手
   // theme 存 'system' 或主題名稱；舊版存 light／dark，主題另外存在 lightPalette／darkPalette
@@ -164,27 +164,23 @@
       <!-- 選取或編輯文字框時：格式；文字工具下沒在編輯時是新文字框的格式 -->
       <div class="tb-group ctx" data-ctx="text" data-keep-text>
         <span class="tb-sep"></span>
-        <button class="tbtn fmt-btn" data-fmt="smaller" title="縮小文字" aria-label="縮小文字"><span class="fmt-a">A<small>−</small></span></button>
-        <button class="palette-toggle size-toggle" aria-label="字級" aria-expanded="false" aria-controls="size-menu" title="字級"><span class="size-name">18</span><span class="palette-arrow">▾</span></button>
+        <button class="tbtn fmt-btn size-step" data-fmt="smaller" title="字級減 1" aria-label="縮小文字">−</button>
+        <input class="size-input" type="text" inputmode="decimal" value="18" role="combobox" aria-label="字級" aria-expanded="false" aria-controls="size-menu" title="字級" autocomplete="off">
         <div class="brush-palette size-menu" id="size-menu" hidden role="group" aria-label="字級">
-          <span class="palette-heading">字級</span>
-          <div class="size-opts">
-            <button class="size-opt" data-size="12" aria-pressed="false">12</button>
-            <button class="size-opt" data-size="14" aria-pressed="false">14</button>
-            <button class="size-opt" data-size="16" aria-pressed="false">16</button>
-            <button class="size-opt" data-size="18" aria-pressed="false">18</button>
-            <button class="size-opt" data-size="20" aria-pressed="false">20</button>
-            <button class="size-opt" data-size="24" aria-pressed="false">24</button>
-            <button class="size-opt" data-size="28" aria-pressed="false">28</button>
-            <button class="size-opt" data-size="32" aria-pressed="false">32</button>
-            <button class="size-opt" data-size="40" aria-pressed="false">40</button>
-            <button class="size-opt" data-size="48" aria-pressed="false">48</button>
-            <button class="size-opt" data-size="64" aria-pressed="false">64</button>
-            <button class="size-opt" data-size="96" aria-pressed="false">96</button>
-          </div>
-          <label class="brush-color">自訂<input type="number" class="size-input" min="1" max="2000" step="1" inputmode="numeric" aria-label="自訂字級"></label>
+          <button class="size-opt" data-size="12" aria-pressed="false">12</button>
+          <button class="size-opt" data-size="14" aria-pressed="false">14</button>
+          <button class="size-opt" data-size="16" aria-pressed="false">16</button>
+          <button class="size-opt" data-size="18" aria-pressed="false">18</button>
+          <button class="size-opt" data-size="20" aria-pressed="false">20</button>
+          <button class="size-opt" data-size="24" aria-pressed="false">24</button>
+          <button class="size-opt" data-size="28" aria-pressed="false">28</button>
+          <button class="size-opt" data-size="32" aria-pressed="false">32</button>
+          <button class="size-opt" data-size="40" aria-pressed="false">40</button>
+          <button class="size-opt" data-size="48" aria-pressed="false">48</button>
+          <button class="size-opt" data-size="64" aria-pressed="false">64</button>
+          <button class="size-opt" data-size="96" aria-pressed="false">96</button>
         </div>
-        <button class="tbtn fmt-btn" data-fmt="bigger" title="放大文字" aria-label="放大文字"><span class="fmt-a big">A<small>+</small></span></button>
+        <button class="tbtn fmt-btn size-step" data-fmt="bigger" title="字級加 1" aria-label="放大文字">+</button>
         <button class="tbtn fmt-btn" data-fmt="bold" title="粗體 (Ctrl+B)" aria-label="粗體" aria-pressed="false"><b class="fmt-b">B</b></button>
         <button class="tbtn fmt-btn" data-fmt="italic" title="斜體 (Ctrl+I)" aria-label="斜體" aria-pressed="false"><i class="fmt-i">I</i></button>
         <button class="palette-toggle" style="--brush-color:var(--text)" aria-label="文字顏色" aria-expanded="false" aria-controls="text-palette" title="文字顏色"><span class="current-color"></span><span class="palette-arrow">▾</span></button>
@@ -199,6 +195,38 @@
             <button class="swatch" data-color="#ea580c" style="--c:#ea580c" aria-label="橘色" aria-pressed="false"></button>
           </div>
           <label class="brush-color">自訂顏色<input type="color" value="#1f2937" aria-label="文字自訂顏色"></label>
+        </div>
+        <button class="palette-toggle box-toggle" aria-label="框線與底色" aria-expanded="false" aria-controls="box-menu" title="框線與底色"><span class="box-preview"></span><span class="palette-arrow">▾</span></button>
+        <div class="brush-palette box-menu" id="box-menu" hidden role="group" aria-label="框線與底色">
+          <span class="palette-heading">框線</span>
+          <div class="palette-swatches" data-box="border">
+            <button class="swatch none" data-color="" aria-label="無框線" title="無框線" aria-pressed="false"></button>
+            <button class="swatch" data-color="#1f2937" style="--c:#1f2937" aria-label="黑色" title="黑色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#2563eb" style="--c:#2563eb" aria-label="藍色" title="藍色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#dc2626" style="--c:#dc2626" aria-label="紅色" title="紅色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#16a34a" style="--c:#16a34a" aria-label="綠色" title="綠色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#ea580c" style="--c:#ea580c" aria-label="橘色" title="橘色" aria-pressed="false"></button>
+          </div>
+          <div class="line-opts">
+            <button class="line-opt" data-bw="1" aria-label="細框線" title="細" aria-pressed="false"><i style="--h:1px"></i></button>
+            <button class="line-opt" data-bw="2" aria-label="中框線" title="中" aria-pressed="false"><i style="--h:2px"></i></button>
+            <button class="line-opt" data-bw="4" aria-label="粗框線" title="粗" aria-pressed="false"><i style="--h:4px"></i></button>
+            <span class="line-sep"></span>
+            <button class="line-opt" data-bs="" aria-label="實線" title="實線" aria-pressed="false"><i></i></button>
+            <button class="line-opt" data-bs="dashed" aria-label="虛線" title="虛線" aria-pressed="false"><i style="--s:dashed"></i></button>
+            <button class="line-opt" data-bs="dotted" aria-label="點線" title="點線" aria-pressed="false"><i style="--s:dotted;--h:3px"></i></button>
+          </div>
+          <label class="brush-color">自訂框線顏色<input type="color" data-box="border" value="#1f2937" aria-label="框線自訂顏色"></label>
+          <span class="palette-heading box-fill-heading">底色</span>
+          <div class="palette-swatches" data-box="fill">
+            <button class="swatch none" data-color="" aria-label="無底色" title="無底色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#fef08a" style="--c:#fef08a" aria-label="黃色" title="黃色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#bbf7d0" style="--c:#bbf7d0" aria-label="綠色" title="綠色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#fbcfe8" style="--c:#fbcfe8" aria-label="粉紅色" title="粉紅色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#bfdbfe" style="--c:#bfdbfe" aria-label="藍色" title="藍色" aria-pressed="false"></button>
+            <button class="swatch" data-color="#e5e7eb" style="--c:#e5e7eb" aria-label="灰色" title="灰色" aria-pressed="false"></button>
+          </div>
+          <label class="brush-color">自訂底色<input type="color" data-box="fill" value="#fef08a" aria-label="底色自訂顏色"></label>
         </div>
         <button class="palette-toggle font-toggle" aria-label="字體" aria-expanded="false" aria-controls="font-menu" title="字體"><span class="font-name">預設</span><span class="palette-arrow">▾</span></button>
         <div class="brush-palette font-menu" id="font-menu" hidden role="group" aria-label="字體">
@@ -372,6 +400,6 @@
   <textarea id="ai-request" rows="2" aria-label="想要 AI 做什麼" placeholder="想要 AI 做什麼（可以不填）"></textarea>
   <p class="ai-actions"><button id="ai-copy" class="collab-primary">複製給 AI</button><button id="ai-shot" class="chip">複製截圖</button></p>
 </dialog>
-<script type="module" src="js/main.js?v=124a345f42"></script>
+<script type="module" src="js/main.js?v=9bd4c1451a"></script>
 </body>
 </html>

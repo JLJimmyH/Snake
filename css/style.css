@@ -312,9 +312,6 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
 /* 文字格式按鈕 */
 .fmt-btn { font-size: 17px; color: var(--icon); }
 .fmt-btn[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
-.fmt-a { font-weight: 600; font-size: 14px; }
-.fmt-a.big { font-size: 19px; }
-.fmt-a small { font-size: 11px; }
 .fmt-b { font-weight: 800; }
 .fmt-i { font-style: italic; font-family: Georgia, serif; }
 .font-toggle .font-name { font-size: 13px; }
@@ -322,13 +319,26 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
 .font-opt { display: block; width: 100%; padding: 7px 8px; border-radius: 6px; font-size: 15px; text-align: left; }
 .font-opt:hover { background: var(--hover); }
 .font-opt[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
-.size-toggle .size-name { min-width: 2ch; font-size: 13px; font-variant-numeric: tabular-nums; }
-.size-menu { width: 208px; }
-.size-opts { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 12px; }
-.size-opt { height: 34px; border-radius: 6px; font-size: 14px; font-variant-numeric: tabular-nums; }
+/* 字級：− [18] +，點數字框往下開預設字級清單（像 Google 試算表） */
+.size-step { width: 30px; font-size: 22px; font-weight: 300; }
+.size-input { flex: none; width: 46px; height: 30px; padding: 0 2px; border: 1.5px solid var(--border); border-radius: 6px; font: inherit; font-size: 14px; font-variant-numeric: tabular-nums; text-align: center; color: var(--text); background: var(--surface); }
+.size-input:focus, .size-input[aria-expanded=true] { border-color: var(--accent); outline: none; }
+.brush-palette.size-menu { width: 64px; max-height: min(440px, 60vh); overflow-y: auto; padding: 4px; }
+.size-opt { display: block; width: 100%; height: 34px; border-radius: 6px; font-size: 14px; font-variant-numeric: tabular-nums; }
 .size-opt:hover { background: var(--hover); }
 .size-opt[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); }
-.size-menu .brush-color input { width: 72px; padding: 2px 6px; font: inherit; color: var(--text); cursor: text; }
+/* 框線與底色 */
+.box-preview { width: 20px; height: 20px; border-radius: 4px; }
+.box-menu { max-height: 70vh; overflow-y: auto; }
+.box-fill-heading { margin-top: 12px; }
+.swatch.none::after { background: linear-gradient(135deg, transparent calc(50% - 1px), #dc2626 calc(50% - 1px) calc(50% + 1px), transparent calc(50% + 1px)), var(--surface); }
+.line-opts { display: flex; align-items: center; gap: 2px; margin-bottom: 12px; }
+.line-opt { flex: 1; height: 32px; display: grid; place-items: center; border-radius: 6px; }
+.line-opt:hover { background: var(--hover); }
+.line-opt[aria-pressed=true] { background: var(--accent-soft); }
+.line-opt i { width: 22px; border-top: var(--h, 2px) var(--s, solid) var(--icon); }
+.line-opt[aria-pressed=true] i { border-top-color: var(--accent); }
+.line-sep { flex: none; width: 1px; height: 20px; margin: 0 4px; background: var(--border); }
 
 .tbtn {
   flex: none;
@@ -457,7 +467,9 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
   -webkit-user-select: text;
   user-select: text;
 }
-.text-item:focus-within { box-shadow: 0 0 0 calc(1.5px * var(--inv, 1)) var(--accent); }
+/* 有框線或底色時留多一點邊；框線是 outline，編輯框畫在它外面 */
+.text-item.boxed .text-body { padding: .2em .45em; }
+.text-item:focus-within { box-shadow: 0 0 0 calc(var(--bw, 0px) + 1.5px * var(--inv, 1)) var(--accent); }
 .text-body:empty::before { content: "輸入文字…"; color: var(--muted); }
 /* 文字框的 markdown 顯示（編輯時改回原始文字） */
 .md-h1, .md-h2, .md-h3 { font-weight: 700; }

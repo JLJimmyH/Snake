@@ -1,4 +1,4 @@
-"""Text size menu (presets and custom), A−/A+, and new text boxes using the last size the user picked, remembered across reloads."""
+"""Text size box (− [n] + with a preset list, typing a size), and new text boxes using the last size the user picked, remembered across reloads."""
 import os
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8031')
@@ -49,15 +49,15 @@ with sync_playwright() as pw:
     # 選取文字框：字級按鈕顯示目前大小，選單選 32，固定寬度等比例縮放
     page.locator('.tool[data-tool=select]').click()
     page.mouse.click(*center(page.locator('[data-id=t]')))
-    expect(bar.locator('.size-name')).to_have_text('22.5')
-    bar.locator('.size-toggle').click()
+    expect(bar.locator('.size-input')).to_have_value('22.5')
+    bar.locator('.size-input').click()
     expect(page.locator('#size-menu')).to_be_visible()
     expect(page.locator('.size-opt[aria-pressed=true]')).to_have_count(0)
     page.locator('.size-opt[data-size="32"]').click();saved(page)
     expect(page.locator('#size-menu')).to_be_hidden()
     t=item(page,'t');assert t['size']==32 and abs(t['w']-200*32/22.5)<0.2,t
-    expect(bar.locator('.size-name')).to_have_text('32')
-    bar.locator('.size-toggle').click()
+    expect(bar.locator('.size-input')).to_have_value('32')
+    bar.locator('.size-input').click()
     expect(page.locator('.size-opt[data-size="32"]')).to_have_attribute('aria-pressed','true')
     page.keyboard.press('Escape')
     page.locator('#btn-undo').click();saved(page);assert item(page,'t')['size']==22.5
@@ -67,22 +67,26 @@ with sync_playwright() as pw:
     # 新文字框用最後一次調整的字級
     assert new_text(page,vp['x']+600,vp['y']+500,'second')['size']==32
 
-    # A+ 之後新文字框跟著變
+    # + 加 1、− 減 1（小數先取整），之後新文字框跟著變
     page.locator('.tool[data-tool=select]').click()
     page.mouse.click(*center(page.locator('[data-id=t]')))
     bar.locator('[data-fmt=bigger]').click();saved(page)
-    assert item(page,'t')['size']==40
-    expect(bar.locator('.size-name')).to_have_text('40')
-    assert new_text(page,vp['x']+600,vp['y']+600,'third')['size']==40
+    assert item(page,'t')['size']==33
+    expect(bar.locator('.size-input')).to_have_value('33')
+    bar.locator('[data-fmt=smaller]').click();bar.locator('[data-fmt=smaller]').click();saved(page)
+    assert item(page,'t')['size']==31
+    assert new_text(page,vp['x']+600,vp['y']+600,'third')['size']==31
 
     # 自訂字級：輸入數字按 Enter
     page.locator('.tool[data-tool=select]').click()
     page.mouse.click(*center(page.locator('[data-id=t]')))
-    bar.locator('.size-toggle').click()
+    bar.locator('.size-input').click()
+    expect(page.locator('#size-menu')).to_be_visible()
     page.locator('.size-input').fill('21')
     page.locator('.size-input').press('Enter');saved(page)
     assert item(page,'t')['size']==21
-    print('PASS: A+ and custom size become the default for new text boxes')
+    expect(page.locator('#size-menu')).to_be_hidden()
+    print('PASS: +/− and typed size become the default for new text boxes')
 
     # 重新整理後還記得
     page.reload();expect(page.locator('.text-item')).to_have_count(4)
@@ -91,9 +95,9 @@ with sync_playwright() as pw:
     # 文字工具、沒有選文字框時：選字級只改新文字框的預設
     page.locator('.tool[data-tool=text]').click()
     expect(bar).to_be_visible()
-    bar.locator('.size-toggle').click()
+    bar.locator('.size-input').click()
     page.locator('.size-opt[data-size="14"]').click()
-    expect(bar.locator('.size-name')).to_have_text('14')
+    expect(bar.locator('.size-input')).to_have_value('14')
     assert item(page,'t')['size']==21
     assert new_text(page,vp['x']+900,vp['y']+400,'fifth')['size']==14
     print('PASS: remembered after reload; text tool sets the default without a target')

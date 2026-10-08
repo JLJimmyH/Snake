@@ -108,7 +108,7 @@ export function buildPrompt(exported, request = '') {
 
 ## 筆記格式
 - 座標：以這塊區域的左上角為 (0,0)，x 往右、y 往下，單位是畫布像素。area 是區域大小。
-- text：文字框，x、y 是左上角。text 是 Markdown（# 標題、**粗體**、*斜體*、- 清單、- [ ] 待辦、- [x] 已完成、[文字](網址)、\`程式碼\`）。size 是字級，w 是固定寬度（沒有 w 就自動寬度，最寬約 32 個字）。color（#rrggbb）、bold、italic 是整個文字框的顏色、粗體、斜體。
+- text：文字框，x、y 是左上角。text 是 Markdown（# 標題、**粗體**、*斜體*、- 清單、- [ ] 待辦、- [x] 已完成、[文字](網址)、\`程式碼\`）。size 是字級，w 是固定寬度（沒有 w 就自動寬度，最寬約 32 個字）。color（#rrggbb）、bold、italic 是整個文字框的顏色、粗體、斜體。border（#rrggbb）是框線顏色，borderW 是框線粗細（預設 2），borderStyle 是 dashed（虛線）或 dotted（點線），沒有就是實線；fill（#rrggbb）是底色。
 - stroke：手寫筆跡。${strokesHavePts ? 'pts 是筆畫經過的點（已簡化）。' : '只提供外框 x/y/w/h，看不到寫了什麼。'}width 是筆寬，highlighter 表示螢光筆。
 - image：圖片，只提供外框。
 - 如果我附上截圖，截圖範圍就是這塊區域，可以依比例對照座標。
@@ -118,7 +118,7 @@ export function buildPrompt(exported, request = '') {
   {"type":"text","x":0,"y":0,"text":"# 標題\\n- 重點","size":18},
   {"type":"stroke","pts":[[0,0],[40,0],[40,30]],"color":"#1f2937","width":3}
 ]}
-- text 必填 x、y、text；size、w、color、bold、italic 可省略。
+- text 必填 x、y、text；size、w、color、bold、italic、border、borderW、borderStyle、fill 可省略。
 - stroke 必填 pts（至少 2 個點）；color（#rrggbb）、width、highlighter 可省略。可以用來畫底線、框線、箭頭、圖表。
 - 不能新增圖片。
 - 新內容之間不要互相重疊；整體位置不重要，使用者會自己選地方放。
@@ -195,13 +195,20 @@ function checkText(it) {
   return null;
 }
 
-// 文字框的格式：粗體、斜體、顏色、字體（不合法的字體名稱畫面上會用預設字體）
+// 文字框的格式：粗體、斜體、顏色、字體（不合法的字體名稱畫面上會用預設字體）、框線、底色。
+// 框線和底色不合法就直接不要，不擋整批
+const HEX6 = /^#[0-9a-f]{6}$/i;
 function textLook(it) {
+  const border = HEX6.test(it.border);
   return {
     ...(it.bold === true && { bold: true }),
     ...(it.italic === true && { italic: true }),
     ...(typeof it.color === 'string' && { color: it.color.toLowerCase() }),
     ...(typeof it.font === 'string' && /^[a-z]{1,20}$/.test(it.font) && { font: it.font }),
+    ...(border && { border: it.border.toLowerCase() }),
+    ...(border && num(it.borderW) && it.borderW > 0 && it.borderW <= 50 && { borderW: it.borderW }),
+    ...(border && (it.borderStyle === 'dashed' || it.borderStyle === 'dotted') && { borderStyle: it.borderStyle }),
+    ...(HEX6.test(it.fill) && { fill: it.fill.toLowerCase() }),
   };
 }
 

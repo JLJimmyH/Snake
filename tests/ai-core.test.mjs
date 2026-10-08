@@ -148,3 +148,13 @@ test('copied items keep full detail and paste back as new items', () => {
   assert.throws(() => toItems([{ type: 'image', x: 0, y: 0, w: 0, h: 1, blob: 'b' }]), /圖片位置/);
   assert.throws(() => toItems([{ type: 'image', x: 0, y: 0, w: 1, h: 1, blob: '../x' }]), /不能新增圖片/);
 });
+
+test('text border and fill survive copy/paste; invalid values are dropped', () => {
+  const boxed = { id: 'bx', type: 'text', x: 100, y: 100, size: 18, border: '#dc2626', borderW: 4, borderStyle: 'dashed', fill: '#fef08a', text: '框' };
+  const [pasted] = replyItems(copyText([boxed], { x: 100, y: 100, w: 50, h: 30 }), { newId });
+  assert.deepEqual(pasted, { ...boxed, id: pasted.id, x: 0, y: 0 });
+  const [bad] = toItems([{ type: 'text', x: 0, y: 0, text: 'x', border: 'red', borderW: 4, borderStyle: 'wavy', fill: '#FFF' }], { newId });
+  assert.equal(['border', 'borderW', 'borderStyle', 'fill'].some(k => k in bad), false);
+  const [solid] = toItems([{ type: 'text', x: 0, y: 0, text: 'x', border: '#00FF00', borderW: 999, borderStyle: 'solid' }], { newId });
+  assert.deepEqual([solid.border, solid.borderW, solid.borderStyle], ['#00ff00', undefined, undefined]);
+});

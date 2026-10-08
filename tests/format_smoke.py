@@ -1,4 +1,4 @@
-"""Text formatting and scaling, image rotation and crop, zoom-independent sizes."""
+"""Text formatting, border and fill, scaling, image rotation and crop, zoom-independent sizes."""
 import os
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8031')
@@ -54,7 +54,7 @@ with sync_playwright() as pw:
     text_bar.locator('.font-toggle').click();page.locator('.font-opt[data-font=serif]').click();saved(page)
     text_bar.locator('[data-fmt=bigger]').click();saved(page)
     t=item(page,'t')
-    assert t['bold'] and t['italic'] and t['color']=='#dc2626' and t['font']=='serif' and t['size']==25,t
+    assert t['bold'] and t['italic'] and t['color']=='#dc2626' and t['font']=='serif' and t['size']==21,t
     expect(page.locator('.text-item')).to_have_css('font-weight','700')
     expect(page.locator('.text-item')).to_have_css('font-style','italic')
     expect(page.locator('.text-item')).to_have_css('color','rgb(220, 38, 38)')
@@ -64,12 +64,42 @@ with sync_playwright() as pw:
     page.locator('#btn-undo').click();saved(page);assert item(page,'t')['bold']
     print('PASS: bold, italic, color, font and size buttons with undo')
 
+    # Border colour, width and style, and fill, on an existing text box.
+    box_menu=page.locator('#box-menu')
+    text_bar.locator('.box-toggle').click()
+    box_menu.locator('[data-box=border] [data-color="#2563eb"]').click();saved(page)
+    box_menu.locator('[data-bw="4"]').click();saved(page)
+    box_menu.locator('[data-bs=dashed]').click();saved(page)
+    box_menu.locator('[data-box=fill] [data-color="#fef08a"]').click();saved(page)
+    expect(box_menu).to_be_visible()  # stays open so border and fill can be set together
+    t=item(page,'t')
+    assert t['border']=='#2563eb' and t['borderW']==4 and t['borderStyle']=='dashed' and t['fill']=='#fef08a',t
+    el=page.locator('.text-item')
+    expect(el).to_have_css('outline-style','dashed')
+    expect(el).to_have_css('outline-width','4px')
+    expect(el).to_have_css('outline-color','rgb(37, 99, 235)')
+    expect(el).to_have_css('background-color','rgb(254, 240, 138)')
+    expect(box_menu.locator('[data-bs=dashed]')).to_have_attribute('aria-pressed','true')
+    expect(box_menu.locator('[data-bw="4"]')).to_have_attribute('aria-pressed','true')
+    page.keyboard.press('Escape');expect(box_menu).to_be_hidden()
+    page.locator('#btn-undo').click();saved(page);assert 'fill' not in item(page,'t')
+    page.locator('#btn-redo').click();saved(page);assert item(page,'t')['fill']=='#fef08a'
+    # No border clears width and style too; picking a style without a border adds the default colour.
+    text_bar.locator('.box-toggle').click()
+    box_menu.locator('[data-box=border] .swatch.none').click();saved(page)
+    t=item(page,'t');assert not {'border','borderW','borderStyle'}&set(t) and t['fill']=='#fef08a',t
+    expect(el).to_have_css('outline-style','none')
+    box_menu.locator('[data-bs=dotted]').click();saved(page)
+    t=item(page,'t');assert t['border']=='#1f2937' and t['borderStyle']=='dotted',t
+    page.keyboard.press('Escape')
+    print('PASS: border colour, width, style and fill with undo')
+
     # Corner handle scales the text itself; side handle only changes wrapping width.
     drag(page,page.locator('[data-transform=se]'),60,30);saved(page)
-    scaled=item(page,'t');assert scaled['size']>30,scaled
-    page.locator('#btn-undo').click();saved(page);assert item(page,'t')['size']==25
+    scaled=item(page,'t');assert scaled['size']>25,scaled
+    page.locator('#btn-undo').click();saved(page);assert item(page,'t')['size']==21
     drag(page,page.locator('[data-transform=e]'),80,0);saved(page)
-    widened=item(page,'t');assert widened['size']==25 and widened['w']>0,widened
+    widened=item(page,'t');assert widened['size']==21 and widened['w']>0,widened
     expect(page.locator('[data-transform=rotate]')).to_be_hidden()
     print('PASS: text scales with the selection handles')
 
@@ -86,11 +116,13 @@ with sync_playwright() as pw:
     assert state(page)['view']['s']==1.5
     page.locator('.tool[data-tool=text]').click()
     expect(text_bar).to_be_visible()  # format for the next new text box
+    expect(text_bar.locator('.box-toggle')).to_be_hidden()  # border and fill are not remembered for new boxes
     vp=page.locator('#viewport').bounding_box()
     page.mouse.click(vp['x']+300,vp['y']+600);page.keyboard.type('zoomed')
     page.locator('#page-title').click();saved(page)
     new_text=next(it for it in state(page)['items'] if it.get('text')=='zoomed')
-    assert new_text['size']==25,new_text  # 最後一次調整的字級（上面拉側邊把手時是 25），不乘縮放
+    assert new_text['size']==21,new_text  # 最後一次調整的字級（上面拉側邊把手時是 21），不乘縮放
+    assert not {'border','borderW','borderStyle','fill'}&set(new_text),new_text
     page.locator('.tool[data-tool=pen]').click()
     page.mouse.move(vp['x']+300,vp['y']+700);page.mouse.down();page.mouse.move(vp['x']+400,vp['y']+720,steps=5);page.mouse.up();saved(page)
     stroke=next(it for it in state(page)['items'] if it['type']=='stroke')
