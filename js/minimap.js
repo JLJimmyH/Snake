@@ -100,16 +100,35 @@ export class Minimap {
         ctx.fillRect(it.x, it.y, it.w, it.h);
       }
     } else if (it.type === 'text') {
-      // 文字縮到地圖上讀不出來，畫成一行一條灰線
       const el = this.board.els.get(it.id);
-      const lh = it.size * 1.45, tw = el?.offsetWidth ?? 0;
-      const rows = Math.max(1, Math.round((el?.offsetHeight ?? lh) / lh));
       ctx.globalAlpha = 1;
-      ctx.fillStyle = '#a9adb4';
-      for (let i = 0; i < rows; i++) {
-        const last = rows > 1 && i === rows - 1;
-        ctx.fillRect(it.x, it.y + i * lh + lh * .25, last ? tw * .6 : tw, Math.max(lh * .5, 1 / k));
+      if (!el?.classList.contains('has-block')) return this._lines(it.x, it.y, el?.offsetWidth ?? 0, el?.offsetHeight, it.size, k);
+      // 有程式碼區塊、流程圖：每一段分開畫。流程圖畫原本的圖，程式碼畫成一塊底色＋灰線，其他文字照樣是灰線。
+      // offsetLeft／offsetTop 是相對文字框（不受畫面縮放影響）
+      for (const part of el.querySelector('.text-body').children) {
+        const x = it.x + part.offsetLeft, y = it.y + part.offsetTop, w = part.offsetWidth, h = part.offsetHeight;
+        const img = part.querySelector('img.md-diagram');
+        if (img?.complete && img.naturalWidth) {
+          ctx.drawImage(img, x + img.offsetLeft, y + img.offsetTop, img.offsetWidth, img.offsetHeight);
+        } else if (part.classList.contains('md-pre')) {
+          ctx.fillStyle = this.board.darkCanvas ? '#3a404c' : '#e5e7eb';
+          ctx.fillRect(x, y, w, h);
+          this._lines(x + 8, y + 6, w * .6, h - 12, it.size * .85, k);
+        } else {
+          this._lines(x, y, w, h, it.size, k);
+        }
       }
+    }
+  }
+
+  // 文字縮到地圖上讀不出來，畫成一行一條灰線
+  _lines(x, y, w, h, size, k) {
+    const ctx = this.ctx, lh = size * 1.45;
+    const rows = Math.max(1, Math.round((h ?? lh) / lh));
+    ctx.fillStyle = '#a9adb4';
+    for (let i = 0; i < rows; i++) {
+      const last = rows > 1 && i === rows - 1;
+      ctx.fillRect(x, y + i * lh + lh * .25, last ? w * .6 : w, Math.max(lh * .5, 1 / k));
     }
   }
 

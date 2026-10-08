@@ -71,6 +71,17 @@ with sync_playwright() as pw:
     if SHOTS: page.screenshot(path=os.path.join(SHOTS,'code-light.png'))
     print('PASS: mermaid renders as an image, errors are shown')
 
+    # The minimap shows the diagram itself, not gray text lines.
+    drawn=page.evaluate("""() => new Promise(resolve => {
+      const ctx=document.querySelector('#minimap canvas').getContext('2d'), orig=ctx.drawImage;
+      let hit=false;
+      ctx.drawImage=function (img, ...rest) { if (img.classList?.contains('md-diagram')) hit=true; return orig.call(this, img, ...rest); };
+      dispatchEvent(new Event('resize'));
+      requestAnimationFrame(() => requestAnimationFrame(() => { ctx.drawImage=orig; resolve(hit); }));
+    })""")
+    assert drawn
+    print('PASS: minimap draws the diagram')
+
     # The copy button copies the block's source and does not start editing.
     page.locator('.tool[data-tool=select]').click()
     page.mouse.click(*center(body.locator('.md-seg').first))
