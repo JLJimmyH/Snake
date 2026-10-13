@@ -7,41 +7,42 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Snake Note</title>
 <!-- 版本：scripts/stamp.mjs 產生，不要手改 -->
-<meta name="build" content="a02972a891">
+<meta name="build" content="4754e0b863">
 <script type="importmap">
 {
   "imports": {
     "./js/ai-core.js": "./js/ai-core.js?v=61836b6cf0",
-    "./js/ai-ui.js": "./js/ai-ui.js?v=b831864465",
-    "./js/appearance.js": "./js/appearance.js?v=6970172940",
+    "./js/ai-ui.js": "./js/ai-ui.js?v=6952903520",
+    "./js/appearance.js": "./js/appearance.js?v=3a8dbbf448",
     "./js/board.js": "./js/board.js?v=6f601148bd",
-    "./js/collaboration.js": "./js/collaboration.js?v=05e9b0c684",
+    "./js/collaboration.js": "./js/collaboration.js?v=8b253a21d9",
     "./js/color.js": "./js/color.js?v=9ed004b7a7",
     "./js/db.js": "./js/db.js?v=57b51b5146",
     "./js/diagram.js": "./js/diagram.js?v=2048c1ffb2",
     "./js/drive-config.js": "./js/drive-config.js?v=7cb002619a",
     "./js/drive-sync.js": "./js/drive-sync.js?v=8c685c7330",
-    "./js/drive.js": "./js/drive.js?v=5289d63c3d",
-    "./js/export.js": "./js/export.js?v=149f8bd562",
+    "./js/drive.js": "./js/drive.js?v=4d4ab4140d",
+    "./js/export.js": "./js/export.js?v=9f8170afb2",
     "./js/highlight.js": "./js/highlight.js?v=1c4fb22def",
     "./js/input-mode.js": "./js/input-mode.js?v=35acee13a1",
+    "./js/library.js": "./js/library.js?v=e0f41fbc9d",
     "./js/local-file.js": "./js/local-file.js?v=d967cc6232",
-    "./js/main.js": "./js/main.js?v=e0f0b5f934",
+    "./js/main.js": "./js/main.js?v=a4735761ad",
     "./js/markdown.js": "./js/markdown.js?v=48793a922b",
     "./js/minimap.js": "./js/minimap.js?v=906cff3b48",
     "./js/notebook-core.js": "./js/notebook-core.js?v=f122f13340",
-    "./js/notebook-ui.js": "./js/notebook-ui.js?v=f9cd0ed97c",
+    "./js/notebook-ui.js": "./js/notebook-ui.js?v=1f7b420f06",
     "./js/picker.js": "./js/picker.js?v=2760f0c8c9",
-    "./js/search.js": "./js/search.js?v=6e1a9e766b",
-    "./js/share-ui.js": "./js/share-ui.js?v=5b38a37782",
+    "./js/search.js": "./js/search.js?v=48071fa493",
+    "./js/share-ui.js": "./js/share-ui.js?v=a148674f4c",
     "./js/shortcuts.js": "./js/shortcuts.js?v=8f44b92950",
     "./js/vendor/fflate.js": "./js/vendor/fflate.js?v=89c01a7364",
-    "./js/build.js": "./js/build.js?v=671cbef16b"
+    "./js/build.js": "./js/build.js?v=c000f73d9c"
   }
 }
 </script>
 <!-- /版本 -->
-<link rel="stylesheet" href="css/style.css?v=34d2e6a780">
+<link rel="stylesheet" href="css/style.css?v=b0f65fd972">
 <script>
   // 在畫面出來前套用主題，避免先閃一下別的顏色；之後由 js/appearance.js 接手
   // theme 存 'system' 或主題名稱；舊版存 light／dark，主題另外存在 lightPalette／darkPalette
@@ -63,17 +64,18 @@
 <body>
 <div id="move-banner" role="note" hidden>
   <p><strong>Snake Note 搬家到 <a href="https://note.g6n4f.com/">note.g6n4f.com</a> 了</strong>：新網站會自動同步到 Google Drive，也能跟別人即時共用頁面。</p>
-  <p>這裡的筆記本只存在這個瀏覽器，新網站看不到。搬過去前，請先在「⇅ 儲存與同步」把每本筆記本存到 Drive，再到新網站用「開啟 → Google Drive」打開。</p>
+  <p>這裡的筆記本只存在這個瀏覽器，新網站看不到。搬過去前，請先點右上角的儲存狀態，把每本筆記本存到 Drive，再到新網站左側的「筆記本」分頁打開。</p>
   <div class="move-actions"><a class="collab-primary" href="https://note.g6n4f.com/">前往新網站</a><button id="move-close" class="chip">稍後再說</button></div>
 </div>
 <div id="app">
   <aside id="sidebar">
     <div class="sb-head">
-      <button id="nb-button" class="sb-brand" aria-haspopup="menu">📒 <span id="nb-name">我的筆記</span><span id="nb-dirty" title="有變更還沒存" hidden>●</span><span class="nb-caret">▾</span></button>
+      <button id="nb-button" class="sb-brand" aria-controls="library-pane" title="切換筆記本">📒 <span id="nb-name">我的筆記</span><span class="nb-caret">▾</span></button>
       <button id="sb-close" class="icon-btn only-mobile" aria-label="關閉側欄">✕</button>
     </div>
     <div class="sb-tabs" role="tablist" aria-label="側欄">
       <button id="tab-pages" role="tab" aria-selected="true" aria-controls="pages-pane">頁面</button>
+      <button id="tab-library" role="tab" aria-selected="false" aria-controls="library-pane" title="這台和 Google Drive 上的筆記本、共用頁面">筆記本</button>
       <button id="tab-search" role="tab" aria-selected="false" aria-controls="search-pane" title="搜尋整本筆記本 (Ctrl+Shift+F)">搜尋</button>
     </div>
     <div id="pages-pane" class="sb-pane" role="tabpanel" aria-labelledby="tab-pages">
@@ -88,6 +90,10 @@
       <div id="sp-summary" aria-live="polite"></div>
       <div id="sp-results" aria-label="搜尋結果"></div>
     </div>
+    <div id="library-pane" class="sb-pane" role="tabpanel" aria-labelledby="tab-library" hidden>
+      <div id="library"></div>
+    </div>
+    <div id="account" hidden></div>
   </aside>
   <div id="scrim"></div>
 
@@ -100,19 +106,26 @@
         <div id="crumbs"></div>
         <input id="page-title" placeholder="未命名" autocomplete="off">
       </div>
-      <span id="save-state"></span>
+      <!-- 存進這台瀏覽器的狀態只給螢幕閱讀器；看得到的同步狀態只有 #sync-button 一個 -->
+      <span id="save-state" class="sr-only" role="status" aria-live="polite"></span>
       <span id="collab-state" role="status" aria-live="polite"></span>
+      <button id="collab-copy" class="chip" hidden title="把這一頁複製一份到目前的筆記本，之後的修改不會影響共用頁">複製到我的筆記本</button>
+      <button id="collab-leave" class="chip" hidden>← 回到筆記本</button>
       <span id="collab-presence" hidden></span>
-      <button id="collab-leave" class="chip" hidden>回本機</button>
-      <button id="sync-button" class="icon-btn" title="儲存與同步" aria-label="儲存與同步">
-        <svg class="i i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 01-.5-9A6 6 0 0118 9.5a4 4 0 01-.5 8.5"/><path d="M12 20v-8M9 15l3-3 3 3"/></svg>
+      <button id="share-button" class="chip share-btn" hidden title="共用這一頁：邀請其他人一起即時編輯" aria-haspopup="dialog">
+        <svg class="i" viewBox="0 0 24 24"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 00-3-3.9M16 3.1a4 4 0 010 7.8"/></svg>
+        <span class="share-label">共用</span>
+      </button>
+      <button id="sync-button" class="sync-pill" aria-haspopup="dialog" aria-controls="sync-dialog">
+        <svg class="i i-cloud" viewBox="0 0 24 24"><path d="M7 18a4.5 4.5 0 01-.5-9A6 6 0 0118 9.5a4 4 0 01-.5 8.5z"/></svg>
         <svg class="i i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9L2.4 17.5A2 2 0 004.1 20.5h15.8a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/><path d="M12 9v4M12 17h.01"/></svg>
+        <span id="sync-text"></span>
       </button>
       <button id="find-button" class="icon-btn" title="搜尋這一頁 (Ctrl+F)" aria-label="搜尋這一頁">
         <svg class="i" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
       </button>
-      <button id="export-button" class="icon-btn" title="分享：交給 AI、圖片、PDF（有選取就只分享選取的部分）" aria-label="分享" aria-haspopup="dialog">
-        <svg class="i" viewBox="0 0 24 24"><path d="M12 15V3M7 8l5-5 5 5"/><path d="M5 12v7a2 2 0 002 2h10a2 2 0 002-2v-7"/></svg>
+      <button id="export-button" class="icon-btn" title="匯出：交給 AI、圖片、PDF（有選取就只匯出選取的部分）" aria-label="匯出" aria-haspopup="dialog">
+        <svg class="i" viewBox="0 0 24 24"><path d="M12 3v12M7 10l5 5 5-5"/><path d="M5 20h14"/></svg>
       </button>
       <button id="btn-shortcuts" class="icon-btn" title="快捷鍵 (?)" aria-label="快捷鍵" aria-expanded="false" aria-controls="shortcuts-panel">
         <svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 014.9.7c0 1.7-2.4 2.3-2.4 3.8"/><path d="M12 17h.01"/></svg>
@@ -368,8 +381,6 @@
   </div>
   <label class="brush-color">自訂顏色<input type="color" value="#ffffff" aria-label="畫布自訂顏色"></label>
   <p class="popover-note">深色畫布上，太暗的筆跡會改用亮色顯示，原本的顏色不變。</p>
-  <span class="palette-heading panel-section">協作</span>
-  <button id="collab-button" class="chip panel-wide" hidden>協作</button>
 </div>
 
 <div id="shortcuts-panel" class="popover" hidden role="group" aria-label="快捷鍵">
@@ -415,52 +426,35 @@
   <div class="collab-heading"><h2 id="share-heading">共用</h2><button id="share-close" class="icon-btn" aria-label="關閉">✕</button></div>
   <div id="share-body"></div>
 </dialog>
-<dialog id="collab-dialog" aria-labelledby="collab-heading">
-  <div class="collab-heading"><h2 id="collab-heading">同步與協作</h2><button id="collab-close" class="icon-btn" aria-label="關閉協作視窗">✕</button></div>
-  <p id="collab-mode">使用 Google 帳號登入，把頁面分享給指定的人一起編輯。</p>
-  <p id="collab-user">登入後可以同步與分享筆記</p>
-  <div id="demo-accounts" hidden>
-    <button class="chip" data-demo-email="alice@example.test">示範 Alice</button>
-    <button class="chip" data-demo-email="bob@example.test">示範 Bob</button>
-    <button class="chip" data-demo-email="eve@example.test">示範 Eve</button>
-  </div>
-  <button id="collab-login" class="collab-primary">使用 Google 登入</button>
-  <button id="collab-logout" class="chip" hidden>登出</button>
-  <hr>
-  <button id="collab-copy" class="collab-primary" disabled>將此頁複製到協作空間</button>
-  <p class="collab-help">只分享此頁，不包含子頁面。原本的本機筆記會保留。不同人的筆跡可以同時編輯；同一文字框請輪流輸入。</p>
-  <div id="collab-pages" aria-label="協作頁面"></div>
-  <form id="collab-share" hidden>
-    <h3 id="share-page-name">分享頁面</h3>
-    <input id="share-page-id" type="hidden">
-    <label for="share-email">對方登入的 email</label>
-    <input id="share-email" type="email" autocomplete="email" required placeholder="name@example.com">
-    <label for="share-role">權限</label>
-    <select id="share-role"><option value="editor">可編輯</option><option value="viewer">唯讀</option></select>
-    <button id="share-submit" class="collab-primary" type="submit">儲存分享</button>
+<div id="sync-dialog" class="sync-pop" popover role="dialog" aria-labelledby="sync-heading">
+  <div class="collab-heading"><h2 id="sync-heading">儲存位置 <small id="sync-name"></small></h2><button id="sync-close" class="icon-btn" aria-label="關閉">✕</button></div>
+  <p id="sync-warn" class="sync-warn" hidden>只存在這個瀏覽器：清除瀏覽器資料或換裝置就找不到了。建議存到 Google Drive。</p>
+  <section id="sync-drive" class="sync-place"></section>
+  <details id="sync-more">
+    <summary>進階</summary>
+    <section id="sync-local" class="sync-place" hidden></section>
+    <p id="sync-links" class="sync-links"></p>
+  </details>
+</div>
+<dialog id="new-dialog" aria-labelledby="new-heading">
+  <form id="new-form">
+    <div class="collab-heading"><h2 id="new-heading">新增筆記本</h2><button type="button" id="new-close" class="icon-btn" aria-label="關閉">✕</button></div>
+    <label class="field-label" for="new-name">名稱</label>
+    <input id="new-name" class="field" required maxlength="120" autocomplete="off">
+    <fieldset id="new-where" class="where">
+      <legend class="field-label">儲存位置</legend>
+      <label><input type="radio" name="where" value="drive" checked><span><strong>☁ Google Drive（建議）</strong><small>自動同步，換裝置也打得開</small></span></label>
+      <label><input type="radio" name="where" value="local"><span><strong>只存在這個瀏覽器</strong><small>之後可以再存到 Drive；清除瀏覽器資料就會消失</small></span></label>
+    </fieldset>
+    <div class="sync-actions dialog-actions"><button type="button" id="new-cancel" class="chip">取消</button><button type="submit" class="collab-primary">建立</button></div>
   </form>
 </dialog>
-<dialog id="sync-dialog" aria-labelledby="sync-heading">
-  <div class="collab-heading"><h2 id="sync-heading">儲存與同步 <small id="sync-name"></small></h2><button id="sync-close" class="icon-btn" aria-label="關閉">✕</button></div>
-  <p id="sync-warn" class="sync-warn" hidden>只存在這個瀏覽器，建議連結 Drive 或本機檔案</p>
-  <section id="sync-drive" class="sync-place"></section>
-  <section id="sync-local" class="sync-place" hidden></section>
-  <p id="sync-links" class="sync-links"></p>
-  <p id="sync-foot" class="sync-links sync-foot"></p>
-</dialog>
-<dialog id="drive-dialog" aria-labelledby="drive-heading">
-  <div class="collab-heading"><h2 id="drive-heading">從 Google Drive 開啟</h2><button id="drive-close" class="icon-btn" aria-label="關閉">✕</button></div>
-  <p id="drive-account"></p>
-  <p class="drive-muted">列出 Drive 上 SnakeNote 資料夾裡、由這個網站存的筆記本。開啟後會成為新的一本，不會取代目前的筆記本。</p>
-  <div id="drive-files"></div>
-  <p class="drive-actions"><button id="drive-disconnect" class="chip">中斷 Google 連線</button><a href="privacy.html" target="_blank" rel="noopener">隱私權政策</a></p>
-</dialog>
 <dialog id="export-dialog" aria-labelledby="export-heading">
-  <div class="collab-heading"><h2 id="export-heading">分享整頁</h2><button id="export-close" class="icon-btn" aria-label="關閉">✕</button></div>
-  <img id="export-preview" alt="要分享的內容" hidden>
+  <div class="collab-heading"><h2 id="export-heading">匯出整頁</h2><button id="export-close" class="icon-btn" aria-label="關閉">✕</button></div>
+  <img id="export-preview" alt="要匯出的內容" hidden>
   <textarea id="ai-request" rows="2" aria-label="想要 AI 做什麼" placeholder="想要 AI 做什麼（交給 AI 用，可以不填）"></textarea>
   <p class="export-actions"><button id="ai-copy" class="collab-primary">✨ 複製給 AI</button><button id="export-image" class="chip">🖼 複製圖片</button><button id="export-pdf" class="chip">📄 匯出 PDF</button></p>
 </dialog>
-<script type="module" src="js/main.js?v=e0f0b5f934"></script>
+<script type="module" src="js/main.js?v=a4735761ad"></script>
 </body>
 </html>

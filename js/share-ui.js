@@ -1,8 +1,8 @@
 // 共用頁（像 draw.io 用 Google Drive 共用）：共用一頁＝把那一頁另存成 Drive 上的一個檔案（SnakeNote/共用頁面），
 // 誰能看、誰能改都用 Drive 的共用設定（email 邀請由 Google 寄出）。即時協作見 js/collaboration.js。
-//   sharePage(pageId)：共用視窗（還沒共用就先建立檔案）
+//   sharePage(pageId)：共用視窗（還沒共用就先建立檔案）；shareCurrent()：頂列「共用」按鈕，目前開著的這一頁
 //   openShared(file)：打開共用頁；別人共用來的要先在 Google 檔案選擇器選一次，app 才能開
-//   showShared()：「共用頁面」清單
+//   list()：側欄「共用頁面」清單的資料；pickOther()：在檔案選擇器選別人共用給我的頁面
 //   drivePage：{ load(file), save(file, content) }，房間用來從 Drive 載入初始內容、寫回 Drive
 import { db } from './db.js';
 import { packNotebook, readZip, fileName, nameFromFile } from './notebook-core.js';
@@ -14,12 +14,15 @@ const ROLE = { writer: '編輯者', reader: '檢視者' };
 const PAGE = 'page';  // 共用頁檔案裡那一頁的 ID
 const linkTo = file => `${location.origin}${location.pathname}?page=${encodeURIComponent(file)}`;
 
-// drive：DriveClient；withDrive(task, intent)：確定連上 Google 再做（必要時跳去授權）；run(task)：一次只做一件事並顯示錯誤
-export function setupShare({ drive, withDrive, run, toast, switchTo }) {
+// drive：DriveClient；withDrive(task, intent)：確定連上 Google 再做（必要時跳去授權）；run(task)：一次只做一件事並顯示錯誤；
+// onChanged()：共用的狀態變了（開始、停止、邀請），側欄清單要重新讀
+export function setupShare({ drive, withDrive, run, toast, switchTo, onChanged }) {
   const dialog = $('#share-dialog');
-  let live = null;  // main.js 準備好即時協作後才有：{ open(page, items), linkShared(id, file), current() }
-  let shown = null; // 目前共用視窗開著的 { file, title, pageId }
+  // main.js 準備好即時協作後才有：{ open(page, items), linkShared(id, file), current()（筆記本裡目前這頁）, openLocal(id),
+  //   page()（開著的共用頁）, leave()（離開別人共用的頁面）}
+  let live = null;
   let waiting = null; // 從 Google 授權回來時即時協作還沒準備好：等 liveReady 再做
+  const owners = new Map(); // 共用頁檔案 → 共用給我的人（清單讀過才知道）
 
   // 一頁 → 一頁的筆記本 zip（共用頁檔案的格式）
   async function packPage(title, items, blob) {
@@ -66,6 +69,7 @@ export function setupShare({ drive, withDrive, run, toast, switchTo }) {
       toast('正在建立共用檔案…');
       const file = await drive.createPage({ name: fileName(title), blob: await packPage(title, items, id => db.get('blobs', id)) });
       await live.linkShared(page.id, file.id);
+      onChanged();
       await showPanel({ file: file.id, title, pageId: page.id });
     }));
     render(`共用「${title}」`, [
@@ -76,7 +80,6 @@ export function setupShare({ drive, withDrive, run, toast, switchTo }) {
   }
 
   async function showPanel(target) {
-    shown = target;
     render(`共用「${target.title}」`, [el('p', '讀取共用設定…', 'drive-muted')]);
     let permissions;
     try { permissions = await drive.permissions(target.file); }
@@ -98,6 +101,7 @@ export function setupShare({ drive, withDrive, run, toast, switchTo }) {
       run(async () => {
         await drive.share(target.file, { email: address, role: role.value, message: `${drive.account.email} 邀請你在 Snake Note 一起${role.value === 'writer' ? '編輯' : '查看'}「${target.title}」：${linkTo(target.file)}` });
         toast(`已邀請 ${address}，Google 會寄信通知對方`);
+        onChanged();
         await showPanel(target);
       });
     });
@@ -115,6 +119,7 @@ export function setupShare({ drive, withDrive, run, toast, switchTo }) {
         select.addEventListener('change', () => run(async () => {
           if (select.value === 'remove') await drive.unshare(target.file, person.id);
           else await drive.setRole(target.file, person.id, select.value);
+          onChanged();
           await showPanel(target);
         }));
         row.append(select);
@@ -132,21 +137,28 @@ export function setupShare({ drive, withDrive, run, toast, switchTo }) {
     const apply = () => run(async () => {
       if (anyone) await drive.unshare(target.file, anyone.id);
       if (scope.value === 'anyone') await drive.share(target.file, { role: anyoneRole.value });
+      onChanged();
       await showPanel(target);
     });
     scope.addEventListener('change', apply);
     anyoneRole.addEventListener('change', apply);
     general.append(scope, anyoneRole);
-    // 停止共用：移除所有人的存取權，這一頁變回一般頁面；Drive 上的檔案留著
+    // 停止共用：移除所有人的存取權，Drive 上的共用檔案移到垃圾桶（內容還在筆記本的這一頁），這一頁變回一般頁面。
+    // 不留著檔案：留著的話清單上會一直有一個已經沒人能開、也不會再更新的「我共用的」頁面
     const stop = el('button', '停止共用這一頁', 'link-btn');
     stop.addEventListener('click', () => {
-      if (!confirm(`會移除其他人對「${target.title}」的存取權，這一頁變回只在你筆記本裡的一般頁面（Drive 上的共用檔案保留）。\n\n確定要停止共用嗎？`)) return;
+      const keep = target.pageId ? '這一頁變回只在你筆記本裡的一般頁面，' : '';
+      if (!confirm(`會移除其他人對「${target.title}」的存取權，${keep}Drive 上的共用檔案移到垃圾桶（30 天內可以在 Drive 還原）。\n\n確定要停止共用嗎？`)) return;
       run(async () => {
         for (const p of permissions) if (p.role !== 'owner') await drive.unshare(target.file, p.id);
         // 清掉 Cloudflare 房間裡的即時內容與圖片
         await fetch(new URL('api/shared/' + encodeURIComponent(target.file), document.baseURI), { method: 'DELETE', headers: { 'X-Requested-With': 'snake-note' } }).catch(() => {});
         if (target.pageId) await live.linkShared(target.pageId, null);
+        // 開著的就是這個共用頁（不在筆記本裡）：先離開
+        else if (live.page()?.file === target.file) await live.leave();
+        await drive.trash(target.file);
         dialog.close();
+        onChanged();
         toast(`已停止共用「${target.title}」`);
       });
     });
@@ -213,6 +225,7 @@ export function setupShare({ drive, withDrive, run, toast, switchTo }) {
       const picked = await pickPage(await drive.fresh(), file);
       if (!picked) return;
       dialog.close();
+      onChanged();
       await openShared(picked.id);
     }));
     render('開啟共用頁面', [
@@ -223,35 +236,42 @@ export function setupShare({ drive, withDrive, run, toast, switchTo }) {
     pick.disabled = !pickerReady();
   }
 
-  // 「共用頁面」清單：自己共用出去的，加上別人共用、開過的
-  function showShared() {
+  // 頂列「共用」：筆記本裡的這一頁，或開著的共用頁（別人共用來的、或已經不在筆記本裡的）
+  function shareCurrent() {
+    const page = live?.page();
+    if (page && !page.local) {
+      withDrive(() => showPanel({ file: page.file, title: page.title || '共用頁面', pageId: null }), 'sharefile:' + page.file);
+      return;
+    }
+    const id = live?.current();
+    if (id) sharePage(id);
+  }
+
+  // 側欄「共用頁面」清單：自己共用出去的，加上別人共用、在選擇器選過的。
+  // 回傳 [{ id, name, mine, owner, canEdit, people（自己的才有：共用給幾個人）, anyone（知道連結的人都能開）, modified }]
+  async function list() {
+    const files = await drive.pages();
+    return files.map(file => {
+      const owner = file.owners?.[0]?.displayName || file.owners?.[0]?.emailAddress || '別人';
+      if (!file.ownedByMe) owners.set(file.id, owner);
+      const others = (file.permissions ?? []).filter(p => p.role !== 'owner');
+      return {
+        id: file.id, name: nameFromFile(file.name), mine: !!file.ownedByMe, owner, canEdit: file.capabilities?.canEdit !== false,
+        people: file.permissions ? others.filter(p => p.type !== 'anyone').length : null, anyone: others.some(p => p.type === 'anyone'),
+        modified: file.modifiedTime,
+      };
+    });
+  }
+
+  // 別人共用給我、還沒在這個 app 開過的頁面：在 Google 檔案選擇器選一次
+  function pickOther() {
+    if (!pickerReady()) { toast('網站尚未設定 Google 檔案選擇器，暫時無法開啟別人共用的頁面'); return; }
     withDrive(async () => {
-      render('共用頁面', [el('p', '讀取中…', 'drive-muted')]);
-      let files;
-      try { files = await drive.pages(); }
-      catch (error) { render('共用頁面', [el('p', error.message, 'drive-muted')]); return; }
-      const list = el('div', undefined, 'share-people');
-      if (!files.length) list.append(el('p', '還沒有共用頁面。在左側頁面的「⋯」選「共用此頁…」開始共用。', 'drive-muted'));
-      for (const file of files) {
-        const row = el('div', undefined, 'share-person');
-        const info = el('div');
-        const owner = file.ownedByMe ? '你共用的' : `${file.owners?.[0]?.displayName || file.owners?.[0]?.emailAddress || '別人'} 共用給你`;
-        info.append(el('strong', nameFromFile(file.name)), el('small', `${owner} · ${new Date(file.modifiedTime).toLocaleString()}`));
-        const open = el('button', '開啟', 'chip');
-        open.addEventListener('click', () => { dialog.close(); run(() => openShared(file.id)); });
-        row.append(info, open);
-        list.append(row);
-      }
-      const other = el('button', '開啟別人共用給我的頁面…', 'chip');
-      other.disabled = !pickerReady();
-      other.addEventListener('click', () => run(async () => {
-        const picked = await pickPage(await drive.fresh());
-        if (!picked) return;
-        dialog.close();
-        await openShared(picked.id);
-      }));
-      render('共用頁面', [list, actions(other, doneButton())]);
-    }, 'shared');
+      const picked = await pickPage(await drive.fresh());
+      if (!picked) return;
+      onChanged();
+      await openShared(picked.id);
+    }, 'pick');
   }
 
   $('#share-close').addEventListener('click', () => dialog.close());
@@ -270,10 +290,14 @@ export function setupShare({ drive, withDrive, run, toast, switchTo }) {
   // 從 Google 授權回來後接著做
   function resume(intent) {
     if (!live) { waiting = intent; return; }
-    if (intent === 'shared') showShared();
+    if (intent === 'pick') pickOther();
     else if (intent?.startsWith('page:')) run(() => openShared(intent.slice(5)));
     else if (intent?.startsWith('share:')) sharePage(intent.slice(6));
+    else if (intent?.startsWith('sharefile:')) shareCurrent();
   }
 
-  return { sharePage, openShared, showShared, drivePage, liveReady, resume, ready: () => !!live };
+  return {
+    sharePage, shareCurrent, openShared, pickOther, list, drivePage, liveReady, resume, ready: () => !!live,
+    owner: file => owners.get(file) ?? null, active: () => live?.page()?.file ?? null,
+  };
 }

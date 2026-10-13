@@ -3,7 +3,7 @@ faked by tests/fake_drive.py. Alice shares a page and invites Bob by email; Bob 
 once; then both draw at the same time and see each other's strokes, cursor, selection and presence. The page is written
 back to Alice's Drive file and her notebook copy.
 Needs Node (npx wrangler) in addition to the usual Playwright setup; run from the repository root."""
-import io, json, os, subprocess, sys, tempfile, time, urllib.request, zipfile
+import io, json, os, re, subprocess, sys, tempfile, time, urllib.request, zipfile
 from playwright.sync_api import sync_playwright, expect
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fake_drive import FakeDrive
@@ -120,6 +120,9 @@ with sync_playwright() as pw:
         assert invite['notify'] == ['true'] and f'?page={file_id}' in invite['message'], invite
         a.locator('#share-dialog button', has_text='完成').click()
         expect(a.locator('#collab-state')).to_have_text('已同步', timeout=20000)
+        expect(a.locator('#share-button')).to_be_visible()
+        # 頁面樹的 👥 旁邊是共用給幾個人
+        expect(a.locator('#tree .row.active .pg-count')).to_have_text('1', timeout=20000)
         print('PASS: invite by email through Drive permissions')
 
         # 3. Bob 打開連結：登入 Google、在檔案選擇器選一次，就進到同一頁
@@ -128,7 +131,9 @@ with sync_playwright() as pw:
         b.goto(f'{BASE}/?page={file_id}')
         expect(b.locator('#share-dialog')).to_contain_text('別人透過 Google Drive 共用給你', timeout=30000)
         b.locator('#share-dialog button', has_text='選取並開啟').click()
-        expect(b.locator('#crumbs')).to_have_text('共用頁面', timeout=20000)
+        expect(b.locator('#crumbs')).to_contain_text('共用頁面', timeout=20000)
+        expect(b.locator('#crumbs')).to_contain_text('可編輯')
+        expect(b.locator('#collab-copy')).to_be_visible()
         expect(b.locator('#page-title')).to_have_value('歡迎使用')
         expect(b.locator('#collab-state')).to_have_text('已同步', timeout=20000)
         expect(b.locator('.text-item').first).to_contain_text('歡迎')
@@ -199,11 +204,47 @@ with sync_playwright() as pw:
         assert local >= 2, local
         print("PASS: the page is written back to the Drive file and to the owner's notebook")
 
-        # 7. Bob 的「共用頁面」清單看得到這一頁
-        b.locator('#collab-leave').click(); expect(b.locator('#crumbs')).not_to_have_text('共用頁面')
-        b.locator('#nb-button').click(); b.locator('#menu button', has_text='共用頁面').click()
-        expect(b.locator('#share-dialog .share-person')).to_contain_text('Alice 共用給你', timeout=20000)
-        print('PASS: shared pages list')
+        # 7. 側欄「筆記本」分頁的共用頁面：Bob 看得到誰共用給他、能不能改；Alice 看得到共用給幾個人
+        b.locator('#collab-leave').click(); expect(b.locator('#crumbs')).not_to_contain_text('共用頁面')
+        b.locator('#tab-library').click()
+        theirs = b.locator('#library .lib-row[data-shared]')
+        expect(theirs).to_have_count(1, timeout=20000)
+        expect(theirs).to_contain_text('Alice · 可編輯')
+        a.locator('#tab-library').click()
+        mine = a.locator('#library .lib-row[data-shared]')
+        expect(mine).to_contain_text('1 人可以存取', timeout=20000)
+        expect(mine).to_have_class(re.compile('active'))  # 開著的就是這一頁
+        print('PASS: shared pages are listed in the sidebar')
+
+        # 8. Bob 從清單打開，複製一份到自己的筆記本：之後跟共用頁各走各的
+        theirs.click()
+        expect(b.locator('#crumbs')).to_contain_text('Alice 共用給你', timeout=20000)
+        expect(b.locator('#collab-state')).to_have_text('已同步', timeout=20000)
+        expect(theirs).to_have_class(re.compile('active'))
+        strokes = b.locator('.ink path:not(.remote-preview)').count()
+        b.locator('#collab-copy').click()
+        toast(b, '已把「歡迎使用」複製到「我的筆記」')
+        expect(b.locator('#crumbs')).not_to_contain_text('共用頁面')
+        expect(b.locator('#page-title')).not_to_have_attribute('readonly', '')
+        expect(b.locator('#tree .pg-title', has_text='歡迎使用')).to_have_count(2)
+        expect(b.locator('.ink path:not(.remote-preview)')).to_have_count(strokes)
+        draw(b, 600, 600); b.wait_for_timeout(1500)
+        assert a.locator('.ink path:not(.remote-preview)').count() == strokes, 'the copy is not shared'
+        print('PASS: an invitee copies a shared page into their own notebook')
+
+        # 9. Alice 停止共用（頂列「共用」）：移除 Bob 的權限，共用檔案移到垃圾桶，清單上不再有它
+        a.locator('#tab-pages').click()
+        a.locator('#share-button').click()
+        expect(a.locator('#share-dialog')).to_contain_text('具有存取權的使用者', timeout=20000)
+        a.once('dialog', lambda d: d.accept())
+        a.locator('#share-dialog button', has_text='停止共用這一頁').click()
+        toast(a, '已停止共用「歡迎使用」')
+        assert fake.files['alice'][file_id].get('trashed') is True and not fake.files['alice'][file_id]['perms']
+        expect(a.locator('#tree .row.active .pg-icon')).to_have_text('📄')
+        a.locator('#tab-library').click()
+        expect(a.locator('#library .lib-row[data-shared]')).to_have_count(0, timeout=20000)
+        expect(a.locator('#library')).to_contain_text('還沒有。')
+        print('PASS: stopping sharing trashes the shared file and removes it from the list')
 
         assert not errors, errors
         browser.close()

@@ -337,9 +337,10 @@ class LiveSession {
   }
 }
 
-// board；beforeOpen()：開房間前把本機頁面存好；onOpen(page)／onLeave()：進出別人共用的頁面（不在筆記本裡）；
-// onContent(page, items)：房間內容變了（筆記本裡的這一頁要跟著存）；drivePage：{ load(file), save(file, content) }
-export async function setupCollaboration({ board, beforeOpen, onOpen, onLeave, onContent, drivePage, showMenu, toast }) {
+// board；beforeOpen()：開房間前把本機頁面存好；onOpen(page, role)／onLeave()：進出別人共用的頁面（不在筆記本裡）；
+// onContent(page, items)：房間內容變了（筆記本裡的這一頁要跟著存）；onSession()：進出房間（側欄清單標出開著的共用頁）；
+// drivePage：{ load(file), save(file, content) }
+export async function setupCollaboration({ board, beforeOpen, onOpen, onLeave, onContent, onSession, drivePage, showMenu, toast }) {
   const ui = {
     board, active: null, drivePage,
     status(text) { $('#collab-state').textContent = text; },
@@ -349,10 +350,11 @@ export async function setupCollaboration({ board, beforeOpen, onOpen, onLeave, o
       board.setReadOnly(session.role !== 'editor');
       board.blobLoader = id => session.blob(id);
       board.historyDelegate = { undo: () => session.undoLocal(), redo: () => session.undoLocal(true), state: () => [session.undo.undoStack.length > 0, session.undo.redoStack.length > 0] };
-      if (!session.page.local) onOpen(session.page);
-      $('#collab-leave').hidden = !!session.page.local;
+      if (!session.page.local) onOpen(session.page, session.role);
+      $('#collab-leave').hidden = $('#collab-copy').hidden = !!session.page.local;
       $('#collab-presence').hidden = false;
       board._history();
+      onSession?.();
     },
     content(session, items) { if (session.page.local) onContent(session.page, items); },
     // 在線的人：電腦版是其他人的彩色圓點，手機版只顯示「👥 人數」；點一下列出所有人
@@ -391,8 +393,9 @@ export async function setupCollaboration({ board, beforeOpen, onOpen, onLeave, o
       }
       board.historyDelegate = null; board.blobLoader = null; board.setReadOnly(false);
       board.clearPreviews();
-      $('#collab-leave').hidden = true; $('#collab-presence').hidden = true;
+      $('#collab-leave').hidden = true; $('#collab-copy').hidden = true; $('#collab-presence').hidden = true;
       ui.status('');
+      onSession?.();
     },
     changed() { if (ui.active) ui.active.local(board.items); },
     async saved() { if (ui.active) await ui.active.cache(); },

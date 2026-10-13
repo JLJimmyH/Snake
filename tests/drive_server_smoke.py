@@ -38,9 +38,12 @@ def draw(page, dy=0):
     page.mouse.move(x, y); page.mouse.down(); page.mouse.move(x + 80, y + 40, steps=5); page.mouse.up()
     expect(page.locator('#save-state')).to_have_text('已儲存')
 
-def menu(page, label):
-    page.locator('#nb-button').click()
-    page.locator('#menu button', has_text=label).first.click()
+def panel(page):
+    """打開頂列同步狀態的「儲存位置」面板"""
+    if not page.locator('#sync-dialog').is_visible(): page.locator('#sync-button').click()
+
+def account_menu(page, label):
+    page.locator('#account .acct-btn').click(); page.locator('#menu button', has_text=label).click()
 
 with sync_playwright() as pw:
     browser = pw.chromium.launch(executable_path='/usr/bin/chromium', args=['--no-sandbox'])
@@ -55,9 +58,9 @@ with sync_playwright() as pw:
 
     # 1. 存到 Drive：整頁跳去 Google 授權，回來後自動接著存
     draw(page)
-    menu(page, '儲存與同步'); page.locator('#sync-drive button', has_text='存到 Drive').click()
+    panel(page); page.locator('#sync-drive button', has_text='存到 Drive').click()
     toast(page, '已儲存到 alice@example.test 的 Drive，之後的變更會自動同步')
-    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已儲存')
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已同步')
     assert [f['name'] for f in drive.files['alice'].values()] == ['我的筆記.zip']
     assert '#google' not in page.url, page.url
     assert set(worker.headers) == {'snake-note'}, worker.headers
@@ -65,32 +68,43 @@ with sync_playwright() as pw:
 
     # 2. 重新整理：不用點就恢復連線；停手後自動上傳
     page.reload(); expect(page.locator('#page-title')).to_have_value('歡迎使用')
-    menu(page, '儲存與同步'); expect(page.locator('#sync-foot')).to_contain_text('中斷 Google 連線（alice@example.test）')
-    page.locator('#sync-close').click()
+    expect(page.locator('#account')).to_contain_text('alice@example.test')
     uploads = drive.uploads
     draw(page, 60)
-    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '儲存 (Ctrl+S)')
-    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已儲存', timeout=20000)
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '等待同步（Ctrl+S 立即同步）')
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已同步', timeout=20000)
     assert drive.uploads == uploads + 1
     print('PASS: the sign-in survives a reload and idle edits upload by themselves')
 
     # 3. 中斷連線：Worker 撤銷登入；之後的變更等使用者重新連線
-    menu(page, '儲存與同步'); page.locator('#sync-foot button', has_text='中斷 Google 連線').click()
+    account_menu(page, '中斷 Google 連線')
     toast(page, '已中斷 Google 連線')
     page.wait_for_timeout(300)
     assert worker.logouts == 1 and not worker.connected
     draw(page, 120); page.wait_for_timeout(500)
-    menu(page, '儲存與同步'); expect(page.locator('#sync-drive')).to_contain_text('要連線 Google 才能自動同步')
+    expect(page.locator('#sync-text')).to_have_text('未連線')
+    panel(page); expect(page.locator('#sync-drive')).to_contain_text('要連線 Google 才能自動同步')
     page.locator('#sync-close').click()
     page.reload(); expect(page.locator('#page-title')).to_have_value('歡迎使用')
-    menu(page, '儲存與同步'); expect(page.locator('#sync-drive')).to_contain_text('要連線 Google')
+    panel(page); expect(page.locator('#sync-drive')).to_contain_text('要連線 Google')
     # 重新連線：再跳一次，回來後把剛剛的變更傳上去
     uploads = drive.uploads
     page.locator('#sync-drive button', has_text='連線 Google').click()
     toast(page, '已連線 alice@example.test 的 Google Drive')
-    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已儲存', timeout=20000)
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已同步', timeout=20000)
     assert drive.uploads == uploads + 1
     print('PASS: disconnecting signs out; reconnecting uploads what was waiting')
+
+    # 4. 沒連線時新增一本存到 Drive 的筆記本：跳去 Google 授權，回來後接著建立並存到 Drive
+    account_menu(page, '中斷 Google 連線'); toast(page, '已中斷 Google 連線')
+    page.locator('#tab-library').click(); page.locator('#library .lib-add').click()
+    page.locator('#new-name').fill('雲端新本'); expect(page.locator('#new-where input[value=drive]')).to_be_checked()
+    page.locator('#new-dialog button[type=submit]').click()
+    toast(page, '已儲存到 alice@example.test 的 Drive')
+    expect(page.locator('#nb-name')).to_have_text('雲端新本')
+    assert '雲端新本.zip' in [f['name'] for f in drive.files['alice'].values()]
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已同步', timeout=20000)
+    print('PASS: a new notebook saved to Drive survives the sign-in redirect')
 
     assert not errors, errors
     browser.close()

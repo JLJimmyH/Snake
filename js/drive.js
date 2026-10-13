@@ -172,11 +172,12 @@ export class DriveClient {
     ensure(location?.startsWith(UPLOAD), 'Drive 上傳初始化失敗，請稍後重試');
     return (await this.api(location, { method: 'PUT', headers: { 'Content-Type': 'application/zip' }, body: blob }, 600000)).json();
   }
-  // 這個 app 看得到的共用頁：自己建立的，加上別人共用、在檔案選擇器選過的
+  // 這個 app 看得到的共用頁：自己建立的，加上別人共用、在檔案選擇器選過的。
+  // permissions 只有自己的檔案（能管理共用的人）才拿得到，用來顯示共用給幾個人
   async pages() {
     const result = []; let pageToken;
     do {
-      const params = new URLSearchParams({ q: "appProperties has { key='kind' and value='page' } and trashed = false", fields: 'nextPageToken,files(id,name,modifiedTime,ownedByMe,owners(displayName,emailAddress),capabilities(canEdit))', orderBy: 'modifiedTime desc', pageSize: '100' });
+      const params = new URLSearchParams({ q: "appProperties has { key='kind' and value='page' } and trashed = false", fields: 'nextPageToken,files(id,name,modifiedTime,ownedByMe,owners(displayName,emailAddress),capabilities(canEdit),permissions(id,type,role))', orderBy: 'modifiedTime desc', pageSize: '100' });
       if (pageToken) params.set('pageToken', pageToken);
       const page = await this.json('files?' + params);
       result.push(...(page.files ?? [])); pageToken = page.nextPageToken;
@@ -200,6 +201,10 @@ export class DriveClient {
   }
   unshare(id, permission) {
     return this.api(`files/${encodeURIComponent(id)}/permissions/${encodeURIComponent(permission)}`, { method: 'DELETE' });
+  }
+  // 移到 Drive 的垃圾桶（30 天內可以在 Drive 還原）
+  trash(id) {
+    return this.json(`files/${encodeURIComponent(id)}?fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ trashed: true }) });
   }
 
   // 這個檔案在 rev 之前的那一版（找不到回傳 null）。上傳後用來確認中間沒有夾著別台裝置存的版本。

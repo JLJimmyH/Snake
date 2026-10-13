@@ -45,6 +45,10 @@ class FakeDrive:
         owner = file.get('owner', account)
         out.update({'ownedByMe': role == 'owner', 'owners': [{'displayName': NAMES.get(owner, owner), 'emailAddress': owner + '@example.test'}],
                     'capabilities': {'canEdit': role in ('owner', 'writer'), 'canShare': role == 'owner'}})
+        # 像真的 Drive：能管理共用的人（擁有者）才拿得到 permissions
+        if role == 'owner':
+            out['permissions'] = [{'id': owner, 'type': 'user', 'role': 'owner'}] + [{'id': who, 'type': 'user', 'role': r} for who, r in file.get('perms', {}).items()]
+            if file.get('anyone'): out['permissions'].append({'id': 'anyoneWithLink', 'type': 'anyone', 'role': file['anyone']})
         return out
 
     # ---------- Playwright route（瀏覽器）----------
@@ -118,12 +122,12 @@ class FakeDrive:
                 for owner, owned in self.files.items():
                     for file in owned.values():
                         found, role = self.find(account, file['id'])
-                        if found and found.get('appProperties', {}).get('kind') == 'page': seen.append(self.fields(found, account, role))
+                        if found and found.get('appProperties', {}).get('kind') == 'page' and not found.get('trashed'): seen.append(self.fields(found, account, role))
                 return reply(200, {'files': seen})
             app = re.search(r"key='app' and value='([^']+)'", query).group(1)
             parents = set(re.findall(r"'([^']+)' in parents", query))
             return reply(200, {'files': [self.fields(f, account) for f in files.values()
-                                         if f.get('appProperties', {}).get('app') == app and parents & set(f.get('parents', []))]})
+                                         if f.get('appProperties', {}).get('app') == app and parents & set(f.get('parents', [])) and not f.get('trashed')]})
         parts = [unquote(x) for x in path[len('files/'):].split('/')]
         file, role = self.find(account, parts[0])
         if not file: return reply(404, {'error': 'missing'})
@@ -153,6 +157,9 @@ class FakeDrive:
             data = dict(file['revisions']).get(parts[2])
             return media(data) if data else reply(404, {'error': 'missing'})
         if q.get('alt') == ['media']: return media(file['data'])
+        if method == 'PATCH':  # 只改中繼資料（目前只用在移到垃圾桶）
+            if role not in ('owner', 'writer'): return reply(403, {'error': 'forbidden'})
+            file.update(json.loads(body))
         return reply(200, self.fields(file, account, role))
 
     # ---------- 本機 HTTP 伺服器（給 wrangler dev 裡的 Worker 呼叫）----------

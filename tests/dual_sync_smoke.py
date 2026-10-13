@@ -51,9 +51,10 @@ def draw(page, dy=0):
     expect(page.locator('#save-state')).to_have_text('已儲存')
 
 def sync_click(page, label):
-    if not page.locator('#sync-dialog').is_visible():
-        page.locator('#nb-button').click(); page.locator('#menu button', has_text='儲存與同步').click()
-    page.locator('#sync-dialog button', has_text=label).first.click()
+    if not page.locator('#sync-dialog').is_visible(): page.locator('#sync-button').click()
+    button = page.locator('#sync-dialog button', has_text=label).first
+    if not button.is_visible(): page.locator('#sync-more summary').click()
+    button.click()
 
 with sync_playwright() as pw:
     browser = pw.chromium.launch(executable_path='/usr/bin/chromium', args=['--no-sandbox'])
@@ -68,18 +69,18 @@ with sync_playwright() as pw:
     file_id = next(iter(fake.files['alice']))
     draw(page)
     until(page, lambda: local_strokes(page) == 1 and drive_strokes(fake, file_id) == 1)
-    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已儲存', timeout=20000)
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已同步', timeout=20000)
     print('PASS: one edit reaches both the local file and Drive')
 
     # 2. 另一台裝置經由 Drive 加了一頁：合併進這台，也寫進本機檔案
     other = context(browser, fake).new_page(); other.on('pageerror', lambda e: errors.append(str(e)))
     other.goto(BASE)
-    other.locator('#nb-button').click(); other.locator('#menu button', has_text='開啟').click(); other.locator('#menu button', has_text='Google Drive').click()
-    other.locator('.drive-file button').first.click()
+    other.locator('#tab-library').click(); other.locator('#library .lib-connect').click()
+    other.locator('#library .lib-row[data-file]').first.click()
     expect(other.locator('#page-title')).to_have_value('歡迎使用')
     other.locator('#add-root').click(); expect(other.locator('#page-title')).to_have_value('')
     other.locator('#page-title').fill('另一台加的'); other.locator('#page-title').press('Enter')
-    other.locator('#sync-button').click(); expect(other.locator('#sync-button')).to_have_attribute('aria-label', '已儲存', timeout=20000)
+    other.keyboard.press('Control+s'); expect(other.locator('#sync-button')).to_have_attribute('aria-label', '已同步', timeout=20000)
     page.wait_for_timeout(5100); page.evaluate("window.dispatchEvent(new Event('focus'))")
     expect(page.locator('#tree .pg-title', has_text='另一台加的')).to_have_count(1, timeout=20000)
     until(page, lambda: '另一台加的' in local_titles(page))
@@ -97,7 +98,7 @@ with sync_playwright() as pw:
     expect(page.locator('#tree .pg-title', has_text='檔案那邊加的')).to_have_count(1, timeout=20000)
     until(page, lambda: '檔案那邊加的' in drive_titles(fake, file_id))
     assert sorted(drive_titles(fake, file_id)) == sorted(local_titles(page)), (drive_titles(fake, file_id), local_titles(page))
-    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已儲存', timeout=20000)
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '已同步', timeout=20000)
     print('PASS: a change to the local file made elsewhere is uploaded to Drive')
 
     assert not errors, errors

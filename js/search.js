@@ -69,12 +69,11 @@ function snippet(text, start, end) {
 }
 
 // pages()：整本的頁面（樹的順序）[{ id, title, crumbs }]；currentPage()：畫布上是哪一頁；
-// loadItems(id)：從資料庫讀某一頁的物件；openPage(id)：換頁
-export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSidebar, top, pages, currentPage, loadItems, openPage }) {
+// loadItems(id)：從資料庫讀某一頁的物件；openPage(id)：換頁；showTab(name)：切換側欄分頁（main.js，之後會呼叫回傳的 tab）
+export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSidebar, showTab, top, pages, currentPage, loadItems, openPage }) {
   const $ = s => document.querySelector(s);
   const bar = $('#find'), input = $('#find-input'), count = $('#find-count');
   const pane = $('#search-pane'), paneInput = $('#sp-input'), summary = $('#sp-summary'), list = $('#sp-results');
-  const tabs = { pages: $('#tab-pages'), search: $('#tab-search') };
   const layer = h('div', 'layer search-layer');
   board.world.insertBefore(layer, board.uiLayer);
 
@@ -359,19 +358,16 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
     if (!active()) clear();
   }
 
-  function setTab(name) {
-    const search = name === 'search';
-    pane.hidden = !search;
-    $('#pages-pane').hidden = search;
-    for (const [k, t] of Object.entries(tabs)) t.setAttribute('aria-selected', String(k === name));
-    if (search) { if (query) refresh(); searchNotebook(); }
+  // 側欄換到 name 分頁之後（main.js 已經換好畫面）
+  function tabChanged(name) {
+    if (name === 'search') { if (query) refresh(); searchNotebook(); }
     else if (!active()) clear();
   }
 
   function openPane() {
     const sel = prefill();
     showSidebar();
-    setTab('search');
+    showTab('search');
     if (sel) setQuery(sel);
     paneInput.focus();
     paneInput.select();
@@ -393,8 +389,6 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
   $('#find-list').addEventListener('click', openPane);
   $('#find-close').addEventListener('click', closeBar);
   for (const b of document.querySelectorAll('.find-case')) b.addEventListener('click', () => setCase(!caseSensitive));
-  tabs.pages.addEventListener('click', () => setTab('pages'));
-  tabs.search.addEventListener('click', () => { setTab('search'); paneInput.focus(); });
   list.addEventListener('click', e => {
     const head = e.target.closest('.sp-page-head');
     if (head) return head.parentElement.classList.toggle('collapsed');
@@ -422,6 +416,7 @@ export function setupSearch({ board, minimap, refreshNav, showSidebar, hideSideb
 
   return {
     open: openBar,
+    tab: tabChanged,
     // 換頁（或換筆記本、從 Drive 重新載入）：保留搜尋字，結果重新找；剛離開的那頁已經存檔，別頁的資料重讀
     loaded() {
       docs.clear();

@@ -4,7 +4,7 @@ text editing, load a file changed elsewhere, conflicts, a missing file, permissi
 import os, re
 from playwright.sync_api import sync_playwright, expect
 BASE=os.environ.get('NOTE_TEST_ORIGIN','http://127.0.0.1:8031')
-SAVED,UNSAVED,TROUBLE='已儲存','儲存 (Ctrl+S)','同步需要處理'
+SAVED,UNSAVED,TROUBLE='已同步','等待同步（Ctrl+S 立即同步）','同步需要處理'
 
 PICKERS="""
 window.__pick='notes.zip';
@@ -48,12 +48,21 @@ def write_external(page, name, title, texts=()):
 def notebook(page):
     return page.evaluate("""async()=>{const {db}=await import('./js/db.js');return db.get('notebooks',sessionStorage.getItem('notebook'))}""")
 
-def menu(page, label):
-    page.locator('#nb-button').click()
+def lib(page):
+    if page.locator('#library-pane').is_hidden(): page.locator('#tab-library').click()
+
+def book_row(page, name):
+    lib(page)
+    return page.locator('#library .lib-row[data-notebook]').filter(has=page.locator('.lib-name',has_text=re.compile('^'+re.escape(name)+'$')))
+
+def book_menu(page, name, label):
+    row=book_row(page,name);row.hover();row.locator('[data-act=more]').click()
     page.locator('#menu button',has_text=label).first.click()
 
 def sync_dialog(page):
-    if not page.locator('#sync-dialog').is_visible(): menu(page,'儲存與同步')
+    """儲存位置面板的「進階 → 本機檔案」"""
+    if not page.locator('#sync-dialog').is_visible(): page.locator('#sync-button').click()
+    if not page.locator('#sync-local').is_visible(): page.locator('#sync-more summary').click()
     return page.locator('#sync-local')
 
 def close_dialog(page):
@@ -98,9 +107,8 @@ with sync_playwright() as pw:
     first=read(page,'notes.zip')
     assert '歡迎使用' in first['titles'] and first['strokes']==0,first
     synced(page)
-    page.locator('#nb-button').click()
-    expect(page.locator('#menu button',has_text='我的筆記').locator('.menu-hint')).to_have_text('💾')
-    page.evaluate("document.querySelector('#menu').hidden = true")
+    expect(book_row(page,'我的筆記').locator('.lib-status')).to_have_text('💾 notes.zip')
+    page.locator('#tab-pages').click()
     print('PASS: link a file and write it right away')
 
     # 2. 有變更：停手 5 秒後自動寫入
@@ -155,7 +163,7 @@ with sync_playwright() as pw:
     drop_base();draw(page,120)
     write_external(page,'notes.zip','舊版')
     expect(page.locator('#sync-button')).to_have_attribute('aria-label',TROUBLE,timeout=15000)
-    expect(page.locator('#sync-button')).to_have_class(re.compile('warn'))
+    expect(page.locator('#sync-button')).to_have_attribute('data-tone','warn')
     page.locator('#sync-button').click()  # 有狀況：打開視窗
     local=page.locator('#sync-local')
     expect(local).to_contain_text('檔案在別處被改過')
@@ -219,22 +227,22 @@ with sync_playwright() as pw:
     print('PASS: stop syncing keeps the file and stops writing')
 
     # 9. 從本機檔案開啟：成為新的一本，之後的變更寫回這個檔案；同一個檔案再開一次只會切換
-    menu(page,'開啟');page.locator('#menu button',has_text='本機檔案').click()
+    lib(page);page.locator('#library .lib-local').click()
     toast(page,'已開啟「moved」')
     expect(page.locator('#nb-name')).to_have_text('moved')
     assert notebook(page)['local']['fileName']=='moved.zip'
     draw(page,160)
     until(lambda: read(page,'moved.zip')['strokes']==3)
     synced(page)
-    menu(page,'我的筆記');expect(page.locator('#nb-name')).to_have_text('我的筆記')
-    menu(page,'開啟');page.locator('#menu button',has_text='本機檔案').click()
+    book_row(page,'我的筆記').click();expect(page.locator('#nb-name')).to_have_text('我的筆記')
+    lib(page);page.locator('#library .lib-local').click()
     expect(page.locator('#nb-name')).to_have_text('moved')
     assert len(page.evaluate("async()=>{const {db}=await import('./js/db.js');return db.getAll('notebooks')}"))==2
     print('PASS: open a local file and keep syncing back to it; reopening switches')
 
-    # 10. 關閉有同步的筆記本：不會說「永久刪除」，檔案保留
+    # 10. 從這台移除有同步的筆記本：不用確認，檔案保留
     count=len(confirms)
-    menu(page,'關閉筆記本');toast(page,'已關閉「moved」')
+    book_menu(page,'moved','從這台移除');toast(page,'已從這台移除「moved」，本機檔案「moved.zip」保留')
     assert len(confirms)==count,confirms[count:]
     assert read(page,'moved.zip')['strokes']==3
     print('PASS: closing a synced notebook keeps the file and does not warn')

@@ -301,7 +301,12 @@ function renderTree() {
         <button class="row-btn" data-act="add" title="新增子頁面">＋</button>
         <button class="row-btn" data-act="more" title="更多">⋯</button>`;
       row.querySelector('.pg-title').textContent = p.title || '未命名';
-      if (p.shared) { row.querySelector('.pg-icon').textContent = '👥'; row.title = '共用頁面：可以跟其他人即時一起編輯'; }
+      if (p.shared) {
+        row.querySelector('.pg-icon').textContent = '👥';
+        const people = notebooks?.people(p.shared);
+        row.title = people ? `共用頁面：${people} 人可以跟你即時一起編輯` : '共用頁面：可以跟其他人即時一起編輯';
+        if (people) row.querySelector('.pg-title').after(Object.assign(document.createElement('span'), { className: 'pg-count', textContent: people }));
+      }
       tree.append(row);
       if (n && p.open) walk(p.id, depth + 1);
     }
@@ -431,6 +436,29 @@ async function linkShared(id, file) {
   renderTree();
 }
 
+// 別人共用來的頁面：複製一份到目前的筆記本（新的一頁，圖片也複製一份），之後跟共用頁各走各的
+async function copySharedPage() {
+  const session = collaboration?.active;
+  if (!session || session.page.local) return;
+  board.commitText();
+  const items = structuredClone(board.items);
+  const blobs = new Map(); // 共用頁的圖片 ID → { id（筆記本裡的新 ID）, blob }
+  for (const item of items) if (item.type === 'image' && !blobs.has(item.blobId)) {
+    const blob = await session.blob(item.blobId);
+    if (!blob) { toast('有圖片還沒下載完成，稍後再試'); return; }
+    blobs.set(item.blobId, { id: uid(), blob });
+  }
+  for (const { id, blob } of blobs.values()) await db.put('blobs', blob, id);
+  for (const item of items) if (item.type === 'image') item.blobId = blobs.get(item.blobId).id;
+  const title = session.page.title || '共用頁面';
+  const page = await createPage(null, title);
+  await db.put('docs', { pageId: page.id, items, view: board.view });
+  await markChanged();
+  await openPage(page.id);
+  toast(`已把「${title}」複製到「${$('#nb-name').textContent}」，之後的修改不會影響共用頁`);
+}
+$('#collab-copy').addEventListener('click', () => copySharedPage().catch(error => toast(error.message)));
+
 // 房間內容變了：筆記本裡的這一頁跟著存（之後隨筆記本同步到 Drive）
 function sharedContent(page) {
   if (page.local !== current) return;
@@ -459,8 +487,22 @@ function moveMenu(rect, id) {
   showMenu(rect, entries);
 }
 
-// ---------- 側欄開關 ----------
+// ---------- 側欄開關、分頁 ----------
 function closeSidebar() { document.body.classList.remove('sb-open'); }
+
+// 頁面（目前筆記本的頁面樹）／筆記本（這台與 Drive 的筆記本、共用頁面，js/library.js）／搜尋（整本筆記本）
+const PANES = ['pages', 'library', 'search'];
+function setTab(name) {
+  for (const key of PANES) {
+    $(`#${key}-pane`).hidden = key !== name;
+    $(`#tab-${key}`).setAttribute('aria-selected', String(key === name));
+  }
+  search?.tab(name);
+  if (name === 'library') notebooks?.showLibrary();
+}
+$('#tab-pages').addEventListener('click', () => setTab('pages'));
+$('#tab-library').addEventListener('click', () => setTab('library'));
+$('#tab-search').addEventListener('click', () => { setTab('search'); $('#sp-input').focus(); });
 
 $('#sb-toggle').addEventListener('click', () => {
   if (isMobile()) document.body.classList.toggle('sb-open');
@@ -913,20 +955,6 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2800);
 }
 
-// Static hosting keeps local notes usable and explains collaboration status.
-function showLocalCollaborationInfo() {
-  const dialog = $('#collab-dialog');
-  $('#collab-mode').textContent = '此網站目前使用本機儲存，多人協作尚未啟用。';
-  $('#collab-user').textContent = '筆記會先儲存在目前裝置；可從左上角的筆記本選單存到自己的 Google Drive 或匯出 zip。多人即時同步尚未啟用。';
-  $('#collab-pages').textContent = '你可以繼續新增頁面、書寫、插入圖片與使用復原／重做。帳號登入、分享及多人共同編輯需等協作服務啟用。';
-  for (const id of ['collab-login', 'collab-logout', 'collab-copy', 'demo-accounts', 'collab-share']) $('#' + id).hidden = true;
-  $('.collab-help').hidden = true;
-  $('#collab-button').hidden = false;
-  $('#collab-button').textContent = '協作說明';
-  $('#collab-button').addEventListener('click', () => dialog.showModal());
-  $('#collab-close').addEventListener('click', () => dialog.close());
-}
-
 // ---------- 筆記本 ----------
 async function createNotebook(name) {
   const id = uid();
@@ -1023,7 +1051,7 @@ async function init() {
   ai = optional('AI', () => setupAi({ board, title: () => $('#page-title').value, toast, showMenu, pasteContent, share: ids => share?.open(ids) }));
   share = optional('分享', () => setupExport({ board, title: () => $('#page-title').value, toast, ai }));
   search = optional('搜尋', () => setupSearch({
-    board, minimap, refreshNav, hideSidebar: closeSidebar, top: () => $('#viewport').offsetTop,
+    board, minimap, refreshNav, hideSidebar: closeSidebar, showTab: setTab, top: () => $('#viewport').offsetTop,
     showSidebar: () => isMobile() ? document.body.classList.add('sb-open') : document.body.classList.remove('sb-collapsed'),
     pages: () => treeOrder().map(p => ({
       id: p.id, title: p.title || '未命名', crumbs: ancestors(p.id).map(a => a.title || '未命名').join(' / '),
@@ -1036,28 +1064,37 @@ async function init() {
   setTool('select');
   notebooks = optional('筆記本選單', () => setupNotebooks({
     current: () => notebookId, switchTo: switchNotebook, create: createNotebook, flush, persist, idle, refresh: refreshNotebook, showMenu, toast,
+    showTab: setTab, hideSidebar: () => { if (isMobile()) closeSidebar(); }, onCloud: renderTree,
   }));
   await switchNotebook(await initialNotebook());
   try {
     const response = await fetch(new URL('api/config', document.baseURI));
     const config = response.ok ? await response.json().catch(() => null) : null;
-    if (config?.mode !== 'cloudflare') { showLocalCollaborationInfo(); return; }
+    if (config?.mode !== 'cloudflare') return;  // 純靜態網站（GitHub Pages）：沒有共用頁面
     const { setupCollaboration } = await import('/collab-assets/collaboration.js');
     collaboration = await setupCollaboration({
       board, beforeOpen: flush, toast, showMenu, drivePage: notebooks?.drivePage,
-      // 別人共用來的頁面：不在筆記本裡，標題唯讀
-      onOpen: page => {
+      // 別人共用來的頁面：不在筆記本裡，標題唯讀；麵包屑寫誰共用的、能不能改
+      onOpen: (page, role) => {
         current = null;
         $('#page-title').value = page.title;
         $('#page-title').readOnly = true;
-        $('#crumbs').textContent = '共用頁面';
+        const owner = notebooks?.owner(page.file);
+        $('#crumbs').textContent = ['共用頁面', owner && `${owner} 共用給你`, role === 'editor' ? '可編輯' : '只能檢視'].filter(Boolean).join(' · ');
         document.title = page.title + ' - 共用頁面';
         renderTree(); setSaveState('');
       },
       onLeave: () => openPage(byId(lastLocalPage) ? lastLocalPage : kids(null)[0].id),
       onContent: sharedContent,
+      onSession: () => notebooks?.render(),
     });
-    notebooks.liveReady({ open: (page, items) => collaboration.open(page, items), linkShared, current: () => current, openLocal: openPage });
+    notebooks.liveReady({
+      open: (page, items) => collaboration.open(page, items), linkShared, current: () => current, openLocal: openPage,
+      page: () => collaboration.active?.page ?? null,
+      leave: async () => { await flush(); await collaboration.detach(); await openPage(byId(lastLocalPage) ? lastLocalPage : kids(null)[0].id); },
+    });
+    $('#share-button').hidden = false;
+    $('#share-button').addEventListener('click', () => notebooks.shareCurrent());
     if (byId(current)?.shared) goLive(current);
   } catch (error) {
     console.error(error);

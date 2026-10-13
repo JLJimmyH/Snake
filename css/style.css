@@ -158,10 +158,9 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
 .sb-brand { flex: 1; min-width: 0; display: flex; align-items: center; gap: 4px; height: 36px; padding: 0 8px; margin-left: -8px; border-radius: 6px; font-weight: 600; text-align: left; }
 .sb-brand:hover { background: var(--hover); }
 #nb-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#nb-dirty { color: var(--accent); font-size: 10px; }
 .nb-caret { color: var(--muted); font-size: 12px; }
 
-/* 側欄分頁：頁面樹／搜尋 */
+/* 側欄分頁：頁面樹／筆記本／搜尋 */
 .sb-tabs { display: flex; gap: 2px; margin: 0 8px 4px; padding: 2px; border-radius: 8px; background: var(--chip); }
 .sb-tabs button { flex: 1; height: 28px; border-radius: 6px; font-size: 13px; color: var(--muted); }
 .sb-tabs button:hover { color: var(--text); }
@@ -293,7 +292,8 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
   font-weight: 700;
   color: var(--text);
 }
-#save-state { flex: none; font-size: 12px; color: var(--muted); }
+/* 只給螢幕閱讀器（看得到的同步狀態只有 #sync-button） */
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 
 /* ---------- Toolbar ---------- */
 #toolbar {
@@ -899,25 +899,15 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
     inset: 0;
     background: rgba(0, 0, 0, .3);
   }
-  #save-state { display: none; }
 }
 
 /* Collaboration controls stay separate from local save status. */
 #collab-state, #collab-presence { font-size: 12px; color: var(--muted); }
 #collab-state { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#collab-dialog { width: min(520px, calc(100vw - 24px)); max-height: 85dvh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 20px; color: var(--text); background: var(--surface); }
-#collab-dialog::backdrop { background: rgba(0,0,0,.35); }
 .collab-heading { display: flex; align-items: center; justify-content: space-between; }
 .collab-heading h2 { margin: 0; font-size: 20px; }
 .collab-primary { background: var(--accent-fill); color: var(--on-accent); border-radius: 8px; padding: 10px 14px; margin: 8px 0; }
 .collab-primary:disabled { opacity: .4; cursor: default; }
-.collab-help { font-size: 13px; color: var(--muted); line-height: 1.6; }
-.collab-page { display: flex; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--border); }
-.collab-page button { padding: 8px; border-radius: 6px; text-align: left; }
-.collab-page button:first-child { flex: 1; overflow-wrap: anywhere; }
-.collab-page button:hover { background: var(--hover); }
-#collab-share label { display: block; margin: 12px 0 4px; }
-#collab-share input[type=email], #collab-share select { width: 100%; padding: 8px; font: inherit; }
 #viewport[data-readonly=true] .text-body { cursor: default; }
 svg.ink path.remote-preview { opacity: .55; }
 
@@ -1013,22 +1003,26 @@ svg.ink path.remote-preview { opacity: .55; }
 .sel-box[data-dragging] .sel-handle:not(.dragging) { display: none; }
 #viewport:not([data-tool=select]):not([data-tool=lasso]) .sel-handle, #viewport[data-readonly=true] .sel-handle { display: none; }
 
-#drive-dialog { width: min(520px, calc(100vw - 24px)); max-height: 85dvh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 20px; color: var(--text); background: var(--surface); }
-#drive-dialog::backdrop { background: rgba(0,0,0,.35); }
 .drive-muted { color: var(--muted); font-size: 13px; line-height: 1.6; }
-.drive-file { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
-.drive-file strong { overflow-wrap: anywhere; }
-.drive-file small { display: block; color: var(--muted); margin-top: 4px; }
-.drive-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 16px; }
-/* 頂列的儲存按鈕：有變更＝主色底，需要處理（本機同步暫停、衝突）＝警告圖示 */
-#sync-button:disabled { opacity: .5; cursor: default; }
-#sync-button.on { background: var(--accent-soft); color: var(--accent); }
-#sync-button .i-warn, #sync-button.warn .i-cloud { display: none; }
-#sync-button.warn .i-warn { display: block; }
-#sync-button.warn { color: var(--danger); }
-/* 儲存與同步視窗 */
-#sync-dialog { width: min(440px, calc(100vw - 24px)); max-height: 85dvh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 20px; color: var(--text); background: var(--surface); }
-#sync-dialog::backdrop { background: rgba(0,0,0,.35); }
+/* 頂列唯一的同步狀態（data-tone）：ok＝一朵雲；busy＝主色（等待同步、同步中）；local＝只在這台／沒連線，有字；
+   warn＝要處理，警告圖示＋字 */
+.sync-pill { flex: none; height: 32px; min-width: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 8px; border-radius: 999px; color: var(--icon); font-size: 12px; white-space: nowrap; }
+.sync-pill:hover { background: var(--hover); }
+.sync-pill:disabled { opacity: .5; cursor: default; }
+#sync-text:empty { display: none; }
+.sync-pill .i-warn, .sync-pill[data-tone=warn] .i-cloud, .sync-pill[data-tone=local] .i-cloud { display: none; }
+.sync-pill[data-tone=warn] .i-warn, .sync-pill[data-tone=local] .i-warn { display: block; }
+.sync-pill[data-tone=busy] { color: var(--accent); }
+.sync-pill[data-tone=busy] .i-cloud { fill: var(--accent-soft); }
+.sync-pill[data-tone=local] { color: var(--muted); background: var(--chip); }
+.sync-pill[data-tone=warn] { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+/* 儲存位置面板：貼在同步狀態下面的 popover（位置由 notebook-ui.js 設） */
+.sync-pop { position: fixed; inset: auto; top: 56px; right: 8px; margin: 0; width: min(400px, calc(100vw - 16px)); max-height: calc(100dvh - 72px); overflow-y: auto; box-sizing: border-box; border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; color: var(--text); background: var(--surface); box-shadow: 0 8px 28px var(--shadow); }
+.sync-pop .collab-heading h2 { font-size: 17px; }
+#sync-more { margin-top: 10px; font-size: 13px; }
+#sync-more summary { cursor: pointer; color: var(--muted); padding: 4px 0; }
+#sync-more[open] summary { margin-bottom: 2px; }
+#sync-more .sync-place:last-of-type { border-bottom: 1px solid var(--border); }
 #sync-name { font-size: 14px; font-weight: 400; color: var(--muted); }
 .sync-warn { margin: 12px 0 0; padding: 8px 10px; border-radius: 8px; font-size: 13px; color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
 .sync-warn[hidden], .sync-place[hidden] { display: none; }
@@ -1067,12 +1061,10 @@ svg.ink path.remote-preview { opacity: .55; }
 .share-actions { justify-content: space-between; margin-top: 18px; }
 .share-foot { margin: 12px 0 0; font-size: 13px; }
 .sync-links { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
-.sync-foot { margin-top: 8px; font-size: 12px; }
 .sync-links a, .link-btn { color: var(--accent); }
 .link-btn { padding: 0; font: inherit; background: none; }
 .link-btn:hover { text-decoration: underline; }
 .panel-section { margin-top: 14px; }
-.panel-wide { width: 100%; margin-left: 0; }
 
 /* 匯出對話框（js/export.js）：截圖預覽、交給 AI、圖片、PDF */
 #export-dialog { width: min(560px, calc(100vw - 24px)); max-height: 85dvh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 20px; color: var(--text); background: var(--surface); }
@@ -1135,3 +1127,63 @@ html:not([data-input="mouse"]) #btn-shortcuts { display: none; }
   .print-fit { position: relative; overflow: hidden; break-inside: avoid; }
   .print-sheet { position: relative; transform-origin: 0 0; }
 }
+
+/* 頂列「共用」：作用在目前這一頁（js/share-ui.js） */
+.share-btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; margin: 0; }
+.share-btn .i { width: 18px; height: 18px; }
+@media (max-width: 767px) { .share-btn .share-label { display: none; } .share-btn { padding: 0 8px; } }
+
+/* 頁面樹：共用頁旁邊的人數 */
+.pg-count { flex: none; min-width: 16px; padding: 0 5px; border-radius: 999px; background: var(--chip); color: var(--muted); font-size: 11px; line-height: 16px; text-align: center; }
+
+/* 側欄「筆記本」分頁（js/library.js） */
+#library { flex: 1; overflow-y: auto; padding: 4px 6px 12px; }
+.lib-head { display: flex; align-items: center; justify-content: space-between; margin: 10px 6px 4px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.lib-head:first-child { margin-top: 4px; }
+.lib-head .row-btn { opacity: 1; }
+.lib-sub { margin: 8px 6px 2px; font-size: 11px; color: var(--muted); }
+.lib-row { position: relative; display: flex; align-items: center; gap: 6px; min-height: 44px; padding: 4px 4px 4px 8px; border-radius: 6px; cursor: pointer; user-select: none; -webkit-user-select: none; }
+.lib-row:hover { background: var(--hover); }
+.lib-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.lib-row.active { background: var(--selected); }
+.lib-row.active::before { content: ""; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 2px; background: var(--accent); }
+.lib-row .row-btn { opacity: 0; }
+.lib-row:hover .row-btn, .lib-row.active .row-btn, .lib-row:focus-within .row-btn { opacity: 1; }
+.lib-icon { flex: none; width: 20px; text-align: center; font-size: 14px; }
+.lib-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.lib-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 14px; }
+.lib-status { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 11px; color: var(--muted); }
+.lib-status.warn { color: var(--danger); }
+.lib-muted { margin: 4px 8px; font-size: 12px; line-height: 1.5; color: var(--muted); }
+.lib-error { color: var(--danger); }
+.lib-link { display: block; width: calc(100% - 4px); margin: 2px; padding: 8px; border-radius: 6px; text-align: left; font-size: 13px; color: var(--muted); }
+.lib-link:hover { background: var(--hover); color: var(--text); }
+.lib-connect { color: var(--accent); }
+
+/* 側欄底部的 Google 帳號列 */
+#account { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; padding: 6px 10px; border-top: 1px solid var(--border); }
+#account .lib-muted { margin: 0; }
+.acct-btn { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 4px 6px; margin: 0 -6px; border-radius: 6px; text-align: left; }
+.acct-btn:hover { background: var(--hover); }
+.acct-avatar { flex: none; width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-fill); color: var(--on-accent); font-size: 12px; font-weight: 600; }
+.acct-text { min-width: 0; display: flex; flex-direction: column; }
+.acct-email { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 13px; }
+.acct-text small { font-size: 11px; color: var(--muted); }
+.acct-connect { padding: 6px 8px; margin-left: -8px; border-radius: 6px; color: var(--accent); font-size: 13px; }
+.acct-connect:hover { background: var(--hover); }
+.acct-privacy { font-size: 11px; color: var(--muted); }
+
+/* 新增筆記本視窗：名稱＋儲存位置 */
+#new-dialog { width: min(420px, calc(100vw - 24px)); border: 1px solid var(--border); border-radius: 12px; padding: 20px; color: var(--text); background: var(--surface); }
+#new-dialog::backdrop { background: rgba(0,0,0,.35); }
+.field-label { display: block; margin: 14px 0 6px; padding: 0; font-size: 13px; color: var(--muted); }
+.field { display: block; width: 100%; box-sizing: border-box; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font: inherit; color: var(--text); background: var(--surface); }
+.where { margin: 0; padding: 0; border: 0; }
+.where label { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; margin-bottom: 6px; border: 1px solid var(--border); border-radius: 8px; cursor: pointer; }
+.where label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.where input { margin: 3px 0 0; accent-color: var(--accent-fill); }
+.where span { display: flex; flex-direction: column; gap: 2px; }
+.where strong { font-size: 14px; font-weight: 600; }
+.where small { font-size: 12px; color: var(--muted); }
+.dialog-actions { justify-content: flex-end; margin-top: 16px; }
+.dialog-actions .chip { margin: 0; }
