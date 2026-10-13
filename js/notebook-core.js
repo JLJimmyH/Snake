@@ -34,6 +34,7 @@ export function validateNotebook({ pages, docs, blobs }) {
   ensure(pageMap.size === pages.length, '頁面 ID 重複');
   for (const p of pages) {
     ensure(validId(p.id) && typeof p.title === 'string' && p.title.length <= 10000 && Number.isFinite(p.order), '頁面資料不合法');
+    ensure(p.shared === undefined || p.shared === null || validId(p.shared), '頁面資料不合法');
     ensure(p.parentId == null || pageMap.has(p.parentId), '頁面上層不存在');
     const seen = new Set([p.id]); let parent = p.parentId;
     while (parent) { ensure(!seen.has(parent) && seen.size < 200, '頁面分類循環或過深'); seen.add(parent); parent = pageMap.get(parent).parentId; }
@@ -71,7 +72,8 @@ const usedImages = docs => new Set(docs.flatMap(d => d.items.filter(i => i.type 
 function normalize({ pages, docs, blobs }) {
   const byPage = new Map(docs.map(d => [d.pageId, d]));
   return {
-    pages: pages.map(p => ({ id: p.id, parentId: p.parentId ?? null, title: p.title ?? '', order: p.order, open: p.open !== false, created: Number.isFinite(p.created) ? p.created : 0 })),
+    // shared：這一頁共用出去時對應的 Drive 檔案 ID
+    pages: pages.map(p => ({ id: p.id, parentId: p.parentId ?? null, title: p.title ?? '', order: p.order, open: p.open !== false, created: Number.isFinite(p.created) ? p.created : 0, ...(p.shared ? { shared: p.shared } : {}) })),
     docs: pages.map(p => {
       const doc = byPage.get(p.id), view = doc?.view ?? DEFAULT_VIEW;
       return { pageId: p.id, view: { x: view.x, y: view.y, s: view.s }, items: doc?.items ?? [] };
@@ -228,7 +230,7 @@ function hash(text) {
   h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
   return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
 }
-const metaOf = p => hash(canon([p.title, p.parentId, p.order]));
+const metaOf = p => hash(canon([p.title, p.parentId, p.order, p.shared ?? null]));
 
 // 快照：每頁 [頁面資訊的雜湊, 內容的雜湊]。只看標題、位置與物件；畫面視角、展開狀態是各台裝置自己的。
 export function snapshot({ name, pages, docs }) {

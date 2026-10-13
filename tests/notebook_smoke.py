@@ -194,6 +194,7 @@ with sync_playwright() as pw:
     assert fake.uploads == uploads
     # Both changed, different pages: merged without asking, both strokes end up everywhere.
     device.locator('#tree .row', has_text='A 的頁面').hover(); device.locator('#tree .row', has_text='A 的頁面').locator('[data-act=add]').click()
+    expect(device.locator('#page-title')).to_have_value('')  # 等新頁面開好，才不會改到原本那頁的標題
     device.locator('#page-title').fill('B 的子頁'); device.locator('#page-title').press('Enter'); draw(device, 30)
     device.locator('#sync-button').click(); expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     draw(page, 180); strokes = page.locator('.ink path').count()
@@ -208,7 +209,8 @@ with sync_playwright() as pw:
     expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     draw(device, 210); device.locator('#sync-button').click(); expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     draw(page, 240); strokes = page.locator('.ink path').count()
-    page.locator('#sync-button').click(); toast(page, '存成「（衝突副本）」頁面')
+    # 衝突副本的提示很快會被「已同步」蓋掉，直接看頁面清單
+    page.locator('#sync-button').click(); expect(page.locator('#tree .pg-title', has_text='（衝突副本）')).to_have_count(1, timeout=15000)
     expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     assert sorted(titles(page)) == ['A 的頁面', 'A 的頁面（衝突副本）', 'B 的子頁'], titles(page)
     expect(page.locator('.ink path')).to_have_count(strokes)

@@ -7,6 +7,7 @@ const SCOPE = 'https://www.googleapis.com/auth/drive.file';
 const FIELDS = 'id,name,modifiedTime,size,headRevisionId';
 const FOLDER = 'SnakeNote';
 const FOLDER_TYPE = 'application/vnd.google-apps.folder';
+const PAGE_FOLDER = '共用頁面';
 let scriptPromise;
 // 需要使用者重新登入 Google 的錯誤（背景同步遇到就暫停，等使用者點擊）
 const authError = message => Object.assign(new Error(message), { auth: true });
@@ -94,11 +95,16 @@ export class DriveClient {
     if (this.server && this.session) this.request(new URL('api/google/logout', document.baseURI), { method: 'POST', headers: { 'X-Requested-With': 'snake-note' } }).catch(() => {});
     this.token = null; this.expires = 0; this.account = null; this.session = false;
   }
-  async api(url, options = {}, timeout = 60000) {
+  // 有效的 access token（伺服器模式過期就自動換新的）
+  async fresh() {
     if (!(this.token && Date.now() < this.expires)) {
       if (!this.session) throw authError('Google 授權已過期，請重新連線；本機筆記仍保留');
       await this.refresh();
     }
+    return this.token;
+  }
+  async api(url, options = {}, timeout = 60000) {
+    await this.fresh();
     let response;
     try { response = await this.request(url.startsWith('https://') ? url : API + url, {
       ...options, signal: AbortSignal.timeout(timeout), headers: { Authorization: `Bearer ${this.token}`, ...options.headers },
@@ -147,6 +153,55 @@ export class DriveClient {
     const data = await (await this.api(`files/${encodeURIComponent(id)}?alt=media`, {}, 600000)).blob();
     return { file, data };
   }
+  // ---------- 共用頁：一頁一個檔案，放在 SnakeNote/共用頁面，appProperties kind=page ----------
+  async pageFolder() {
+    const parent = await this.folder();
+    const params = new URLSearchParams({ q: `name = '${PAGE_FOLDER}' and mimeType = '${FOLDER_TYPE}' and '${parent}' in parents and trashed = false`, fields: 'files(id)', orderBy: 'createdTime', pageSize: '10' });
+    const [found] = (await this.json('files?' + params)).files ?? [];
+    if (found) return found.id;
+    return (await this.json('files?fields=id', {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ name: PAGE_FOLDER, mimeType: FOLDER_TYPE, parents: [parent] }),
+    })).id;
+  }
+  async createPage({ name, blob }) {
+    const metadata = { name, mimeType: 'application/zip', appProperties: { app: APP, kind: 'page' }, parents: [await this.pageFolder()] };
+    const session = await this.api(`${UPLOAD}files?uploadType=resumable&fields=${FIELDS}`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8', 'X-Upload-Content-Type': 'application/zip' }, body: JSON.stringify(metadata),
+    });
+    const location = session.headers.get('Location');
+    ensure(location?.startsWith(UPLOAD), 'Drive 上傳初始化失敗，請稍後重試');
+    return (await this.api(location, { method: 'PUT', headers: { 'Content-Type': 'application/zip' }, body: blob }, 600000)).json();
+  }
+  // 這個 app 看得到的共用頁：自己建立的，加上別人共用、在檔案選擇器選過的
+  async pages() {
+    const result = []; let pageToken;
+    do {
+      const params = new URLSearchParams({ q: "appProperties has { key='kind' and value='page' } and trashed = false", fields: 'nextPageToken,files(id,name,modifiedTime,ownedByMe,owners(displayName,emailAddress),capabilities(canEdit))', orderBy: 'modifiedTime desc', pageSize: '100' });
+      if (pageToken) params.set('pageToken', pageToken);
+      const page = await this.json('files?' + params);
+      result.push(...(page.files ?? [])); pageToken = page.nextPageToken;
+    } while (pageToken && result.length < 1000);
+    return result;
+  }
+  // ---------- 共用設定（Drive permissions）----------
+  async permissions(id) {
+    const params = new URLSearchParams({ fields: 'permissions(id,type,role,emailAddress,displayName,photoLink,deleted)' });
+    return ((await this.json(`files/${encodeURIComponent(id)}/permissions?${params}`)).permissions ?? []).filter(p => !p.deleted);
+  }
+  // role：writer（編輯者）／reader（檢視者）；email 省略＝知道連結的任何人
+  async share(id, { email, role, message }) {
+    const params = new URLSearchParams({ fields: 'id' });
+    const body = email ? { type: 'user', role, emailAddress: email } : { type: 'anyone', role, allowFileDiscovery: false };
+    if (email) { params.set('sendNotificationEmail', 'true'); if (message) params.set('emailMessage', message); }
+    return this.json(`files/${encodeURIComponent(id)}/permissions?${params}`, { method: 'POST', headers: { 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify(body) });
+  }
+  setRole(id, permission, role) {
+    return this.json(`files/${encodeURIComponent(id)}/permissions/${encodeURIComponent(permission)}?fields=id`, { method: 'PATCH', headers: { 'Content-Type': 'application/json; charset=UTF-8' }, body: JSON.stringify({ role }) });
+  }
+  unshare(id, permission) {
+    return this.api(`files/${encodeURIComponent(id)}/permissions/${encodeURIComponent(permission)}`, { method: 'DELETE' });
+  }
+
   // 這個檔案在 rev 之前的那一版（找不到回傳 null）。上傳後用來確認中間沒有夾著別台裝置存的版本。
   async previousRevision(id, rev) {
     const all = []; let pageToken;

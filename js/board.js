@@ -212,7 +212,8 @@ export class Board {
       this.selBox.append(handle);
     }
     this.uiLayer.append(this.selBox);
-    this.world.append(this.imgLayer, this.svg, this.textLayer, this.uiLayer);
+    this.peerLayer = h('div', 'layer peer-layer');  // 即時協作：其他人的游標與選取
+    this.world.append(this.imgLayer, this.svg, this.textLayer, this.uiLayer, this.peerLayer);
     this.cursor = h('div', 'eraser-cursor');
     this.cursor.hidden = true;
     vp.append(this.world, this.cursor);
@@ -295,6 +296,7 @@ export class Board {
     }
     this.items = structuredClone(items);
     this.setSelection([...this.sel].filter(id => next.has(id)));
+    this._renderPeers();
     this.cb.onRemote?.();
   }
 
@@ -322,6 +324,48 @@ export class Board {
   clearPreviews() {
     for (const path of this.previews?.values() ?? []) path.remove();
     this.previews?.clear();
+    for (const peer of this.peers?.values() ?? []) peer.el.remove();
+    this.peers?.clear();
+  }
+
+  // 其他人的游標與選取（即時協作）。value 是要更新的欄位：{ name, color, x, y, sel, editing }；null 表示對方離開
+  setPeer(id, value) {
+    this.peers ??= new Map();
+    if (value === null) { this.peers.get(id)?.el.remove(); this.peers.delete(id); return; }
+    let peer = this.peers.get(id);
+    if (!peer) {
+      peer = { el: h('div', 'peer'), x: null, y: null, sel: [], editing: null };
+      this.peerLayer.append(peer.el); this.peers.set(id, peer);
+    }
+    Object.assign(peer, value);
+    this._renderPeer(peer);
+  }
+
+  _renderPeers() { for (const peer of this.peers?.values() ?? []) this._renderPeer(peer); }
+
+  // 游標：箭頭＋名字；選取或正在編輯的物件：用對方的顏色框起來。都放在 world 裡跟著平移縮放，大小乘 --inv 保持固定
+  _renderPeer(peer) {
+    const el = peer.el;
+    el.style.setProperty('--peer', peer.color ?? '#61afef');
+    el.replaceChildren();
+    const label = text => { const tag = h('span', 'peer-name'); tag.textContent = text; return tag; };
+    let named = false;  // 名字只標在第一個框上
+    for (const id of new Set([...(peer.editing ? [peer.editing] : []), ...(peer.sel ?? [])])) {
+      const b = this.contentBounds(new Set([id]));
+      if (!b) continue;
+      const box = h('div', 'peer-box');
+      Object.assign(box.style, { left: b.x0 + 'px', top: b.y0 + 'px', width: b.x1 - b.x0 + 'px', height: b.y1 - b.y0 + 'px' });
+      if (id === peer.editing) box.classList.add('editing');
+      if (!named) { box.append(label(id === peer.editing ? `${peer.name ?? ''} 編輯中` : peer.name ?? '')); named = true; }
+      el.append(box);
+    }
+    if (Number.isFinite(peer.x) && Number.isFinite(peer.y)) {
+      const cursor = h('div', 'peer-cursor');
+      cursor.style.left = peer.x + 'px'; cursor.style.top = peer.y + 'px';
+      cursor.innerHTML = '<svg viewBox="0 0 16 20" aria-hidden="true"><path d="M1 1 L1 16 L5 12 L8 19 L11 18 L8 11 L14 11 Z"/></svg>';
+      cursor.append(label(peer.name ?? ''));
+      el.append(cursor);
+    }
   }
 
   // 換畫布底色：跟底色太接近的筆跡改用看得清楚的顏色重畫（只改顯示，不改資料）

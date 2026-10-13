@@ -1,0 +1,183 @@
+"""Shared pages, end to end: the real Worker and Durable Object run in `wrangler dev`; Google (OAuth, Drive, Picker) is
+faked by tests/fake_drive.py. Alice shares a page and invites Bob by email; Bob opens the link, signs in, picks the file
+once; then both draw at the same time and see each other's strokes, cursor, selection and presence. The page is written
+back to Alice's Drive file and her notebook copy.
+Needs Node (npx wrangler) in addition to the usual Playwright setup; run from the repository root."""
+import io, json, os, subprocess, sys, tempfile, time, urllib.request, zipfile
+from playwright.sync_api import sync_playwright, expect
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fake_drive import FakeDrive
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+WORKER = int(os.environ.get('LIVE_WORKER_PORT', '8790')); GOOGLE = WORKER + 1
+BASE = f'http://127.0.0.1:{WORKER}'
+
+# 假的 Google 檔案選擇器：一打開就選好檔案（並告訴假的 Drive 這個帳號選過它）
+PICKER = """
+window.gapi = { load(name, opts) { (opts.callback || opts)(); } };
+window.google = window.google || {};
+class DocsView {
+  setMimeTypes() { return this; } setIncludeFolders() { return this; } setMode() { return this; } setOwnedByMe() { return this; }
+  setFileIds(id) { this.id = id; return this; }
+}
+class PickerBuilder {
+  constructor() { this.s = {}; }
+  setTitle() { return this; } setAppId() { return this; } setDeveloperKey() { return this; } setLocale() { return this; }
+  addView(view) { this.s.view = view; return this; } setOAuthToken(token) { this.s.token = token; return this; } setCallback(cb) { this.s.cb = cb; return this; }
+  build() {
+    const s = this.s;
+    return { setVisible() {
+      fetch('https://www.googleapis.com/test/grant?file=' + s.view.id, { headers: { Authorization: 'Bearer ' + s.token } })
+        .then(() => s.cb({ action: 'picked', docs: [{ id: s.view.id, name: 'shared.zip' }] }));
+    } };
+  }
+}
+google.picker = { ViewId: { DOCS: 'docs' }, DocsViewMode: { LIST: 'list' }, Action: { PICKED: 'picked', CANCEL: 'cancel' }, DocsView, PickerBuilder };
+"""
+
+def start_worker(log):
+    g = f'http://127.0.0.1:{GOOGLE}'
+    state = tempfile.mkdtemp(prefix='snake-live-')
+    cmd = ['npx', '--no-install', 'wrangler', 'dev', '--port', str(WORKER), '--ip', '127.0.0.1', '--persist-to', state, '--show-interactive-dev-session=false', '--local-upstream', f'127.0.0.1:{WORKER}',
+           '--var', f'GOOGLE_ACCOUNTS_URL:{g}', '--var', f'GOOGLE_OAUTH_URL:{g}', '--var', f'GOOGLE_API_URL:{g}',
+           '--var', 'GOOGLE_CLIENT_SECRET:test-secret', '--var', 'SESSION_KEY:test-session-key']
+    proc = subprocess.Popen(cmd, cwd=ROOT, shell=os.name == 'nt', stdout=log, stderr=subprocess.STDOUT)
+    for _ in range(180):
+        try:
+            if urllib.request.urlopen(BASE + '/api/config', timeout=2).status == 200: return proc
+        except Exception: time.sleep(0.5)
+    raise RuntimeError('wrangler dev did not start; see the log')
+
+def stop_worker(proc):
+    if os.name == 'nt': subprocess.run(['taskkill', '/T', '/F', '/PID', str(proc.pid)], capture_output=True)
+    else: proc.terminate()
+
+def context(browser, fake):
+    ctx = browser.new_context(viewport={'width': 1300, 'height': 900})
+    ctx.route('https://www.googleapis.com/**', fake.route)
+    ctx.route('https://accounts.google.com/gsi/client', lambda r: r.fulfill(content_type='text/javascript', body='window.google=window.google||{};'))
+    ctx.route('https://apis.google.com/js/api.js', lambda r: r.fulfill(content_type='text/javascript', body=PICKER))
+    # 網站還沒設定 Picker 金鑰：測試時換一個假的
+    def config(route):
+        body = route.fetch().text().replace("GOOGLE_PICKER_KEY = ''", "GOOGLE_PICKER_KEY = 'test-picker-key'")
+        route.fulfill(content_type='text/javascript', body=body)
+    ctx.route('**/js/drive-config.js*', config)
+    return ctx
+
+def draw(page, x=300, y=300):
+    page.locator('.tool[data-tool=pen]').click()
+    box = page.locator('#viewport').bounding_box(); x0, y0 = box['x'] + x, box['y'] + y
+    page.mouse.move(x0, y0); page.mouse.down(); page.mouse.move(x0 + 80, y0 + 40, steps=6); page.mouse.up()
+
+def toast(page, text):
+    expect(page.locator('#toast')).to_contain_text(text, timeout=20000)
+
+def zip_items(data):
+    with zipfile.ZipFile(io.BytesIO(data)) as z:
+        return json.loads(z.read('docs/page.json'))['items']
+
+with sync_playwright() as pw:
+    fake = FakeDrive(); fake.serve(GOOGLE)
+    log = open(os.path.join(tempfile.gettempdir(), 'snake-live-wrangler.log'), 'w')
+    proc = start_worker(log)
+    errors = []
+    try:
+        browser = pw.chromium.launch(executable_path='/usr/bin/chromium', args=['--no-sandbox'])
+
+        # 1. Alice 共用「歡迎使用」：先連線 Google（整頁跳轉），回來後接著建立共用檔案
+        a = context(browser, fake).new_page(); a.on('pageerror', lambda e: errors.append('alice: ' + str(e)))
+        a.goto(BASE); expect(a.locator('#page-title')).to_have_value('歡迎使用')
+        row = a.locator('#tree .row.active')
+        # 即時協作的程式載入後，頁面選單才有「共用此頁」
+        for _ in range(40):
+            row.hover(); row.locator('[data-act=more]').click()
+            if a.locator('#menu button', has_text='共用此頁').count(): break
+            a.keyboard.press('Escape'); a.wait_for_timeout(250)
+        assert not errors, errors
+        a.locator('#menu button', has_text='共用此頁').click()
+        try: expect(a.locator('#share-dialog')).to_contain_text('會在你的 Google Drive', timeout=20000)
+        except AssertionError:
+            print('DEBUG url', a.url); a.screenshot(path=os.path.join(tempfile.gettempdir(), 'snake-live.png')); raise
+        a.locator('#share-dialog button', has_text='開始共用').click()
+        expect(a.locator('#share-dialog')).to_contain_text('具有存取權的使用者', timeout=20000)
+        expect(a.locator('#share-dialog .share-person')).to_contain_text('Alice（你）')
+        pages = [f for f in fake.files['alice'].values() if f.get('appProperties', {}).get('kind') == 'page']
+        assert len(pages) == 1, pages
+        file_id = pages[0]['id']
+        texts = [i for i in zip_items(pages[0]['data']) if i['type'] == 'text']
+        assert texts and '歡迎' in texts[0]['text'], texts
+        print('PASS: sharing a page creates its own Drive file')
+
+        # 2. 用 email 邀請 Bob（編輯者）：Drive 權限＋Google 寄信，信裡有開啟連結
+        a.locator('.share-invite input[type=email]').fill('bob@example.test')
+        a.locator('.share-invite button', has_text='傳送').click()
+        toast(a, '已邀請 bob@example.test')
+        expect(a.locator('#share-dialog .share-person', has_text='Bob')).to_have_count(1)
+        a.locator('#share-dialog').screenshot(path=os.path.join(tempfile.gettempdir(), 'snake-share-dialog.png'))
+        assert fake.files['alice'][file_id]['perms'] == {'bob': 'writer'}
+        invite = fake.files['alice'][file_id]['invites'][0]
+        assert invite['notify'] == ['true'] and f'?page={file_id}' in invite['message'], invite
+        a.locator('#share-dialog button', has_text='完成').click()
+        expect(a.locator('#collab-state')).to_have_text('已同步', timeout=20000)
+        print('PASS: invite by email through Drive permissions')
+
+        # 3. Bob 打開連結：登入 Google、在檔案選擇器選一次，就進到同一頁
+        fake.next_user = 'bob'
+        b = context(browser, fake).new_page(); b.on('pageerror', lambda e: errors.append('bob: ' + str(e)))
+        b.goto(f'{BASE}/?page={file_id}')
+        expect(b.locator('#share-dialog')).to_contain_text('別人透過 Google Drive 共用給你', timeout=30000)
+        b.locator('#share-dialog button', has_text='選取並開啟').click()
+        expect(b.locator('#crumbs')).to_have_text('共用頁面', timeout=20000)
+        expect(b.locator('#page-title')).to_have_value('歡迎使用')
+        expect(b.locator('#collab-state')).to_have_text('已同步', timeout=20000)
+        expect(b.locator('.text-item').first).to_contain_text('歡迎')
+        print('PASS: the invitee opens the link, signs in and picks the file once')
+
+        # 4. 同時畫：兩邊即時看到對方的筆跡
+        before = b.locator('.ink path:not(.remote-preview)').count()
+        draw(a, 300, 420)
+        expect(b.locator('.ink path:not(.remote-preview)')).to_have_count(before + 1, timeout=10000)
+        draw(b, 500, 420)
+        expect(a.locator('.ink path:not(.remote-preview)')).to_have_count(before + 2, timeout=10000)
+        expect(b.locator('.ink path:not(.remote-preview)')).to_have_count(before + 2)
+        print('PASS: strokes appear live on both sides')
+
+        # 5. 游標、選取、在線名單
+        box = b.locator('#viewport').bounding_box()
+        b.mouse.move(box['x'] + 700, box['y'] + 300); b.mouse.move(box['x'] + 720, box['y'] + 320, steps=3)
+        expect(a.locator('.peer-cursor')).to_contain_text('Bob', timeout=10000)
+        expect(b.locator('.peer-cursor', has_text='Bob')).to_have_count(0)  # 看不到自己
+        a.mouse.move(a.locator('#viewport').bounding_box()['x'] + 400, a.locator('#viewport').bounding_box()['y'] + 200)
+        expect(b.locator('.peer-cursor')).to_contain_text('Alice', timeout=10000)
+        b.locator('.tool[data-tool=select]').click()
+        b.mouse.click(box['x'] + 540, box['y'] + 440)  # Bob 剛畫的那一筆
+        expect(a.locator('.peer-box')).to_have_count(1, timeout=10000)
+        expect(a.locator('.peer-box')).to_contain_text('Bob')
+        expect(a.locator('.peer-cursor')).to_contain_text('Bob', timeout=10000)
+        expect(a.locator('#collab-presence .presence-dot')).to_have_count(1)
+        assert a.locator('#collab-presence .presence-dot').get_attribute('title') == 'Bob'
+        a.screenshot(path=os.path.join(tempfile.gettempdir(), 'snake-live-alice.png'))
+        b.mouse.move(box['x'] - 50, box['y'] - 50)  # 離開畫布
+        expect(a.locator('.peer-cursor', has_text='Bob')).to_have_count(0, timeout=10000)
+        print('PASS: cursors, selection and presence are visible to the other person')
+
+        # 6. 寫回 Drive（saver 是先進來的 Alice）與 Alice 筆記本裡的這一頁
+        deadline = time.time() + 40
+        while time.time() < deadline and len([i for i in zip_items(fake.files['alice'][file_id]['data']) if i['type'] == 'stroke']) < 2:
+            a.wait_for_timeout(500)
+        strokes = [i for i in zip_items(fake.files['alice'][file_id]['data']) if i['type'] == 'stroke']
+        assert len(strokes) >= 2, strokes
+        local = a.evaluate("""async()=>{const {db}=await import('./js/db.js');const p=(await db.getAll('pages')).find(p=>p.shared);return (await db.get('docs',p.id)).items.filter(i=>i.type==='stroke').length}""")
+        assert local >= 2, local
+        print("PASS: the page is written back to the Drive file and to the owner's notebook")
+
+        # 7. Bob 的「共用頁面」清單看得到這一頁
+        b.locator('#collab-leave').click(); expect(b.locator('#crumbs')).not_to_have_text('共用頁面')
+        b.locator('#nb-button').click(); b.locator('#menu button', has_text='共用頁面').click()
+        expect(b.locator('#share-dialog .share-person')).to_contain_text('Alice 共用給你', timeout=20000)
+        print('PASS: shared pages list')
+
+        assert not errors, errors
+        browser.close()
+    finally:
+        stop_worker(proc); log.close()
+print('live smoke ok')

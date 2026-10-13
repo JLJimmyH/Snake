@@ -81,9 +81,10 @@ function scheduleSave() {
 async function saveNow() {
   clearTimeout(saveTimer);
   saveTimer = null;
-  if (collaboration?.active) {
+  // 別人共用來的頁面（不在筆記本裡）只存 Yjs 快取；筆記本裡的共用頁兩邊都存（筆記本那份會跟著同步到 Drive）
+  if (collaboration?.active) await collaboration.saved();
+  if (collaboration?.active && !current) {
     contentChanged = false;
-    await collaboration.saved();
     setSaveState('已存於本機');
     return;
   }
@@ -200,6 +201,7 @@ async function openPage(id) {
   $('#page-title').readOnly = false;
   board.load(await db.get('docs', id));
   setSaveState('');
+  if (byId(id)?.shared) goLive(id);
   db.update('notebooks', notebookId, nb => nb && { ...nb, lastPage: id });
   for (const a of ancestors(id)) {
     if (!a.open) {
@@ -299,6 +301,7 @@ function renderTree() {
         <button class="row-btn" data-act="add" title="新增子頁面">＋</button>
         <button class="row-btn" data-act="more" title="更多">⋯</button>`;
       row.querySelector('.pg-title').textContent = p.title || '未命名';
+      if (p.shared) { row.querySelector('.pg-icon').textContent = '👥'; row.title = '共用頁面：可以跟其他人即時一起編輯'; }
       tree.append(row);
       if (n && p.open) walk(p.id, depth + 1);
     }
@@ -398,8 +401,41 @@ function pageMenu(rect, id) {
     { label: '↑ 上移', disabled: i === 0, run: () => swapOrder(p, sibs[i - 1]) },
     { label: '↓ 下移', disabled: i === sibs.length - 1, run: () => swapOrder(p, sibs[i + 1]) },
     { label: '⇢ 移動到…', run: () => moveMenu(rect, id) },
+    ...(collaboration && notebooks?.shareReady() ? [{ label: p.shared ? '👥 共用設定…' : '👥 共用此頁…', run: () => notebooks.sharePage(id) }] : []),
     { label: '🗑 刪除', danger: true, run: () => deletePage(id) },
   ]);
+}
+
+// ---------- 共用頁（即時協作，見 js/collaboration.js）----------
+// 筆記本裡的共用頁：打開就連上房間。連不上（沒登入、離線）時照樣顯示本機內容，但先設成唯讀，免得跟房間的內容分岔
+async function goLive(id) {
+  const page = byId(id);
+  if (!collaboration || !page?.shared) return;
+  try {
+    await collaboration.open({ file: page.shared, title: page.title, local: id }, structuredClone(board.items));
+  } catch (error) {
+    if (current !== id) return;
+    board.setReadOnly(true);
+    $('#collab-state').textContent = error.code === 'signin' ? '共用頁面：連線 Google 後才能編輯' : '共用頁面：' + error.message;
+  }
+}
+
+// 這一頁開始共用（或停止共用）：記下對應的 Drive 檔案
+async function linkShared(id, file) {
+  const page = byId(id);
+  if (!page) return;
+  if (file) page.shared = file; else delete page.shared;
+  await savePage(page);
+  await markChanged();
+  if (current === id) await openPage(id);
+  renderTree();
+}
+
+// 房間內容變了：筆記本裡的這一頁跟著存（之後隨筆記本同步到 Drive）
+function sharedContent(page) {
+  if (page.local !== current) return;
+  contentChanged = true;
+  scheduleSave();
 }
 
 function moveMenu(rect, id) {
@@ -931,8 +967,9 @@ async function refreshNotebook(id) {
   pages = await pagesOf(id);
   if (!current) { renderTree(); return; }
   if (!byId(current)) { await reloadNotebook(id); return; }
+  // 共用頁以房間的內容為準，筆記本同步帶來的舊版本不蓋到畫布上
   const items = (await db.get('docs', current))?.items ?? [];
-  if (JSON.stringify(items) !== JSON.stringify(board.items)) board.applyRemote(items);
+  if (collaboration?.active?.page.local !== current && JSON.stringify(items) !== JSON.stringify(board.items)) board.applyRemote(items);
   renderTree();
   renderHeader();
 }
@@ -990,24 +1027,28 @@ async function init() {
   await switchNotebook(await initialNotebook());
   try {
     const response = await fetch(new URL('api/config', document.baseURI));
-    if (response.ok) {
-      const { setupCollaboration } = await import('/collab-assets/collaboration.js');
-      collaboration = await setupCollaboration({
-        board, beforeOpen: flush, localPage: () => byId(current), toast,
-        onOpen: page => {
-          current = null;
-          $('#page-title').value = page.title;
-          $('#page-title').readOnly = true;
-          $('#crumbs').textContent = '協作頁面';
-          document.title = page.title + ' - 協作筆記';
-          renderTree(); setSaveState('');
-        },
-        onLeave: () => openPage(byId(lastLocalPage) ? lastLocalPage : kids(null)[0].id),
-      });
-    } else showLocalCollaborationInfo();
+    const config = response.ok ? await response.json().catch(() => null) : null;
+    if (config?.mode !== 'cloudflare') { showLocalCollaborationInfo(); return; }
+    const { setupCollaboration } = await import('/collab-assets/collaboration.js');
+    collaboration = await setupCollaboration({
+      board, beforeOpen: flush, toast, drivePage: notebooks?.drivePage,
+      // 別人共用來的頁面：不在筆記本裡，標題唯讀
+      onOpen: page => {
+        current = null;
+        $('#page-title').value = page.title;
+        $('#page-title').readOnly = true;
+        $('#crumbs').textContent = '共用頁面';
+        document.title = page.title + ' - 共用頁面';
+        renderTree(); setSaveState('');
+      },
+      onLeave: () => openPage(byId(lastLocalPage) ? lastLocalPage : kids(null)[0].id),
+      onContent: sharedContent,
+    });
+    notebooks.liveReady({ open: (page, items) => collaboration.open(page, items), linkShared, current: () => current, openLocal: openPage });
+    if (byId(current)?.shared) goLive(current);
   } catch (error) {
-    showLocalCollaborationInfo();
-    toast('協作服務無法啟動：' + error.message);
+    console.error(error);
+    toast('即時協作無法啟動：' + error.message);
   }
 }
 

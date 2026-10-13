@@ -920,6 +920,22 @@ svg.ink path.lasso { fill: color-mix(in srgb, var(--accent) 6%, transparent); st
 #collab-share input[type=email], #collab-share select { width: 100%; padding: 8px; font: inherit; }
 #viewport[data-readonly=true] .text-body { cursor: default; }
 svg.ink path.remote-preview { opacity: .55; }
+
+/* 即時協作：其他人的游標、選取與在線名單。大小乘 --inv，螢幕上不受縮放影響 */
+.peer-layer { pointer-events: none; }
+.peer-cursor { position: absolute; transform: scale(var(--inv, 1)); transform-origin: 0 0; transition: left .08s linear, top .08s linear; }
+.peer-cursor svg { display: block; width: 16px; height: 20px; fill: var(--peer); stroke: #fff; stroke-width: 1.2; filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .35)); }
+.peer-name {
+  position: absolute; left: 12px; top: 16px; padding: 1px 6px; border-radius: 4px;
+  background: var(--peer); color: #fff; font-size: 11px; line-height: 16px; white-space: nowrap;
+}
+.peer-box { position: absolute; border: calc(1.5px * var(--inv, 1)) solid var(--peer); border-radius: calc(3px * var(--inv, 1)); }
+.peer-box .peer-name { left: 0; top: auto; bottom: 100%; transform: scale(var(--inv, 1)); transform-origin: 0 100%; margin-bottom: calc(2px * var(--inv, 1)); }
+#collab-presence { display: inline-flex; align-items: center; gap: 2px; }
+.presence-dot {
+  width: 22px; height: 22px; border-radius: 50%; display: inline-grid; place-items: center;
+  background: var(--peer); color: #fff; font-size: 11px; font-weight: 600; border: 2px solid var(--bg, #fff);
+}
 [hidden] { display: none !important; }
 @media (max-width: 767px) {
   #topbar { flex-wrap: wrap; gap: 4px; height: auto; min-height: 52px; padding-bottom: 4px; }
@@ -1018,6 +1034,24 @@ svg.ink path.remote-preview { opacity: .55; }
 .sync-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .sync-actions:not(:empty) { margin-top: 10px; }
 .sync-actions .collab-primary { margin: 0; padding: 7px 12px; }
+
+/* 共用視窗（像 Google Drive 的共用）與「共用頁面」清單 */
+#share-dialog { width: min(560px, calc(100vw - 24px)); max-height: 85dvh; overflow-y: auto; border: 1px solid var(--border); border-radius: 12px; padding: 20px; color: var(--text); background: var(--surface); }
+#share-dialog::backdrop { background: rgba(0,0,0,.35); }
+#share-dialog h3 { font-size: 14px; margin: 18px 0 6px; }
+#share-dialog p { line-height: 1.6; }
+.share-invite { display: flex; gap: 8px; margin-top: 14px; }
+.share-invite input { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid var(--border); border-radius: 8px; font: inherit; color: var(--text); background: var(--surface); }
+.share-invite select, .share-person select, .share-general select { padding: 7px 8px; border: 1px solid var(--border); border-radius: 8px; font: inherit; color: var(--text); background: var(--surface); }
+.share-invite .collab-primary { margin: 0; }
+.share-people { display: flex; flex-direction: column; }
+.share-person { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px solid var(--border); }
+.share-person:last-child { border-bottom: 0; }
+.share-person > div { display: flex; flex-direction: column; min-width: 0; }
+.share-person small { color: var(--muted); overflow-wrap: anywhere; }
+.share-general { display: flex; flex-wrap: wrap; gap: 8px; }
+.share-actions { justify-content: space-between; margin-top: 18px; }
+.share-foot { margin: 12px 0 0; font-size: 13px; }
 .sync-links { margin: 12px 0 0; font-size: 13px; color: var(--muted); }
 .sync-foot { margin-top: 8px; font-size: 12px; }
 .sync-links a, .link-btn { color: var(--accent); }

@@ -3,6 +3,7 @@ import { packNotebook, unpackNotebook, readZip, toFile, fromFile, snapshot, same
 import { DriveClient, loadGoogleIdentity } from './drive.js';
 import { createDriveSync, driveDirty } from './drive-sync.js';
 import { GOOGLE_DRIVE_CLIENT_ID } from './drive-config.js';
+import { setupShare } from './share-ui.js';
 import { localSupported, createLocalSync, localDirty, handleOf, setHandle, dropHandle, pickSave, pickOpen, allowWrite } from './local-file.js';
 
 const $ = selector => document.querySelector(selector);
@@ -34,6 +35,7 @@ export function setupNotebooks({ current, switchTo, create, flush, persist, idle
 
   const local = createLocalSync({ current, flush: persist, pack: packFile, load: loadLocal, onState: () => render() });
   const driveSync = createDriveSync({ drive, store: { read: readFile, merge }, onState: () => render(), toast });
+  const share = setupShare({ drive, withDrive: (task, intent) => withDrive(task, intent), run: task => run(task), toast, switchTo });
   const trouble = nb => !!nb.local && TROUBLE.includes(local.status(nb.id).state) || !!nb.drive && DRIVE_TROUBLE.includes(driveSync.status(nb.id).state);
 
   async function render() {
@@ -254,6 +256,7 @@ export function setupNotebooks({ current, switchTo, create, flush, persist, idle
       if (pending.intent === 'open') return openDrive();
       if (pending.intent === 'copy') return saveCopy();
     }
+    if (pending?.intent) share.resume(pending.intent);
     if (shown?.drive) driveSync.sync(shown.id);
   }
 
@@ -473,6 +476,7 @@ export function setupNotebooks({ current, switchTo, create, flush, persist, idle
         { label: localSupported ? '💾 本機檔案…' : '💾 匯入 zip…', run: openLocal },
       ]) },
       { sep: true },
+      ...(share.ready() ? [{ label: '👥 共用頁面…', run: share.showShared }] : []),
       { label: '⇅ 儲存與同步…', run: openSync },
       { label: '✎ 重新命名', run: rename },
       { label: '✕ 關閉筆記本', danger: true, run: close },
@@ -515,5 +519,5 @@ export function setupNotebooks({ current, switchTo, create, flush, persist, idle
 
   afterGoogle();
 
-  return { render, changed };
+  return { render, changed, sharePage: share.sharePage, drivePage: share.drivePage, liveReady: share.liveReady, shareReady: share.ready };
 }

@@ -1,10 +1,10 @@
-// sync 分支的測試站：靜態網站＋Google 登入（見 worker/index.js、docs/GOOGLE_DRIVE_SETUP.md）。
+// sync 分支的測試站：靜態網站＋Google 登入＋共用頁的即時協作（見 worker/、docs/GOOGLE_DRIVE_SETUP.md）。
 // secrets（不要寫進這個檔案）：GOOGLE_CLIENT_SECRET、SESSION_KEY
 {
   "name": "snake-dev",
-  "main": "worker/index.js",
+  "main": "worker/main.js",
   "compatibility_date": "2026-10-01",
-  // 只上傳 dist/（scripts/site.mjs 從專案複製網站檔案過去）
+  // 只上傳 dist/（scripts/site.mjs 從專案複製網站檔案過去，並打包即時協作的前端）
   "build": { "command": "node scripts/site.mjs" },
   "assets": {
     "directory": "./dist",
@@ -15,5 +15,10 @@
   "vars": {
     "GOOGLE_CLIENT_ID": "1026660329414-otfb34lm2i61okamhhjdo6nid9smo92n.apps.googleusercontent.com"
   },
+  // 每個共用頁（Drive 檔案）一個房間：Yjs 內容、圖片、WebSocket 連線
+  "durable_objects": {
+    "bindings": [{ "name": "ROOMS", "class_name": "PageRoom" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["PageRoom"] }],
   "observability": { "enabled": true }
 }

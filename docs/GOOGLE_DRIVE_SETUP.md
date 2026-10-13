@@ -214,7 +214,37 @@ npx wrangler secret put GOOGLE_CLIENT_SECRET
 
 瀏覽器的本機資料依網址分開存：`snake-dev.g6n4f.com` 看不到 `jljimmyh.github.io/Snake/` 裡的本機筆記本。要帶過去，先在舊網址存到 Drive，再到新網址「從 Drive 開啟」。
 
+## 9. 共用頁面（即時協作）
+
+只在 Cloudflare 版本有。在左側頁面的「⋯」選「共用此頁…」：
+
+1. 這一頁另存成 `SnakeNote/共用頁面/<頁面名稱>.zip`，筆記本裡的這一頁連到它（圖示變成 👥）。
+2. 共用視窗跟 Google 的一樣：輸入 email、選編輯者／檢視者後傳送，Google 會寄信給對方（信裡有開啟連結）；也能改權限、移除、設定「知道連結的任何人」、複製連結。
+3. 對方打開連結 → 登入 Google → 第一次要在 Google 檔案選擇器選取這個檔案（`drive.file` 權限只看得到 app 自己建立的檔案，別人共用來的要選過一次）→ 進入同一頁。
+4. 同一頁的人即時看到彼此的筆跡、游標（附名字）、選取的物件與正在編輯的文字框；頂列有在線的人。
+
+背後：每個共用檔案在 Cloudflare 有一間房間（Durable Object，`worker/room.js`），負責轉發與暫存；誰能進來每 10 分鐘用那個人自己的 Google 授權問 Drive 一次（`files.get` 的 `capabilities`）。在線的編輯者之一定時把內容寫回 Drive 檔案。圖片暫存在房間裡，每頁上限 50 MB。
+
+### Google 檔案選擇器（Picker）設定
+
+讓被邀請的人能開啟別人共用的檔案，要設定一次：
+
+1. 啟用 Google Picker API：https://console.cloud.google.com/apis/library/picker.googleapis.com
+2. 建立 API 金鑰：https://console.cloud.google.com/apis/credentials →「建立憑證」→「API 金鑰」。
+   - 應用程式限制：網站，加入 `https://snake-dev.g6n4f.com/*` 與 `https://docs.google.com/*`（少了後者 Picker 會說金鑰無效）。
+   - API 限制：只勾 Google Picker API。
+3. 把金鑰填進 `js/drive-config.js` 的 `GOOGLE_PICKER_KEY`（公開金鑰，可以放在前端），重新部署。
+
+`GOOGLE_APP_ID` 是 Cloud 專案編號（Client ID 開頭那串數字）。
+
+### 本機測試
+
+`tests/live_smoke.py` 在 `wrangler dev` 裡跑真正的 Worker 與 Durable Object，Google 用 `tests/fake_drive.py` 模擬：Alice 共用、用 email 邀請 Bob，Bob 開連結、選檔案、兩邊同時畫、看到對方游標與選取，最後檢查寫回 Drive。需要 Node（`npx wrangler`）。
+
 ## 官方參考
+
+- Google 檔案選擇器：https://developers.google.com/workspace/drive/picker/guides/overview
+- Drive 共用權限：https://developers.google.com/workspace/drive/api/guides/manage-sharing
 
 - 伺服器端授權碼流程（refresh token）：https://developers.google.com/identity/protocols/oauth2/web-server
 

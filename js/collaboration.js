@@ -1,21 +1,49 @@
+// 共用頁的即時協作（Cloudflare 版，worker/room.js 的客戶端）。一個共用頁＝Drive 上的一個檔案＝一間房間。
+// 內容用 Yjs 合併：先在本機顯示並存進 IndexedDB，連上後依 state vector 補送；還會轉發畫到一半的筆跡、游標、選取與在線名單。
+// 進房間前先跟 Worker 拿通行證（Worker 用這個人的 Google 授權問 Drive 能不能看／改這個檔案）。
+// 房間指定一位在線的編輯者（saver）定時把內容寫回 Drive 上的檔案，那才是正本。
+// 這個檔案用 esbuild 打包成 collab-assets/collaboration.js（含 Yjs），網站有 /api/config 時才載入。
 import * as Y from 'yjs';
-import { createClient } from '@supabase/supabase-js';
 import { db } from './db.js';
 import { LOCAL, encode, decode, project, publish } from '../collaboration/model.js';
 
-const roleLabel = { owner: '擁有者', editor: '可編輯', viewer: '唯讀' };
 const $ = selector => document.querySelector(selector);
+const SAVE_DELAY = 15000;   // saver 停手多久後寫回 Drive
+const CURSOR_EVERY = 50;
+const api = path => new URL('api/shared/' + path, document.baseURI);
+const failure = (message, code) => Object.assign(new Error(message), { code });
 
-class SharedSession {
+class LiveSession {
+  // page：{ file（Drive 檔案 ID）, title, local（筆記本裡對應的頁面 ID；別人共用來的頁面沒有）}
   constructor(ui, page) {
     this.ui = ui; this.page = page; this.doc = new Y.Doc(); this.baseline = [];
     this.version = 0; this.dirty = false; this.ready = false; this.closed = false;
     this.uploads = new Set(); this.cacheQueue = Promise.resolve();
-    this.cacheKey = `collab:${ui.user.id}:${page.id}`;
+    this.cacheKey = `live:${page.file}`;
     this.instance = crypto.randomUUID();
+    this.people = new Map();  // peer → { name, color }
     this.undo = new Y.UndoManager(this.doc.getMap('items'), { trackedOrigins: new Set([LOCAL]), captureTimeout: 300 });
   }
-  async start(initial) {
+
+  // 拿通行證；沒登入、沒權限、檔案不見了分別丟出 code＝signin／access／missing 的錯誤
+  async ticket() {
+    let response;
+    try { response = await fetch(api(this.page.file + '/ticket'), { method: 'POST', headers: { 'X-Requested-With': 'snake-note' } }); }
+    catch { throw failure('連線中斷，請確認網路後重試', 'offline'); }
+    if (response.status === 401) throw failure('請先連線 Google', 'signin');
+    if (response.status === 403) throw failure('還沒有這一頁的存取權', 'access');
+    if (response.status === 404) throw failure('找不到這個共用頁面，可能已被刪除', 'missing');
+    if (!response.ok) throw failure(`無法進入共用頁面 (${response.status})`, 'error');
+    const ticket = await response.json();
+    this.pass = ticket; this.role = ticket.role; this.me = ticket.user;
+    // 別人共用來的頁面：標題用 Drive 上的檔名
+    this.page.title ??= String(ticket.name ?? '').replace(/\.zip$/i, '') || '共用頁面';
+    return ticket;
+  }
+
+  // items：還沒有本機快取時先顯示的內容（筆記本裡的這一頁）
+  async start(items = []) {
+    await this.ticket();
     const cached = await db.get('meta', this.cacheKey);
     if (cached) {
       Y.applyUpdate(this.doc, decode(cached.update), 'cache');
@@ -23,50 +51,47 @@ class SharedSession {
       this.inheritedPending = { ...(cached.pending ?? {}) };
       this.uploads = new Set(cached.uploads ?? []);
     }
-    this.baseline = project(this.doc);
-    this.ui.openBoard(this.page, this.baseline);
+    this.seedItems = items;
+    this.baseline = cached ? project(this.doc) : structuredClone(items);
+    this.ui.openBoard(this, this.baseline);
     this.doc.on('update', (_update, origin) => {
       if (origin === LOCAL || origin === this.undo) {
         this.version++; this.dirty = true;
         this.cache(); this.scheduleSend();
       } else this.cache();
+      this.changedSinceSave = true; this.scheduleSave();
       this.ui.board._history();
     });
     this.undo.on('stack-item-added', () => this.ui.board._history());
     this.undo.on('stack-item-popped', () => this.ui.board._history());
-    if (initial) { publish(this.doc, [], initial); this.render(); }
     this.renderTimer = setInterval(() => this.render(), 60);
-    this.previewTimer = setInterval(() => {
-      if (!this.ready || this.page.role === 'viewer') return;
-      const action = this.ui.board.action;
-      if (action?.kind === 'draw') {
-        // Preview only; large strokes are sampled, final full stroke is durable.
-        const item = { ...action.item, pts: action.item.pts.filter((_, i) => i % Math.max(1, Math.ceil(action.item.pts.length / 1500)) === 0) };
-        this.ws.send(JSON.stringify({ type: 'preview', item })); this.previewActive = true;
-      } else if (this.previewActive) {
-        this.ws.send(JSON.stringify({ type: 'preview', item: null })); this.previewActive = false;
-      }
-    }, 50);
+    this.previewTimer = setInterval(() => this.sendPreview(), 50);
+    this.focusTimer = setInterval(() => this.sendFocus(), 150);
+    this.pointer = event => this.sendCursor(event);
+    this.ui.board.vp.addEventListener('pointermove', this.pointer);
+    this.ui.board.vp.addEventListener('pointerleave', this.pointer);
     this.connect();
   }
-  blobKey(id) { return `collab-blob:${this.ui.user.id}:${this.page.id}:${id}`; }
+
+  blobKey(id) { return `live-blob:${this.page.file}:${id}`; }
   async blob(id) {
     const cached = await db.get('blobs', this.blobKey(id));
     if (cached) return cached;
-    // A newly added image exists in the original local blob store.
+    // 自己剛加的圖片、或筆記本裡原本就有的圖片
     const local = await db.get('blobs', id);
     if (local) return local;
     try {
-      const response = await this.ui.request(`/api/pages/${this.page.id}/blobs/${id}`);
+      const response = await fetch(api(`${this.page.file}/blobs/${id}`), { headers: { 'X-Snake-Ticket': this.pass.ticket } });
+      if (!response.ok) return null;
       const blob = await response.blob();
       await db.put('blobs', blob, this.blobKey(id));
       return blob;
     } catch { return null; }
   }
+
   async cache() {
     const value = { update: encode(Y.encodeStateAsUpdate(this.doc)), dirty: this.dirty, version: this.version, uploads: [...this.uploads] };
-    // Never let two tabs overwrite each other's offline Yjs history. Each tab's
-    // pending bit is independent: an ack from one cannot clear another's work.
+    // 同一頁在好幾個分頁開著：各自的待同步標記分開記，不會互相蓋掉
     this.cacheQueue = this.cacheQueue.then(() => db.update('meta', this.cacheKey, previous => {
       const pending = { ...(previous?.pending ?? {}) };
       if (value.dirty) pending[this.instance] = value.version; else delete pending[this.instance];
@@ -76,11 +101,13 @@ class SharedSession {
     try { await this.cacheQueue; }
     catch (error) { this.ui.status('本機儲存失敗，請勿關閉頁面'); throw error; }
   }
+
   local(items) {
-    if (this.page.role === 'viewer') return;
+    if (this.role !== 'editor') return;
     publish(this.doc, this.baseline, items);
     this.baseline = structuredClone(items);
   }
+
   render(force = false) {
     const board = this.ui.board;
     if (this.closed || (!force && (board.action || board.editing))) return;
@@ -88,22 +115,26 @@ class SharedSession {
     if (JSON.stringify(items) !== JSON.stringify(this.baseline)) {
       board.applyRemote(items);
       this.baseline = structuredClone(items);
+      this.ui.content(this, items);
     }
   }
+
   scheduleSend() {
     clearTimeout(this.sendTimer);
     this.ui.status(this.ready ? '同步中…' : '離線，已保留待同步內容');
     this.sendTimer = setTimeout(() => this.send().catch(error => this.fail(error)), 80);
   }
+
   async send() {
-    if (!this.ready || this.inFlight || this.sending || !this.dirty || this.page.role === 'viewer') return;
+    if (!this.ready || this.inFlight || this.sending || !this.dirty || this.role !== 'editor') return;
     this.sending = true;
     try {
       for (const item of project(this.doc)) {
         if (item.type !== 'image' || this.uploads.has(item.blobId)) continue;
         const blob = await this.blob(item.blobId);
         if (!blob) throw new Error('圖片尚未取得，稍後再同步');
-        await this.ui.request(`/api/pages/${this.page.id}/blobs/${item.blobId}`, { method: 'PUT', headers: { 'Content-Type': blob.type }, body: blob });
+        const response = await fetch(api(`${this.page.file}/blobs/${item.blobId}`), { method: 'PUT', headers: { 'Content-Type': blob.type, 'X-Snake-Ticket': this.pass.ticket }, body: blob });
+        if (!response.ok) throw new Error(response.status === 413 ? '這一頁的圖片已達 50 MB 上限' : `圖片上傳失敗 (${response.status})`);
         this.uploads.add(item.blobId);
       }
       if (this.closed || !this.ready) return;
@@ -115,130 +146,213 @@ class SharedSession {
       this.ackTimer = setTimeout(() => this.ws?.close(), 15000);
     } finally { this.sending = false; }
   }
+
+  // 房間是空的（剛共用、或房間被清掉）：用筆記本裡的這一頁或 Drive 上的檔案當初始內容
+  async seed() {
+    if (this.doc.getMap('items').size) { this.dirty = true; return; }
+    let items = this.seedItems;
+    if (!items.length && !this.page.local) items = (await this.ui.drivePage.load(this.page.file)).items;
+    if (items.length) publish(this.doc, [], items);
+  }
+
   async connect() {
     if (this.closed) return;
     this.ui.status(this.dirty ? '連線中，待同步內容已保留' : '連線中…');
     try {
-      const token = await this.ui.token();
+      if (!this.pass || this.pass.until - Date.now() < 30000) await this.ticket();
       if (this.closed) return;
-      const url = new URL('/collab', location.href); url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const url = api(`${this.page.file}/ws?ticket=${encodeURIComponent(this.pass.ticket)}`);
+      url.protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const ws = this.ws = new WebSocket(url);
-      ws.onopen = () => ws.send(JSON.stringify({ type: 'auth', token, page: this.page.id }));
       let messages = Promise.resolve();
       ws.onmessage = event => {
-        messages = messages.then(async () => {
-          if (this.closed || this.ws !== ws) return;
-          const message = JSON.parse(event.data);
-          if (message.type === 'sync') {
-            Y.applyUpdate(this.doc, decode(message.update), 'remote');
-            this.vector = message.vector; this.page.role = message.role;
-            this.ui.board.setReadOnly(message.role === 'viewer');
-            this.ready = true; this.inFlight = null;
-            this.render();
-            // An interrupted save is replayed by state vector, not a whole-page overwrite.
-            if (this.dirty && message.role !== 'viewer') await this.send();
-            else this.ui.status(message.role === 'viewer' ? '唯讀・已連線' : '已同步');
-            if (this.dirty && message.role === 'viewer') this.ui.status('權限已改為唯讀，未同步內容仍保留在此裝置');
-            this.ui.board.refreshImages();
-          } else if (message.type === 'update') {
-            Y.applyUpdate(this.doc, decode(message.update), 'remote');
-            this.render();
-          } else if (message.type === 'ack') {
-            clearTimeout(this.ackTimer); this.inFlight = null; this.vector = message.vector;
-            if (message.version === this.version) this.dirty = false;
-            await this.cache();
-            if (!this.dirty) await db.update('meta', this.cacheKey, previous => {
-              if (!previous) return previous;
-              // This session loaded these exact pending versions into its doc
-              // before syncing. Clear only unchanged inherited markers; another
-              // tab's later offline edits retain their newer marker.
-              const pending = { ...previous.pending };
-              for (const [instance, version] of Object.entries(this.inheritedPending ?? {})) {
-                if (pending[instance] === version) delete pending[instance];
-              }
-              this.inheritedPending = {};
-              return { ...previous, pending, dirty: Object.keys(pending).length > 0 };
-            });
-            this.ui.status(this.dirty ? '同步中…' : '已同步');
-            if (this.dirty) await this.send();
-          } else if (message.type === 'preview') this.ui.board.preview(message.peerId, message.item);
-          else if (message.type === 'presence') $('#collab-presence').textContent = `${message.count} 人在線`;
-          else if (message.type === 'error') this.ui.status(message.message);
-        }).catch(error => this.fail(error));
+        messages = messages.then(() => this.receive(ws, JSON.parse(event.data))).catch(error => this.fail(error));
       };
       ws.onclose = event => {
         if (this.closed || this.ws !== ws) return;
         this.ready = false; this.inFlight = null;
         clearTimeout(this.ackTimer);
         this.ui.board.clearPreviews();
-        $('#collab-presence').textContent = '';
-        if (event.code === 4401) { this.ui.status('登入已過期，請重新登入；待同步內容已保留'); return; }
+        this.ui.presence(this, []);
+        if (event.code === 4001) { this.pass = null; this.connect(); return; }  // 通行證到期：換一張再連
         this.ui.status(this.dirty ? '離線，已保留待同步內容' : '連線中斷，正在重連');
         this.retryTimer = setTimeout(() => this.connect(), 2000);
       };
-      ws.onerror = () => {}; // onclose handles offline transitions.
-    } catch (error) { this.fail(error); }
+      ws.onerror = () => {}; // onclose 處理離線
+    } catch (error) {
+      if (error.code === 'signin' || error.code === 'access' || error.code === 'missing') { this.ui.status(error.message); return; }
+      this.fail(error);
+    }
   }
+
+  async receive(ws, message) {
+    if (this.closed || this.ws !== ws) return;
+    const board = this.ui.board;
+    if (message.type === 'sync') {
+      Y.applyUpdate(this.doc, decode(message.update), 'remote');
+      this.vector = message.vector; this.role = message.role; this.peer = message.peer;
+      board.setReadOnly(message.role !== 'editor');
+      this.ready = true; this.inFlight = null;
+      if (message.empty && message.role === 'editor') await this.seed();
+      this.render(true);
+      // 中斷時沒送出的內容，依 state vector 補送，不會整頁覆蓋
+      if (this.dirty && message.role === 'editor') await this.send();
+      else this.ui.status(message.role === 'editor' ? '已同步' : '唯讀・已連線');
+      if (this.dirty && message.role !== 'editor') this.ui.status('權限已改為唯讀，未同步內容仍保留在此裝置');
+      board.refreshImages();
+      this.lastFocus = null;
+    } else if (message.type === 'update') {
+      Y.applyUpdate(this.doc, decode(message.update), 'remote');
+      this.render();
+    } else if (message.type === 'ack') {
+      clearTimeout(this.ackTimer); this.inFlight = null; this.vector = message.vector;
+      if (message.version === this.version) this.dirty = false;
+      await this.cache();
+      if (!this.dirty) await db.update('meta', this.cacheKey, previous => {
+        if (!previous) return previous;
+        // 只清掉這個分頁載入時繼承、而且沒再變過的待同步標記；別的分頁之後的離線編輯保留
+        const pending = { ...previous.pending };
+        for (const [instance, version] of Object.entries(this.inheritedPending ?? {})) if (pending[instance] === version) delete pending[instance];
+        this.inheritedPending = {};
+        return { ...previous, pending, dirty: Object.keys(pending).length > 0 };
+      });
+      this.ui.status(this.dirty ? '同步中…' : '已同步');
+      if (this.dirty) await this.send();
+    } else if (message.type === 'preview') board.preview(message.peer, message.item);
+    else if (message.type === 'cursor') this.peerUpdate(message.peer, { x: message.x, y: message.y });
+    else if (message.type === 'focus') this.peerUpdate(message.peer, { sel: message.sel, editing: message.editing });
+    else if (message.type === 'presence') {
+      this.people.clear();
+      for (const person of message.people) for (const peer of person.peers) this.people.set(peer, person);
+      for (const peer of [...(board.peers?.keys() ?? [])]) if (!this.people.has(peer)) board.setPeer(peer, null);
+      for (const [peer, person] of this.people) if (board.peers?.has(peer)) board.setPeer(peer, { name: person.name, color: person.color });
+      this.saver = message.saver === this.peer;
+      if (this.saver) this.scheduleSave();
+      this.ui.presence(this, message.people);
+    } else if (message.type === 'error') this.ui.status(message.message);
+  }
+
+  peerUpdate(peer, value) {
+    if (peer === this.peer) return;
+    const person = this.people.get(peer);
+    this.ui.board.setPeer(peer, { name: person?.name ?? '', color: person?.color, ...value });
+  }
+
+  // ---------- 游標、選取、畫到一半的筆跡 ----------
+  sendCursor(event) {
+    if (!this.ready) return;
+    const now = Date.now();
+    const point = event.type === 'pointerleave' ? null : this.ui.board.toWorld(event.clientX, event.clientY);
+    clearTimeout(this.cursorTimer);
+    const send = () => { this.lastCursor = Date.now(); this.ws.send(JSON.stringify({ type: 'cursor', x: point?.x ?? null, y: point?.y ?? null })); };
+    if (!point || now - (this.lastCursor ?? 0) >= CURSOR_EVERY) send();
+    else this.cursorTimer = setTimeout(send, CURSOR_EVERY);
+  }
+
+  sendFocus() {
+    if (!this.ready) return;
+    const board = this.ui.board;
+    const value = JSON.stringify({ type: 'focus', sel: [...board.sel].slice(0, 500), editing: board.editing?.id ?? null });
+    if (value === this.lastFocus) return;
+    this.lastFocus = value;
+    this.ws.send(value);
+  }
+
+  sendPreview() {
+    if (!this.ready || this.role !== 'editor') return;
+    const action = this.ui.board.action;
+    if (action?.kind === 'draw') {
+      // 只是預覽：很長的筆跡抽樣送出，放開後的完整筆跡才是正式內容
+      const item = { ...action.item, pts: action.item.pts.filter((_, i) => i % Math.max(1, Math.ceil(action.item.pts.length / 1500)) === 0) };
+      this.ws.send(JSON.stringify({ type: 'preview', item })); this.previewActive = true;
+    } else if (this.previewActive) {
+      this.ws.send(JSON.stringify({ type: 'preview', item: null })); this.previewActive = false;
+    }
+  }
+
+  // ---------- 寫回 Drive（只有 saver 做）----------
+  scheduleSave(delay = SAVE_DELAY) {
+    if (!this.saver || !this.changedSinceSave || this.closed) return;
+    clearTimeout(this.saveTimer);
+    this.saveTimer = setTimeout(() => this.saveToDrive(), delay);
+  }
+
+  async saveToDrive() {
+    if (!this.saver || !this.changedSinceSave) return;
+    this.changedSinceSave = false;
+    try {
+      await this.ui.drivePage.save(this.page.file, { name: this.pass.name, title: this.page.title, items: project(this.doc), blob: id => this.blob(id) });
+    } catch (error) {
+      this.changedSinceSave = true;
+      if (!this.closed) this.scheduleSave(60000);
+      console.warn('寫回 Drive 失敗', error);
+    }
+  }
+
   fail(error) {
     this.ui.status(error.message || '同步失敗，待同步內容已保留');
     this.ws?.close();
     if (!this.closed && !this.ws) this.retryTimer = setTimeout(() => this.connect(), 2000);
   }
+
   undoLocal(redo = false) {
     this.ui.board.commitText();
     if (redo) this.undo.redo(); else this.undo.undo();
     this.render(true);
   }
+
   async close() {
     this.closed = true;
-    for (const name of ['renderTimer', 'previewTimer']) clearInterval(this[name]);
-    for (const name of ['sendTimer', 'retryTimer', 'ackTimer']) clearTimeout(this[name]);
+    for (const name of ['renderTimer', 'previewTimer', 'focusTimer']) clearInterval(this[name]);
+    for (const name of ['sendTimer', 'retryTimer', 'ackTimer', 'cursorTimer', 'saveTimer']) clearTimeout(this[name]);
+    this.ui.board.vp.removeEventListener('pointermove', this.pointer);
+    this.ui.board.vp.removeEventListener('pointerleave', this.pointer);
+    if (this.saver && this.changedSinceSave) this.saveToDrive();  // 不等它，離開時盡量寫回
     this.ws?.close();
     await this.cache();
     this.undo.destroy(); this.doc.destroy();
   }
 }
 
-export async function setupCollaboration({ board, beforeOpen, localPage, onOpen, onLeave, toast }) {
-  const response = await fetch('/api/config');
-  if (!response.ok) return null; // Original Python static mode remains available.
-  const config = await response.json();
-  const dialog = $('#collab-dialog');
+// board；beforeOpen()：開房間前把本機頁面存好；onOpen(page)／onLeave()：進出別人共用的頁面（不在筆記本裡）；
+// onContent(page, items)：房間內容變了（筆記本裡的這一頁要跟著存）；drivePage：{ load(file), save(file, content) }
+export async function setupCollaboration({ board, beforeOpen, onOpen, onLeave, onContent, drivePage, toast }) {
   const ui = {
-    board, user: null, active: null, config,
+    board, active: null, drivePage,
     status(text) { $('#collab-state').textContent = text; },
-    async token() {
-      if (config.mode === 'demo') {
-        if (!ui.user) throw new Error('請先選擇示範帳號');
-        return `demo:${ui.user.email}`;
-      }
-      const { data, error } = await ui.client.auth.getSession();
-      if (error || !data.session) throw new Error('請先使用 Google 登入');
-      return data.session.access_token;
-    },
-    async request(path, options = {}) {
-      const response = await fetch(path, { ...options, headers: { Authorization: `Bearer ${await ui.token()}`, ...options.headers } });
-      if (!response.ok) {
-        const value = await response.json().catch(() => ({}));
-        throw new Error(value.error || `請求失敗 (${response.status})`);
-      }
-      return response;
-    },
-    openBoard(page, items) {
-      board.load({ items: structuredClone(items) }); board.setReadOnly(page.role === 'viewer');
-      board.blobLoader = id => ui.active.blob(id);
-      board.historyDelegate = { undo: () => ui.active.undoLocal(), redo: () => ui.active.undoLocal(true), state: () => [ui.active.undo.undoStack.length > 0, ui.active.undo.redoStack.length > 0] };
-      onOpen(page);
-      $('#collab-leave').hidden = false;
+    openBoard(session, items) {
+      if (!session.page.local) board.load({ items: structuredClone(items) });
+      else if (JSON.stringify(items) !== JSON.stringify(board.items)) board.applyRemote(structuredClone(items));
+      board.setReadOnly(session.role !== 'editor');
+      board.blobLoader = id => session.blob(id);
+      board.historyDelegate = { undo: () => session.undoLocal(), redo: () => session.undoLocal(true), state: () => [session.undo.undoStack.length > 0, session.undo.redoStack.length > 0] };
+      if (!session.page.local) onOpen(session.page);
+      $('#collab-leave').hidden = !!session.page.local;
       $('#collab-presence').hidden = false;
       board._history();
     },
-    async open(page, initial) {
+    content(session, items) { if (session.page.local) onContent(session.page, items); },
+    // 在線的人（不含自己）：頂列的彩色圓點
+    presence(session, people) {
+      const box = $('#collab-presence');
+      box.replaceChildren();
+      for (const person of people) {
+        if (person.id === session.me?.id) continue;
+        const dot = document.createElement('span');
+        dot.className = 'presence-dot';
+        dot.style.setProperty('--peer', person.color);
+        dot.textContent = [...(person.name || person.email || '?')][0].toUpperCase();
+        dot.title = `${person.name || person.email}${person.role === 'editor' ? '' : '（檢視者）'}`;
+        box.append(dot);
+      }
+    },
+    // page：{ file, title, local }；items：還沒有快取時先顯示的內容。沒登入／沒權限丟出 code 為 signin／access 的錯誤
+    async open(page, items = []) {
       await beforeOpen();
       await ui.detach();
-      const session = ui.active = new SharedSession(ui, page);
-      await session.start(initial);
-      dialog.close();
+      const session = new LiveSession(ui, page);
+      await session.start(items);
+      ui.active = session;
     },
     async detach() {
       if (ui.active) {
@@ -247,101 +361,12 @@ export async function setupCollaboration({ board, beforeOpen, localPage, onOpen,
       }
       board.historyDelegate = null; board.blobLoader = null; board.setReadOnly(false);
       board.clearPreviews();
-      for (const url of board.urls.values()) URL.revokeObjectURL(url);
-      board.urls.clear();
       $('#collab-leave').hidden = true; $('#collab-presence').hidden = true;
       ui.status('');
     },
     changed() { if (ui.active) ui.active.local(board.items); },
     async saved() { if (ui.active) await ui.active.cache(); },
-    async list() {
-      const list = $('#collab-pages'); list.replaceChildren();
-      if (!ui.user) return;
-      try {
-        const pages = await (await ui.request('/api/pages')).json();
-        if (!pages.length) list.textContent = '尚無協作頁面；可以把目前的本機頁面複製到協作空間。';
-        for (const page of pages) {
-          const row = document.createElement('div'); row.className = 'collab-page';
-          const button = document.createElement('button');
-          button.textContent = `${page.title} · ${roleLabel[page.role]}`;
-          button.addEventListener('click', () => ui.open(page).catch(error => toast(error.message)));
-          row.append(button);
-          if (page.role === 'owner') {
-            const share = document.createElement('button'); share.textContent = '分享';
-            share.addEventListener('click', () => {
-              $('#share-page-id').value = page.id;
-              $('#share-page-name').textContent = `分享「${page.title}」`;
-              $('#collab-share').hidden = false; $('#share-email').focus();
-            });
-            row.append(share);
-          }
-          list.append(row);
-        }
-      } catch (error) { list.textContent = error.message; }
-    },
-    async setUser(user) {
-      if (ui.user?.id !== user?.id && ui.active) { await beforeOpen(); await ui.detach(); await onLeave(); }
-      ui.user = user;
-      $('#collab-user').textContent = user ? user.email : '登入後可以同步與分享筆記';
-      $('#collab-login').hidden = !!user || config.mode === 'demo';
-      $('#collab-logout').hidden = !user;
-      $('#collab-copy').disabled = !user || !localPage();
-      await ui.list();
-    },
   };
-  if (config.mode === 'supabase') {
-    ui.client = createClient(config.supabaseUrl, config.publishableKey);
-    ui.client.auth.onAuthStateChange((event, session) => {
-      // Avoid awaiting auth SDK calls inside its own state callback.
-      setTimeout(() => ui.setUser(session?.user ?? null).catch(error => toast(error.message)), 0);
-      if (event === 'TOKEN_REFRESHED' && ui.active) ui.active.ws?.close();
-    });
-    const { data } = await ui.client.auth.getSession();
-    await ui.setUser(data.session?.user ?? null);
-  } else {
-    $('#collab-mode').textContent = '本機示範：帳號僅用來測試協作，沒有真正登入驗證。正式使用需設定 Google 登入。';
-    $('#demo-accounts').hidden = false;
-    $('#collab-login').hidden = true;
-    for (const button of document.querySelectorAll('[data-demo-email]')) button.addEventListener('click', () => ui.setUser({ id: button.dataset.demoEmail, email: button.dataset.demoEmail }).catch(error => toast(error.message)));
-  }
-  $('#collab-button').hidden = false;
-  $('#collab-button').addEventListener('click', async () => {
-    $('#collab-copy').disabled = !ui.user || !localPage();
-    $('#collab-share').hidden = true;
-    dialog.showModal(); await ui.list();
-  });
-  $('#collab-close').addEventListener('click', () => dialog.close());
-  $('#collab-login').addEventListener('click', async () => {
-    const { error } = await ui.client.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: location.origin + location.pathname } });
-    if (error) toast(error.message);
-  });
-  $('#collab-logout').addEventListener('click', async () => {
-    if (ui.active?.dirty) { toast('尚有待同步內容，請先連線完成同步再登出'); return; }
-    if (config.mode === 'supabase') { const { error } = await ui.client.auth.signOut(); if (error) { toast(error.message); return; } }
-    await ui.setUser(null);
-  });
-  $('#collab-copy').addEventListener('click', async () => {
-    const button = $('#collab-copy'); button.disabled = true;
-    try {
-      await beforeOpen();
-      const local = localPage();
-      if (!local) throw new Error('請先選擇本機頁面');
-      const initial = structuredClone(board.items);
-      const page = await (await ui.request('/api/pages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title: local.title }) })).json();
-      await ui.open(page, initial);
-      toast('已建立協作副本，原本的本機頁面保留');
-    } catch (error) { toast(error.message); }
-    finally { button.disabled = !ui.user || !localPage(); }
-  });
-  $('#collab-share').addEventListener('submit', async event => {
-    event.preventDefault();
-    const button = $('#share-submit'); button.disabled = true;
-    try {
-      await ui.request(`/api/pages/${$('#share-page-id').value}/members`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: $('#share-email').value.trim().toLowerCase(), role: $('#share-role').value }) });
-      $('#collab-share').hidden = true; toast('已分享；對方登入相同帳號後即可看到頁面');
-    } catch (error) { toast(error.message); }
-    finally { button.disabled = false; }
-  });
   $('#collab-leave').addEventListener('click', async () => { await beforeOpen(); await ui.detach(); await onLeave(); });
   window.addEventListener('online', () => { if (ui.active && !ui.active.ready) { clearTimeout(ui.active.retryTimer); ui.active.connect(); } });
   return ui;

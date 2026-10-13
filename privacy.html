@@ -30,6 +30,8 @@
     <li>取得 Drive 帳號識別資訊（例如電子郵件、顯示名稱與帳號識別碼），用於顯示目前帳號，並避免用其他帳號覆寫筆記本；帳號資訊會記錄在對應的本機筆記本。</li>
     <li>當您按「存到 Drive」或「另存副本到 Drive」時，將目前這本筆記本的頁面、內容與圖片打包成一個 zip 檔，上傳到所連結帳號 Drive 的「SnakeNote」資料夾（第一次儲存時自動建立）。</li>
     <li>存到 Drive 的筆記本會自動同步：有變更時自動上傳並覆寫對應的檔案；開著網頁時也會定期讀取該檔案的資訊與內容，把其他裝置存的變更合併進來。為了避免兩台裝置同時存檔時遺失內容，會讀取該檔案在 Drive 上的版本紀錄。</li>
+    <li>選「共用此頁」時，該頁會另存成「SnakeNote／共用頁面」資料夾裡的一個 zip 檔。邀請他人使用 Google Drive 的共用設定：您輸入對方的電子郵件與權限後，Google 會寄信通知對方，信中附上您的電子郵件與開啟連結。對方能否檢視或編輯，以 Drive 上這個檔案的共用設定為準；您可以在「共用設定」中修改或移除。</li>
+    <li>開啟別人共用給您的頁面時，會開啟 Google 的檔案選擇器，由您選取該檔案，本網站才取得這一個檔案的存取權。</li>
     <li>按「從 Drive 開啟」時，列出「SnakeNote」資料夾裡由本應用程式建立的筆記本檔案，並下載您選擇的檔案到目前瀏覽器。</li>
   </ul>
   <p>筆記由瀏覽器直接透過 HTTPS 傳輸至 Google Drive API，不經過本網站的伺服器；本網站沒有接收或保存筆記內容的後端。網站不會自動將 Drive 備份公開或分享給其他人；檔案存取亦受您在 Google Drive 中設定的權限影響。</p>
@@ -39,8 +41,12 @@
   <p>在由 Cloudflare 託管的版本，連線 Google 時會取得一組可長期使用的授權（refresh token），以加密的 HttpOnly cookie 保存在您的瀏覽器，讓自動同步不必每小時重新登入；網頁程式讀不到這個 cookie，本網站的伺服器（Cloudflare Worker）只在換發存取權杖的當下解密使用，不另外保存。中斷連線或在 Google 帳號撤銷授權後即失效。在 GitHub Pages 版本則沒有這項功能，存取權杖到期後需重新授權。</p>
   <p>本網站僅為提供筆記本的儲存、開啟與備份功能使用 Google 使用者資料，不販售這些資料、不用於廣告投放，也不用於訓練通用人工智慧或機器學習模型。對 Google API 資料的使用及轉移遵守 <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>，包括 Limited Use 要求。</p>
 
+  <h2>即時協作（共用頁面）</h2>
+  <p>共用頁面在 Cloudflare 託管的版本可以多人同時編輯。為了即時同步，這一頁的內容（筆跡、文字與圖片）會存放在 Cloudflare 上專屬於這一頁的伺服器空間（Durable Object），並在開著這一頁的人之間傳送編輯、畫到一半的筆跡、游標位置與選取的物件。同一頁的其他人會看到您的 Google 顯示名稱與電子郵件。進入共用頁面前，伺服器會用您的 Google 授權向 Drive 確認您對該檔案的權限，不會讀取您 Drive 的其他檔案。</p>
+  <p>這一頁的正本是 Drive 上的檔案：在線的編輯者之一會定期把內容寫回該檔案。擁有者「停止共用這一頁」時，會移除其他人的存取權，並刪除 Cloudflare 上這一頁的內容；Drive 上的檔案保留，可自行在 Drive 刪除。</p>
+
   <h2>4. 第三方服務</h2>
-  <p>本網站由 GitHub Pages 或 Cloudflare 提供託管，Google 提供授權與 Drive 儲存服務。您開啟網站或使用 Google 功能時，相關服務商可能處理 IP 位址、瀏覽器資訊及服務請求紀錄，並適用其各自的政策：<a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub 隱私權聲明</a>、<a href="https://www.cloudflare.com/privacypolicy/">Cloudflare 隱私權政策</a>、<a href="https://policies.google.com/privacy">Google 隱私權政策</a>。目前本網站未加入廣告或第三方流量分析工具。</p>
+  <p>本網站由 GitHub Pages 或 Cloudflare 提供託管，Google 提供授權、Drive 儲存與檔案選擇器服務。您開啟網站或使用 Google 功能時，相關服務商可能處理 IP 位址、瀏覽器資訊及服務請求紀錄，並適用其各自的政策：<a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement">GitHub 隱私權聲明</a>、<a href="https://www.cloudflare.com/privacypolicy/">Cloudflare 隱私權政策</a>、<a href="https://policies.google.com/privacy">Google 隱私權政策</a>。目前本網站未加入廣告或第三方流量分析工具。</p>
 
   <h2>5. 中斷連線、撤銷授權與刪除資料</h2>
   <ul>
