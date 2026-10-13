@@ -31,8 +31,8 @@ class Dialogs:
         raise AssertionError('dialog never appeared')
 
 def lib(page):
-    """Show the sidebar's 筆記本 tab."""
-    if page.locator('#library-pane').is_hidden(): page.locator('#tab-library').click()
+    """Go up to the sidebar's notebook list (click the current notebook's name)."""
+    if page.locator('#library-pane').is_hidden(): page.locator('#nb-button').click()
 
 def book_row(page, name):
     lib(page)
@@ -48,7 +48,7 @@ def book_menu(page, name, label):
     page.locator('#menu button', has_text=label).first.click()
 
 def new_book(page, name, where='local'):
-    lib(page); page.locator('.lib-add').click()
+    lib(page); page.locator('#lib-new').click()
     page.locator('#new-name').fill(name); page.locator(f'#new-where input[value={where}]').check()
     page.locator('#new-dialog button[type=submit]').click()
 
@@ -120,6 +120,11 @@ with sync_playwright() as pw:
     book(page, '專案 A')
     expect(page.locator('#page-title')).to_have_value('A 的頁面')
     expect(page.locator('#viewport path, #viewport polyline').first).to_be_attached()
+    # 側欄兩層：點筆記本名稱往上一層（分頁收起來），‹ 所有筆記本 回到這本
+    page.locator('#nb-button').click()
+    expect(page.locator('#library-pane')).to_be_visible(); expect(page.locator('.sb-tabs')).to_be_hidden(); expect(page.locator('#tree')).to_be_hidden()
+    page.locator('#lib-back').click()
+    expect(page.locator('#tree')).to_be_visible(); expect(page.locator('#library-pane')).to_be_hidden(); expect(page.locator('#nb-button')).to_be_visible()
 
     # 2. Export → import creates an independent local copy.
     page.locator('#file').set_input_files({'name': 'x.png', 'mimeType': 'image/png', 'buffer': bytes.fromhex(
@@ -189,7 +194,7 @@ with sync_playwright() as pw:
     # 4. Another device opens it from Drive, edits and saves.
     other = new_context(browser, fake); device = other.new_page(); device.on('pageerror', lambda e: errors.append(str(e))); Dialogs(device)
     device.goto(BASE); expect(device.locator('#nb-name')).to_have_text('我的筆記')
-    # 「筆記本」分頁：連線 Google 後，Drive 上還沒在這台開過的筆記本跟這台的列在一起
+    # 筆記本清單：連線 Google 後，Drive 上還沒在這台開過的筆記本跟這台的列在一起
     fake.fail_list = True; lib(device); device.locator('.lib-connect').click()
     expect(device.locator('#library')).to_contain_text('Drive 請求失敗 (500)')
     fake.fail_list = False

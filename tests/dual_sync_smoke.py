@@ -75,7 +75,7 @@ with sync_playwright() as pw:
     # 2. 另一台裝置經由 Drive 加了一頁：合併進這台，也寫進本機檔案
     other = context(browser, fake).new_page(); other.on('pageerror', lambda e: errors.append(str(e)))
     other.goto(BASE)
-    other.locator('#tab-library').click(); other.locator('#library .lib-connect').click()
+    other.locator('#nb-button').click(); other.locator('#library .lib-connect').click()
     other.locator('#library .lib-row[data-file]').first.click()
     expect(other.locator('#page-title')).to_have_value('歡迎使用')
     other.locator('#add-root').click(); expect(other.locator('#page-title')).to_have_value('')

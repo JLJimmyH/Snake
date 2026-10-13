@@ -18,11 +18,11 @@ const DRIVE_TROUBLE = ['conflict', 'missing', 'account', 'error'];
 const CHECK_EVERY = 60000;
 const GOOGLE_RESULT = { denied: '已取消 Google 授權', error: 'Google 授權失敗，請再試一次', scope: '要勾選「Drive 檔案」權限才能同步，請再連線一次' };
 
-// 筆記本：側欄「筆記本」分頁（js/library.js：切換、新增、從 Drive 開啟、重新命名、從這台移除）＋頂列的同步狀態
+// 筆記本：側欄上層的筆記本清單（js/library.js：切換、新增、從 Drive 開啟、重新命名、從這台移除）＋頂列的同步狀態
 // 與「儲存位置」面板（Drive、進階裡的本機檔案與副本）＋新增筆記本視窗。
 // persist：把畫布存進 IndexedDB 但不結束文字編輯（背景自動同步用）；flush：連編輯中的文字框一起存（使用者按下動作時用）
 // idle：使用者現在沒在畫、沒在打字，可以換掉畫布內容；refresh：筆記本內容被同步換掉後，重新載入頁面樹與目前這頁
-// showTab(name)：切換側欄分頁；hideSidebar()：手機版收起側欄；onCloud()：Drive 的清單讀好了（頁面樹的共用人數）
+// showTab(name)：回到目前筆記本的側欄分頁（'pages'）；hideSidebar()：手機版收起側欄；onCloud()：Drive 的清單讀好了（頁面樹的共用人數）
 export function setupNotebooks({ current, switchTo, create, flush, persist, idle, refresh, showMenu, toast, showTab, hideSidebar, onCloud }) {
   const drive = new DriveClient(GOOGLE_DRIVE_CLIENT_ID);
   if (GOOGLE_DRIVE_CLIENT_ID) loadGoogleIdentity().catch(error => toast(error.message));
@@ -54,6 +54,9 @@ export function setupNotebooks({ current, switchTo, create, flush, persist, idle
     },
     shares: {
       ready: () => share.ready(), list: () => share.list(), active: () => share.active(), pick: () => share.pickOther(),
+      // 這台的筆記本裡連到共用檔案的頁面；清單上沒連到的可以直接停止共用
+      linked: async () => new Set((await db.getAll('pages')).filter(p => p.shared).map(p => p.shared)),
+      more: (rect, file, title) => showMenu(rect, [{ head: title }, { label: '停止共用…', danger: true, run: () => share.stopListed(file, title) }]),
       open: file => run(() => share.openShared(file)).then(hideSidebar),
     },
   });
@@ -68,7 +71,8 @@ export function setupNotebooks({ current, switchTo, create, flush, persist, idle
     renderPill(nb);
     if (panel.matches(':popover-open')) renderSync(nb);
     const account = drive.connected ? drive.account.id : null;
-    if (account !== who && !resuming) { who = account; library.refresh(true); }
+    // 換了帳號（或剛連上）：重讀雲端清單；之前沒連線時刪掉的共用頁，現在停止共用
+    if (account !== who && !resuming) { who = account; library.refresh(true); share.flushDeleted(); }
     else library.render();
     // 打開或切換到有同步的筆記本：檔案或 Drive 在別處被改過就載入
     if (nb.id !== checked) {
@@ -531,7 +535,6 @@ export function setupNotebooks({ current, switchTo, create, flush, persist, idle
     ]);
   }
 
-  $('#nb-button').addEventListener('click', () => showTab($('#library-pane').hidden ? 'library' : 'pages'));
   $('#sync-close').addEventListener('click', () => panel.hidePopover());
   document.addEventListener('keydown', event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); saveAll(); }
@@ -567,10 +570,11 @@ export function setupNotebooks({ current, switchTo, create, flush, persist, idle
   return {
     render, changed,
     sharePage: share.sharePage, shareCurrent: share.shareCurrent, drivePage: share.drivePage, shareReady: share.ready,
+    unshareDeleted: share.unshareDeleted,
     owner: share.owner, people: library.people,
     // 即時協作準備好了：共用頁面清單要等它才能讀
     liveReady: handle => { share.liveReady(handle); library.refresh(); },
-    // 側欄切到「筆記本」分頁
+    // 側欄切到上層的筆記本清單
     showLibrary: library.shown,
   };
 }

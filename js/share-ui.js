@@ -12,6 +12,7 @@ const $ = selector => document.querySelector(selector);
 const el = (tag, text, className) => { const node = document.createElement(tag); if (text !== undefined) node.textContent = text; if (className) node.className = className; return node; };
 const ROLE = { writer: '編輯者', reader: '檢視者' };
 const PAGE = 'page';  // 共用頁檔案裡那一頁的 ID
+const PENDING = 'unsharePending'; // meta：刪掉了、還沒停止共用的共用頁 [{ file, title }]（刪除時沒連上 Google）
 const linkTo = file => `${location.origin}${location.pathname}?page=${encodeURIComponent(file)}`;
 
 // drive：DriveClient；withDrive(task, intent)：確定連上 Google 再做（必要時跳去授權）；run(task)：一次只做一件事並顯示錯誤；
@@ -150,13 +151,8 @@ export function setupShare({ drive, withDrive, run, toast, switchTo, onChanged }
       const keep = target.pageId ? '這一頁變回只在你筆記本裡的一般頁面，' : '';
       if (!confirm(`會移除其他人對「${target.title}」的存取權，${keep}Drive 上的共用檔案移到垃圾桶（30 天內可以在 Drive 還原）。\n\n確定要停止共用嗎？`)) return;
       run(async () => {
-        for (const p of permissions) if (p.role !== 'owner') await drive.unshare(target.file, p.id);
-        // 清掉 Cloudflare 房間裡的即時內容與圖片
-        await fetch(new URL('api/shared/' + encodeURIComponent(target.file), document.baseURI), { method: 'DELETE', headers: { 'X-Requested-With': 'snake-note' } }).catch(() => {});
         if (target.pageId) await live.linkShared(target.pageId, null);
-        // 開著的就是這個共用頁（不在筆記本裡）：先離開
-        else if (live.page()?.file === target.file) await live.leave();
-        await drive.trash(target.file);
+        await unshare(target.file, permissions);
         dialog.close();
         onChanged();
         toast(`已停止共用「${target.title}」`);
@@ -236,6 +232,52 @@ export function setupShare({ drive, withDrive, run, toast, switchTo, onChanged }
     pick.disabled = !pickerReady();
   }
 
+  // 停止共用一個共用頁檔案：移除擁有者以外所有人的存取權、清掉 Cloudflare 房間裡的即時內容與圖片、
+  // Drive 上的檔案移到垃圾桶（30 天內可以還原）。permissions 沒給就先讀（不是擁有者會丟出 403）
+  async function unshare(file, permissions = null) {
+    permissions ??= await drive.permissions(file);
+    for (const p of permissions) if (p.role !== 'owner') await drive.unshare(file, p.id);
+    await fetch(new URL('api/shared/' + encodeURIComponent(file), document.baseURI), { method: 'DELETE', headers: { 'X-Requested-With': 'snake-note' } }).catch(() => {});
+    // 開著的就是這個共用頁（不在筆記本裡）：先離開
+    if (live?.page()?.file === file && !live.page().local) await live.leave();
+    await drive.trash(file);
+  }
+
+  // 筆記本裡刪掉了共用頁：自動停止共用。先記在 meta，連得上 Google 就馬上做，連不上等下次連線（flushDeleted）
+  async function unshareDeleted(entries) {
+    const pending = (await db.get('meta', PENDING)) ?? [];
+    await db.put('meta', [...pending, ...entries.filter(e => !pending.some(p => p.file === e.file))], PENDING);
+    await flushDeleted();
+  }
+  let flushing = false;
+  async function flushDeleted() {
+    if (!drive.connected || flushing) return;
+    flushing = true;
+    const stopped = [], dropped = new Set();
+    try {
+      for (const entry of (await db.get('meta', PENDING)) ?? []) {
+        try { await unshare(entry.file); stopped.push(entry.title); dropped.add(entry.file); }
+        catch (error) {
+          // 檔案已經不在了：不用再做。不是這個帳號的檔案（403）、斷線：留著，下次連線再試
+          if (error.status === 404) dropped.add(entry.file);
+          else console.warn('刪掉的共用頁還沒停止共用', entry.file, error);
+        }
+      }
+      if (dropped.size) await db.put('meta', ((await db.get('meta', PENDING)) ?? []).filter(e => !dropped.has(e.file)), PENDING);
+    } finally { flushing = false; }
+    if (stopped.length) { onChanged(); toast(`已停止共用刪掉的頁面：${stopped.map(t => `「${t}」`).join('、')}`); }
+  }
+
+  // 清單上「這台的筆記本裡沒有這一頁」的共用頁（頁面刪掉了，或是舊版留下的）：直接停止共用
+  function stopListed(file, title) {
+    if (!confirm(`會移除其他人對「${title}」的存取權，Drive 上的共用檔案移到垃圾桶（30 天內可以在 Drive 還原）。\n\n確定要停止共用嗎？`)) return;
+    run(async () => {
+      await unshare(file);
+      onChanged();
+      toast(`已停止共用「${title}」`);
+    });
+  }
+
   // 頂列「共用」：筆記本裡的這一頁，或開著的共用頁（別人共用來的、或已經不在筆記本裡的）
   function shareCurrent() {
     const page = live?.page();
@@ -298,6 +340,7 @@ export function setupShare({ drive, withDrive, run, toast, switchTo, onChanged }
 
   return {
     sharePage, shareCurrent, openShared, pickOther, list, drivePage, liveReady, resume, ready: () => !!live,
+    unshareDeleted, flushDeleted, stopListed,
     owner: file => owners.get(file) ?? null, active: () => live?.page()?.file ?? null,
   };
 }

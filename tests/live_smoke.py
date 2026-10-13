@@ -204,13 +204,13 @@ with sync_playwright() as pw:
         assert local >= 2, local
         print("PASS: the page is written back to the Drive file and to the owner's notebook")
 
-        # 7. 側欄「筆記本」分頁的共用頁面：Bob 看得到誰共用給他、能不能改；Alice 看得到共用給幾個人
+        # 7. 側欄筆記本清單下方的共用頁面：Bob 看得到誰共用給他、能不能改；Alice 看得到共用給幾個人
         b.locator('#collab-leave').click(); expect(b.locator('#crumbs')).not_to_contain_text('共用頁面')
-        b.locator('#tab-library').click()
+        b.locator('#nb-button').click()
         theirs = b.locator('#library .lib-row[data-shared]')
         expect(theirs).to_have_count(1, timeout=20000)
         expect(theirs).to_contain_text('Alice · 可編輯')
-        a.locator('#tab-library').click()
+        a.locator('#nb-button').click()
         mine = a.locator('#library .lib-row[data-shared]')
         expect(mine).to_contain_text('1 人可以存取', timeout=20000)
         expect(mine).to_have_class(re.compile('active'))  # 開著的就是這一頁
@@ -233,7 +233,7 @@ with sync_playwright() as pw:
         print('PASS: an invitee copies a shared page into their own notebook')
 
         # 9. Alice 停止共用（頂列「共用」）：移除 Bob 的權限，共用檔案移到垃圾桶，清單上不再有它
-        a.locator('#tab-pages').click()
+        a.locator('#lib-back').click()
         a.locator('#share-button').click()
         expect(a.locator('#share-dialog')).to_contain_text('具有存取權的使用者', timeout=20000)
         a.once('dialog', lambda d: d.accept())
@@ -241,10 +241,59 @@ with sync_playwright() as pw:
         toast(a, '已停止共用「歡迎使用」')
         assert fake.files['alice'][file_id].get('trashed') is True and not fake.files['alice'][file_id]['perms']
         expect(a.locator('#tree .row.active .pg-icon')).to_have_text('📄')
-        a.locator('#tab-library').click()
+        a.locator('#nb-button').click()
         expect(a.locator('#library .lib-row[data-shared]')).to_have_count(0, timeout=20000)
         expect(a.locator('#library')).to_contain_text('還沒有。')
         print('PASS: stopping sharing trashes the shared file and removes it from the list')
+
+        # 10. 刪掉共用頁就自動停止共用；沒連線時刪的，下次連上 Google 再停
+        a.locator('#lib-back').click()
+        confirms = []
+        def accept(dialog): confirms.append(dialog.message); dialog.accept()
+        def share_new(title):
+            a.locator('#add-root').click(); expect(a.locator('#page-title')).to_have_value('')
+            a.locator('#page-title').fill(title); a.locator('#page-title').press('Enter')
+            a.locator('#share-button').click(); a.locator('#share-dialog button', has_text='開始共用').click()
+            expect(a.locator('#share-dialog')).to_contain_text('具有存取權的使用者', timeout=20000)
+            a.locator('.share-invite input[type=email]').fill('bob@example.test'); a.locator('.share-invite button', has_text='傳送').click()
+            toast(a, '已邀請 bob@example.test')
+            a.locator('#share-dialog button', has_text='完成').click()
+            return next(f for f in fake.files['alice'].values() if f['name'] == title + '.zip')
+        def delete_current():
+            a.once('dialog', accept)
+            row = a.locator('#tree .row.active'); row.hover(); row.locator('[data-act=more]').click()
+            a.locator('#menu button', has_text='刪除').click()
+        gone = share_new('會刪掉的頁'); assert gone['perms'] == {'bob': 'writer'}
+        delete_current()
+        toast(a, '已停止共用刪掉的頁面：「會刪掉的頁」')
+        assert '刪除後會自動停止共用' in confirms[-1], confirms
+        assert gone.get('trashed') is True and not gone['perms']
+        later = share_new('沒連線時刪的頁')
+        a.locator('#account .acct-btn').click(); a.locator('#menu button', has_text='中斷 Google 連線').click()
+        toast(a, '已中斷 Google 連線')
+        delete_current(); a.wait_for_timeout(1000)
+        assert not later.get('trashed') and later['perms'] == {'bob': 'writer'}, 'nothing happens while signed out'
+        fake.next_user = 'alice'
+        a.locator('#account .acct-connect').click()
+        toast(a, '已停止共用刪掉的頁面：「沒連線時刪的頁」')
+        assert later.get('trashed') is True and not later['perms']
+        print('PASS: deleting a shared page stops sharing it, right away or after signing in again')
+
+        # 11. 清單上留下來的共用頁（這台的筆記本裡沒有這一頁，例如舊版刪掉的）：⋯ 停止共用
+        orphan = {'id': 'orphan-page', 'name': '舊的共用頁.zip', 'owner': 'alice', 'mimeType': 'application/zip',
+                  'appProperties': {'app': 'snake-note-notebook-v1', 'kind': 'page'}, 'perms': {'bob': 'writer'}}
+        fake.store(orphan, b'zip'); fake.files['alice']['orphan-page'] = orphan
+        a.locator('#nb-button').click()
+        a.locator('#account .acct-btn').click(); a.locator('#menu button', has_text='重新整理').click()
+        row = a.locator('#library .lib-row[data-shared="orphan-page"]')
+        expect(row).to_contain_text('這台的筆記本裡沒有這一頁', timeout=20000)
+        expect(a.locator('#library .lib-row[data-shared]', has_text='這台的筆記本裡沒有這一頁')).to_have_count(1)
+        a.once('dialog', accept)
+        row.hover(); row.locator('[data-act=more]').click(); a.locator('#menu button', has_text='停止共用').click()
+        toast(a, '已停止共用「舊的共用頁」')
+        assert orphan.get('trashed') is True and not orphan['perms']
+        expect(row).to_have_count(0, timeout=20000)
+        print('PASS: leftover shared pages can be unshared from the list')
 
         assert not errors, errors
         browser.close()

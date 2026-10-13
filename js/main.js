@@ -259,7 +259,12 @@ async function deletePage(id) {
   const p = byId(id);
   const ids = [id, ...descendants(id)];
   const extra = ids.length > 1 ? `及底下 ${ids.length - 1} 個子頁面` : '';
-  if (!confirm(`確定刪除「${p.title || '未命名'}」${extra}？`)) return;
+  // 共用頁刪掉就自動停止共用（不然 Drive 上的共用檔案還在，被邀請的人照樣打得開）
+  const shared = ids.map(byId).filter(x => x.shared).map(x => ({ file: x.shared, title: x.title || '未命名' }));
+  const note = shared.length ? `
+
+${shared.map(x => `「${x.title}」`).join('、')}是共用頁面：刪除後會自動停止共用，其他人就打不開了，Drive 上的共用檔案移到垃圾桶。` : '';
+  if (!confirm(`確定刪除「${p.title || '未命名'}」${extra}？${note}`)) return;
 
   if (ids.includes(current)) {
     clearTimeout(saveTimer);
@@ -281,6 +286,7 @@ async function deletePage(id) {
   } else {
     renderTree();
   }
+  if (shared.length) await notebooks?.unshareDeleted(shared);
 }
 
 // ---------- 側欄樹 ----------
@@ -490,19 +496,27 @@ function moveMenu(rect, id) {
 // ---------- 側欄開關、分頁 ----------
 function closeSidebar() { document.body.classList.remove('sb-open'); }
 
-// 頁面（目前筆記本的頁面樹）／筆記本（這台與 Drive 的筆記本、共用頁面，js/library.js）／搜尋（整本筆記本）
-const PANES = ['pages', 'library', 'search'];
+// 側欄兩層：上層是所有筆記本與共用頁面（js/library.js），點頂部的筆記本名稱進去；
+// 下層是目前這本筆記本，分頁有頁面（頁面樹）／搜尋（整本筆記本）
+function setLevel(library) {
+  $('#sidebar').dataset.level = library ? 'library' : 'notebook';
+  $('#library-pane').hidden = !library;
+  $('#nb-button').setAttribute('aria-expanded', String(library));
+  if (library) notebooks?.showLibrary();
+}
+// 換到目前這本筆記本的 name 分頁（也會離開上層）
 function setTab(name) {
-  for (const key of PANES) {
+  setLevel(false);
+  for (const key of ['pages', 'search']) {
     $(`#${key}-pane`).hidden = key !== name;
     $(`#tab-${key}`).setAttribute('aria-selected', String(key === name));
   }
   search?.tab(name);
-  if (name === 'library') notebooks?.showLibrary();
 }
 $('#tab-pages').addEventListener('click', () => setTab('pages'));
-$('#tab-library').addEventListener('click', () => setTab('library'));
 $('#tab-search').addEventListener('click', () => { setTab('search'); $('#sp-input').focus(); });
+$('#nb-button').addEventListener('click', () => setLevel(true));
+$('#lib-back').addEventListener('click', () => setLevel(false));
 
 $('#sb-toggle').addEventListener('click', () => {
   if (isMobile()) document.body.classList.toggle('sb-open');

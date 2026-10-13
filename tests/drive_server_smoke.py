@@ -97,7 +97,7 @@ with sync_playwright() as pw:
 
     # 4. 沒連線時新增一本存到 Drive 的筆記本：跳去 Google 授權，回來後接著建立並存到 Drive
     account_menu(page, '中斷 Google 連線'); toast(page, '已中斷 Google 連線')
-    page.locator('#tab-library').click(); page.locator('#library .lib-add').click()
+    page.locator('#nb-button').click(); page.locator('#lib-new').click()
     page.locator('#new-name').fill('雲端新本'); expect(page.locator('#new-where input[value=drive]')).to_be_checked()
     page.locator('#new-dialog button[type=submit]').click()
     toast(page, '已儲存到 alice@example.test 的 Drive')
