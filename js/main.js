@@ -496,7 +496,7 @@ function moveMenu(rect, id) {
 // ---------- 側欄開關、分頁 ----------
 function closeSidebar() { document.body.classList.remove('sb-open'); }
 
-// 側欄兩層：上層是所有筆記本與共用頁面（js/library.js），點頂部的「‹ 筆記本名稱」進去、點清單上的筆記本回來；
+// 側欄兩層：上層是所有筆記本與共用頁面（js/library.js），點頂部的「筆記本名稱 ›」進去、點清單上的筆記本或 ‹ 回來；
 // 下層是目前這本筆記本，分頁有頁面（頁面樹）／搜尋（整本筆記本）
 function setLevel(library) {
   $('#sidebar').dataset.level = library ? 'library' : 'notebook';
@@ -516,6 +516,7 @@ function setTab(name) {
 $('#tab-pages').addEventListener('click', () => setTab('pages'));
 $('#tab-search').addEventListener('click', () => { setTab('search'); $('#sp-input').focus(); });
 $('#nb-button').addEventListener('click', () => setLevel(true));
+$('#lib-back').addEventListener('click', () => setLevel(false));
 
 $('#sb-toggle').addEventListener('click', () => {
   if (isMobile()) document.body.classList.toggle('sb-open');

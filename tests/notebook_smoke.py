@@ -124,7 +124,10 @@ with sync_playwright() as pw:
     page.locator('#nb-button').click()
     expect(page.locator('#library-pane')).to_be_visible(); expect(page.locator('.sb-tabs')).to_be_hidden(); expect(page.locator('#tree')).to_be_hidden()
     expect(page.locator('#sidebar .sb-title')).to_have_text('所有筆記本')
-    book(page, '專案 A')
+    expect(page.locator('#lib-back')).to_have_attribute('title', '回到「專案 A」')
+    page.locator('#lib-back').click()
+    expect(page.locator('#tree')).to_be_visible(); expect(page.locator('#library-pane')).to_be_hidden()
+    page.locator('#nb-button').click(); book(page, '專案 A')
     expect(page.locator('#tree')).to_be_visible(); expect(page.locator('#library-pane')).to_be_hidden(); expect(page.locator('#nb-button')).to_be_visible()
 
     # 2. Export → import creates an independent local copy.

@@ -67,7 +67,8 @@ export function setupNotebooks({ current, switchTo, create, flush, persist, idle
     if (!nb) return;
     shown = nb;
     $('#nb-name').textContent = nb.name;
-    $('#nb-button').title = `${nb.name}：點一下切換筆記本`;
+    $('#nb-button').title = `${nb.name}：點一下看所有筆記本`;
+    $('#lib-back').title = `回到「${nb.name}」`;
     renderPill(nb);
     if (panel.matches(':popover-open')) renderSync(nb);
     const account = drive.connected ? drive.account.id : null;

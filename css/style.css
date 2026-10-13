@@ -162,8 +162,9 @@ body.sb-collapsed #sidebar { margin-left: calc(-1 * var(--sb-w)); }
 /* 側欄兩層：data-level=notebook（目前筆記本：頁面／搜尋分頁）、library（所有筆記本與共用頁面） */
 #sidebar[data-level=notebook] .at-library,
 #sidebar[data-level=library] :is(.at-notebook, #pages-pane, #search-pane) { display: none; }
-.nb-up { margin-right: 2px; font-size: 20px; line-height: 1; color: var(--muted); }
+.nb-go { margin-left: 2px; font-size: 20px; line-height: 1; color: var(--muted); }
 .sb-title { flex: 1; min-width: 0; margin: 0; font-size: 15px; font-weight: 600; }
+.lib-back { width: 28px; margin-left: -6px; font-size: 22px; line-height: 1; color: var(--muted); }
 
 /* 側欄分頁：頁面樹／搜尋 */
 .sb-tabs { display: flex; gap: 2px; margin: 0 8px 4px; padding: 2px; border-radius: 8px; background: var(--chip); }
