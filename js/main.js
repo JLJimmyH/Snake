@@ -912,7 +912,7 @@ async function switchNotebook(id) {
   notebooks?.render();
 }
 
-// 從 Drive 同步後重新載入：畫布上的舊內容已被取代，丟掉，不能再存回去
+// 同步換掉內容後重新載入：畫布上的舊內容已被取代，丟掉，不能再存回去
 async function reloadNotebook(id) {
   current = null;
   clearTimeout(saveTimer);
@@ -920,6 +920,21 @@ async function reloadNotebook(id) {
   board.commitText();
   contentChanged = false;
   await switchNotebook(id);
+}
+
+// 使用者沒在畫、沒在打字、也沒有還沒存進 IndexedDB 的變更：同步可以換掉內容
+const idle = () => !saveTimer && !board.editing && !board.action && !board.pointers.size;
+
+// 同步把別台裝置的變更合併進來之後：更新頁面樹；目前這頁有變就換上新內容，不動畫面位置與正在進行的手勢
+async function refreshNotebook(id) {
+  if (id !== notebookId) return;
+  pages = await pagesOf(id);
+  if (!current) { renderTree(); return; }
+  if (!byId(current)) { await reloadNotebook(id); return; }
+  const items = (await db.get('docs', current))?.items ?? [];
+  if (JSON.stringify(items) !== JSON.stringify(board.items)) board.applyRemote(items);
+  renderTree();
+  renderHeader();
 }
 
 // 這個分頁上次開的 → 任何分頁最後開的 → 最早建立的；全新安裝則建立含教學的「我的筆記」
@@ -970,7 +985,7 @@ async function init() {
   $('#find-button').addEventListener('click', () => search?.open());
   setTool('select');
   notebooks = optional('筆記本選單', () => setupNotebooks({
-    current: () => notebookId, switchTo: switchNotebook, reload: reloadNotebook, create: createNotebook, flush, persist, showMenu, toast,
+    current: () => notebookId, switchTo: switchNotebook, create: createNotebook, flush, persist, idle, refresh: refreshNotebook, showMenu, toast,
   }));
   await switchNotebook(await initialNotebook());
   try {

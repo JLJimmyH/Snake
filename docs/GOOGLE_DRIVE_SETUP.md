@@ -2,11 +2,13 @@
 
 這份文件寫給網站管理者。你設定一次後，其他使用者只要按「存到 Drive」，就能授權把筆記本存到**他們自己的**硬碟，不必每個人建立 Google Cloud 專案。
 
-每本筆記本在 Drive 上就是 `SnakeNote` 資料夾裡的一個 `<筆記本名稱>.zip` 檔（內含頁面、內容與圖片）。資料夾在第一次存檔時自動建立；「從 Drive 開啟」只列出這個資料夾裡的筆記本。自己在 Drive 手動建立的同名資料夾，網站因 `drive.file` 權限看不到，會另外建立一個。「儲存」會覆寫同一個檔案；要留備份，使用「另存副本到 Drive」。
+每本筆記本在 Drive 上就是 `SnakeNote` 資料夾裡的一個 `<筆記本名稱>.zip` 檔（內含頁面、內容與圖片）。資料夾在第一次存檔時自動建立；「從 Drive 開啟」只列出這個資料夾裡的筆記本。自己在 Drive 手動建立的同名資料夾，網站因 `drive.file` 權限看不到，會另外建立一個。
+
+存到 Drive 之後會自動同步：停手約 10 秒自動上傳；回到分頁時與每分鐘檢查 Drive 上有沒有別台裝置存的新版本，有就合併進來。兩台裝置改了不同頁會自動合併；改到同一頁時，這台的版本留著，另一台的另存成「（衝突副本）」頁面。要留備份，使用「另存副本到 Drive」。
 
 目前網址：https://jljimmyh.github.io/Snake/
 
-本功能可在 GitHub Pages 運作，不需要 Supabase 或 Node 後端。Google OAuth／Drive 真實帳號尚未在本開發環境驗收；請完成下列設定後，先用測試帳號驗證。
+本功能可在 GitHub Pages 運作，不需要 Supabase 或 Node 後端；只是 Google 授權約一小時過期，過期後要再按一次儲存重新連線。部署到自己的 Cloudflare 網域（見第 8 節）就能長期保持登入，背景自動同步不會中斷。Google OAuth／Drive 真實帳號尚未在本開發環境驗收；請完成下列設定後，先用測試帳號驗證。
 
 ## 你需要什麼
 
@@ -105,11 +107,12 @@ export const GOOGLE_DRIVE_CLIENT_ID = '你的公開 Client ID.apps.googleusercon
 4. 等畫面顯示 **已儲存到…的 Drive**，按鈕變成 **☁ 已存到 Drive**。
 5. 到該帳號的 Google Drive，應可看到 `SnakeNote` 資料夾，裡面有 `我的筆記.zip`。
 6. 換一個瀏覽器（或無痕視窗），點筆記本名稱 → **從 Drive 開啟…**，確認能開啟並看到相同內容與圖片。
-7. 在其中一邊修改並儲存，再回到另一邊儲存，應出現「已被其他裝置修改」的確認。
+7. 在其中一邊加一頁並寫字，等按鈕變成「已儲存」；回到另一邊（切換分頁或按「立即同步」），應看到新的頁面。
+8. 兩邊同時改同一頁再各自同步，後同步的那邊應多出一頁「（衝突副本）」，兩邊寫的內容都還在。
 
 zip 檔可以下載後解壓縮查看，但請勿手動修改裡面的檔案；格式不正確時網站會拒絕開啟，不會影響已開啟的筆記本。
 
-access token 只保存在記憶體，關閉網站後不會保留，下次儲存時需要重新連線。
+access token 只保存在記憶體，關閉網站後不會保留，下次儲存時需要重新連線（第 8 節的 Cloudflare 版本不用）。
 
 ## 7. 正式開放給所有人之前
 
@@ -149,17 +152,57 @@ access token 只保存在記憶體，關閉網站後不會保留，下次儲存�
 
 ### 另一台裝置找不到筆記
 
-點筆記本名稱 →「從 Drive 開啟…」，用同一個 Google 帳號連線。只會列出由本網站存到 Drive 的筆記本；自己上傳到 Drive 的 zip 看不到，請下載後用「匯入 zip…」。這是手動儲存，不是即時跨裝置同步。
+點筆記本名稱 →「從 Drive 開啟…」，用同一個 Google 帳號連線。只會列出由本網站存到 Drive 的筆記本；自己上傳到 Drive 的 zip 看不到，請下載後用「匯入 zip…」。開啟後兩台裝置會自動同步，但不是即時的：上傳要停手約 10 秒，另一台最慢一分鐘內（或切回分頁時）才會看到。
 
-### 「已被其他裝置修改」
+### 出現「（衝突副本）」頁面
 
-代表這本筆記本上次在這台裝置開啟或儲存後，Drive 上的檔案被其他裝置或分頁覆寫過。選「取消」可改用「另存副本到 Drive」保留兩份；選「確定」會覆蓋。被覆蓋的內容通常仍可在 Drive 檔案的「管理版本」找回（Google 會依其政策清理舊版本）。
+兩台裝置在同步之前都改了同一頁的內容。這台的版本留在原本的頁面，另一台的版本存成「（衝突副本）」，看過後把要的內容搬回原頁、刪掉副本即可。只改到不同頁，或一邊只改標題、一邊只改內容，都會自動合併，不會產生副本。
+
+### 「Drive 上的檔案被別台裝置改過，這台也有變更」
+
+只會出現在舊版網站存過、還沒用新版同步過的筆記本（沒有上次同步的紀錄，無法判斷哪邊改了什麼）。選「用這台覆蓋」或「載入 Drive 的內容」；被覆蓋的內容通常仍可在 Drive 檔案的「管理版本」找回。處理一次之後就會自動合併。
 
 ### 如何撤銷授權
 
 「中斷 Google 連線」只清除此頁的 access token，不刪 Drive 檔案。要撤銷應用權限，請至 Google 帳號 → 安全性 → 第三方應用程式與服務，找到此應用並移除存取權。
 
+## 8. 部署到自己的 Cloudflare 網域（長期保持登入）
+
+GitHub Pages 只能用 Google 給的短期 access token。部署成 Cloudflare Worker（`worker/index.js`、`wrangler.jsonc`）之後，Worker 幫瀏覽器保存 Google 的 refresh token：
+
+- 連線 Google 時整頁跳到 Google 授權，回來後 refresh token 以 AES-GCM 加密存進 HttpOnly cookie（網頁程式讀不到）。
+- 需要時瀏覽器向 `/api/google/token` 換新的 access token，重新整理、隔天打開都不用再登入。
+- Worker 不存任何資料，也不經手筆記內容；筆記仍由瀏覽器直接傳到 Google Drive。
+
+目前 `sync` 分支的測試站是 `https://snake-dev.g6n4f.com`。
+
+### Google Cloud 設定（同一個 OAuth Client）
+
+1. Google Auth Platform → Clients → 開啟網站用的那個 Web client。
+2. **Authorized JavaScript origins** 加入 `https://snake-dev.g6n4f.com`。
+3. **Authorized redirect URIs** 加入 `https://snake-dev.g6n4f.com/api/google/callback`。
+4. 需要 **Client secret**。Google 只在建立當下顯示一次；看不到就在同一頁按「Add secret」新增一組，複製下來（只用在下一步，不要貼到聊天或 Git）。
+5. 發布狀態維持 **Testing** 時，Google 發的 refresh token **7 天後失效**，到時要重新連線。要長期登入，需切到 **In production**（`drive.file` 是非敏感權限，一般不需要安全評估，但要填好首頁、隱私權政策與已驗證的網域）。
+
+### Cloudflare 設定
+
+在專案資料夾執行（`wrangler` 已登入同一個 Cloudflare 帳號）：
+
+```
+npx wrangler secret put GOOGLE_CLIENT_SECRET
+```
+
+貼上 Client secret（輸入時不會顯示）。另一個 secret `SESSION_KEY` 是加密 cookie 用的隨機字串，部署時已設定；換掉它會讓所有人的登入失效，需要重新連線。
+
+部署：`npx wrangler deploy`（會先跑 `scripts/site.mjs`，只把 index.html、privacy.html、css、js 複製到 `dist/` 上傳）。
+
+### 跟 GitHub Pages 的資料是分開的
+
+瀏覽器的本機資料依網址分開存：`snake-dev.g6n4f.com` 看不到 `jljimmyh.github.io/Snake/` 裡的本機筆記本。要帶過去，先在舊網址存到 Drive，再到新網址「從 Drive 開啟」。
+
 ## 官方參考
+
+- 伺服器端授權碼流程（refresh token）：https://developers.google.com/identity/protocols/oauth2/web-server
 
 - OAuth 用戶端設定：https://developers.google.com/identity/oauth2/web/guides/get-google-api-clientid
 - 前端 token 流程：https://developers.google.com/identity/oauth2/web/guides/use-token-model

@@ -1,0 +1,19 @@
+// sync 分支的測試站：靜態網站＋Google 登入（見 worker/index.js、docs/GOOGLE_DRIVE_SETUP.md）。
+// secrets（不要寫進這個檔案）：GOOGLE_CLIENT_SECRET、SESSION_KEY
+{
+  "name": "snake-dev",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-10-01",
+  // 只上傳 dist/（scripts/site.mjs 從專案複製網站檔案過去）
+  "build": { "command": "node scripts/site.mjs" },
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": ["/api/*"]
+  },
+  "routes": [{ "pattern": "snake-dev.g6n4f.com", "custom_domain": true }],
+  "vars": {
+    "GOOGLE_CLIENT_ID": "1026660329414-otfb34lm2i61okamhhjdo6nid9smo92n.apps.googleusercontent.com"
+  },
+  "observability": { "enabled": true }
+}

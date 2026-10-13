@@ -73,6 +73,7 @@ export const db = {
     });
   },
   del: (store, key) => run(store, 'readwrite', s => s.delete(key)),
+  keys: store => run(store, 'readonly', s => s.getAllKeys()),
 };
 
 export const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -111,17 +112,21 @@ function putContent(tx, notebook, { pages, docs, blobs }) {
   for (const [id, blob] of blobs) tx.objectStore('blobs').put(blob, id);
 }
 
-// 刪掉一本筆記本的頁面、內容與圖片（不含筆記本紀錄本身）
-function removeContent(tx, notebookId) {
+// 刪掉一本筆記本的頁面、內容與圖片（不含筆記本紀錄本身）。刪除的請求都發出後才呼叫 then，
+// 之後發出的寫入一定排在刪除後面，同樣 ID 的新內容不會被刪掉。
+function removeContent(tx, notebookId, then = () => {}) {
   const pages = tx.objectStore('pages').index('notebookId').getAll(notebookId);
   pages.onsuccess = () => {
+    let left = pages.result.length;
+    if (!left) then();
     for (const page of pages.result) {
       const doc = tx.objectStore('docs').get(page.id);
       doc.onsuccess = () => {
         for (const id of imageIds(doc.result ? [doc.result] : [])) tx.objectStore('blobs').delete(id);
         tx.objectStore('docs').delete(page.id);
+        tx.objectStore('pages').delete(page.id);
+        if (!--left) then();
       };
-      tx.objectStore('pages').delete(page.id);
     }
   };
 }
@@ -133,9 +138,17 @@ export function addNotebook(notebook, content) {
   return transaction(ALL, 'readwrite', tx => putContent(tx, notebook, content));
 }
 
-// 從 Drive 同步：舊內容換成新內容，同一個 transaction（新內容的 ID 都是新的，不會被刪到）
-export function replaceNotebook(notebook, content) {
-  return transaction(ALL, 'readwrite', tx => { removeContent(tx, notebook.id); putContent(tx, notebook, content); });
+// 從 Drive 或檔案同步：舊內容換成新內容，同一個 transaction（先刪後寫，同樣的 ID 會留下新的）。
+// changes：只在筆記本的 changes 還是這個值時才換（期間有新的編輯就放棄，回傳 false）
+export async function replaceNotebook(notebook, content, changes) {
+  let done = true;
+  await transaction(ALL, 'readwrite', tx => {
+    const write = () => removeContent(tx, notebook.id, () => putContent(tx, notebook, content));
+    if (changes === undefined) return write();
+    const request = tx.objectStore('notebooks').get(notebook.id);
+    request.onsuccess = () => { if (request.result?.changes === changes) write(); else done = false; };
+  });
+  return done;
 }
 
 // 關閉筆記本：移除本機的頁面、內容與圖片（Drive 上的檔案不受影響）

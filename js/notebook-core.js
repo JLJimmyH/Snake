@@ -67,14 +67,22 @@ export function validateNotebook({ pages, docs, blobs }) {
 
 const usedImages = docs => new Set(docs.flatMap(d => d.items.filter(i => i.type === 'image').map(i => i.blobId)));
 
-// 本機資料 → zip。還沒編輯過的頁面沒有 doc，補上空白內容。
-export async function packNotebook({ name, pages, docs, blobs }) {
+// 只留檔案裡要存的欄位；還沒編輯過的頁面沒有 doc，補上空白內容
+function normalize({ pages, docs, blobs }) {
   const byPage = new Map(docs.map(d => [d.pageId, d]));
-  const content = {
-    pages: pages.map(p => ({ id: p.id, parentId: p.parentId ?? null, title: p.title ?? '', order: p.order, open: p.open !== false, created: p.created ?? 0 })),
-    docs: pages.map(p => ({ pageId: p.id, view: byPage.get(p.id)?.view ?? DEFAULT_VIEW, items: byPage.get(p.id)?.items ?? [] })),
+  return {
+    pages: pages.map(p => ({ id: p.id, parentId: p.parentId ?? null, title: p.title ?? '', order: p.order, open: p.open !== false, created: Number.isFinite(p.created) ? p.created : 0 })),
+    docs: pages.map(p => {
+      const doc = byPage.get(p.id), view = doc?.view ?? DEFAULT_VIEW;
+      return { pageId: p.id, view: { x: view.x, y: view.y, s: view.s }, items: doc?.items ?? [] };
+    }),
     blobs,
   };
+}
+
+// 本機資料 → zip
+export async function packNotebook({ name, pages, docs, blobs }) {
+  const content = normalize({ pages, docs, blobs });
   validateNotebook(content);
   const files = {};
   let total = 0;
@@ -96,8 +104,14 @@ export async function packNotebook({ name, pages, docs, blobs }) {
   return new Blob([zipSync(files)], { type: 'application/zip' });
 }
 
-// zip → 驗證過、ID 全部換新的筆記本內容。檔案來自外部，一律不信任。
+// zip → 驗證過、ID 全部換新的筆記本內容（匯入：當成一本新的筆記本）
 export async function unpackNotebook(file) {
+  const { name, ...content } = await readZip(file);
+  return { name, ...renumber(content) };
+}
+
+// zip → 驗證過的筆記本內容，保留檔案裡的 ID（同步要靠它對應頁面）。檔案來自外部，一律不信任。
+export async function readZip(file) {
   ensure(file.size <= MAX_BYTES, '檔案超過 100 MB');
   const bytes = new Uint8Array(await file.arrayBuffer());
   let count = 0, total = 0, tooBig = false, entries;
@@ -136,7 +150,7 @@ export async function unpackNotebook(file) {
     if (match && validId(match[1])) blobs.set(match[1], new Blob([data], { type: MIME[match[2].toLowerCase()] ?? '' }));
   }
   validateNotebook({ pages, docs, blobs });
-  return { name: cleanName(manifest.name), ...renumber({ pages, docs, blobs }) };
+  return { name: cleanName(manifest.name), ...normalize({ pages, docs, blobs }) };
 }
 
 // 換上全新的頁面與圖片 ID：同一個檔案開兩次、或另存的副本，才不會跟本機現有的互相覆蓋
@@ -157,4 +171,127 @@ export function renumber({ pages, docs, blobs }, newId = uid) {
     })),
     blobs: new Map([...blobIds].map(([old, id]) => [id, blobs.get(old)])),
   };
+}
+
+// ---------- 同步：檔案 ID、快照、合併 ----------
+// 檔案裡的頁面與圖片 ID 在每台裝置都一樣，合併靠它對應頁面。開檔時檔案 ID 若跟這台裝置上
+// 別本筆記本撞到，才換一個本機 ID；ids = { 本機 ID: 檔案 ID } 只記換過的。
+
+// 本機內容 → 檔案 ID 的內容
+export function toFile({ name, pages, docs, blobs }, ids = {}) {
+  const f = id => Object.hasOwn(ids, id) ? ids[id] : id;
+  const content = normalize({ pages, docs, blobs });
+  return {
+    name: cleanName(name),
+    pages: content.pages.map(p => ({ ...p, id: f(p.id), parentId: p.parentId == null ? null : f(p.parentId) })),
+    docs: content.docs.map(d => ({ ...d, pageId: f(d.pageId), items: d.items.map(i => i.type === 'image' ? { ...i, blobId: f(i.blobId) } : i) })),
+    blobs: new Map([...blobs].map(([id, blob]) => [f(id), blob])),
+  };
+}
+
+// 檔案 ID 的內容 → 本機內容。used：這台裝置上其他筆記本用掉的 ID。回傳本機內容與新的對照表。
+export function fromFile({ name, pages, docs, blobs }, ids = {}, used = new Set(), newId = uid) {
+  const owner = new Map(Object.entries(ids));  // 本機 ID → 檔案 ID
+  const back = new Map([...owner].map(([id, file]) => [file, id]));
+  const done = new Map(), map = {};
+  const local = file => {
+    if (done.has(file)) return done.get(file);
+    let id = back.get(file) ?? file;
+    while (used.has(id) || (owner.get(id) ?? file) !== file) id = newId();
+    owner.set(id, file); done.set(file, id);
+    if (id !== file) map[id] = file;
+    return id;
+  };
+  return {
+    ids: map,
+    content: {
+      name,
+      pages: pages.map(p => ({ ...p, id: local(p.id), parentId: p.parentId == null ? null : local(p.parentId) })),
+      docs: docs.map(d => ({ ...d, pageId: local(d.pageId), items: d.items.map(i => i.type === 'image' ? { ...i, blobId: local(i.blobId) } : i) })),
+      blobs: new Map([...blobs].map(([id, blob]) => [local(id), blob])),
+    },
+  };
+}
+
+// 物件的 key 排序後再序列化：同樣的內容不論欄位順序都得到同樣的字串
+const canon = value => Array.isArray(value) ? '[' + value.map(canon).join(',') + ']'
+  : value && typeof value === 'object' ? '{' + Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => JSON.stringify(k) + ':' + canon(value[k])).join(',') + '}'
+  : JSON.stringify(value) ?? 'null';
+// cyrb53：快速的 53 位元雜湊，只用來判斷內容有沒有變
+function hash(text) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677);
+  }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
+}
+const metaOf = p => hash(canon([p.title, p.parentId, p.order]));
+
+// 快照：每頁 [頁面資訊的雜湊, 內容的雜湊]。只看標題、位置與物件；畫面視角、展開狀態是各台裝置自己的。
+export function snapshot({ name, pages, docs }) {
+  const items = new Map(docs.map(d => [d.pageId, d.items]));
+  return { name, pages: Object.fromEntries(pages.map(p => [p.id, [metaOf(p), hash(canon(items.get(p.id) ?? []))]])) };
+}
+
+export function sameSnapshot(a, b) {
+  if (a.name !== b.name) return false;
+  const keys = Object.keys(a.pages);
+  return keys.length === Object.keys(b.pages).length && keys.every(id => b.pages[id]?.[0] === a.pages[id][0] && b.pages[id][1] === a.pages[id][1]);
+}
+
+// 三方合併（都是檔案 ID）。base：上次同步時的快照；local／remote：兩邊現在的內容。
+// 以頁為單位：只有一邊改過就用那一邊；兩邊都改了同一頁的內容，保留這台的，另一邊的另存成一頁「衝突副本」。
+// 一邊刪除、另一邊沒改就刪；另一邊有改就保留。回傳 { content, conflicts }。
+export function mergeNotebook(base, local, remote, newId = uid) {
+  const L = snapshot(local), R = snapshot(remote);
+  const pick = (b, l, r) => l === r || r === b ? 'local' : l === b ? 'remote' : 'both';
+  const lPages = new Map(local.pages.map(p => [p.id, p])), rPages = new Map(remote.pages.map(p => [p.id, p]));
+  const lDocs = new Map(local.docs.map(d => [d.pageId, d])), rDocs = new Map(remote.docs.map(d => [d.pageId, d]));
+  const unchanged = (b, s) => b && b[0] === s[0] && b[1] === s[1];
+  const pages = [], docs = [], copies = [];
+  for (const id of new Set([...lPages.keys(), ...rPages.keys()])) {
+    const b = base.pages[id], l = L.pages[id], r = R.pages[id];
+    if (l && r) {
+      const lp = lPages.get(id), rp = rPages.get(id);
+      const meta = pick(b?.[0], l[0], r[0]) === 'remote' ? rp : lp;
+      pages.push({ ...meta, open: lp.open });
+      const side = pick(b?.[1], l[1], r[1]);
+      docs.push({ ...lDocs.get(id), items: (side === 'remote' ? rDocs : lDocs).get(id).items });
+      if (side === 'both') copies.push({ page: { ...rp, parentId: meta.parentId, order: meta.order + .5 }, doc: rDocs.get(id) });
+    } else if (l) {
+      if (unchanged(b, l)) continue;  // 另一邊刪了，這邊沒改
+      pages.push({ ...lPages.get(id) }); docs.push(lDocs.get(id));
+    } else {
+      if (unchanged(b, r)) continue;
+      pages.push({ ...rPages.get(id) }); docs.push(rDocs.get(id));
+    }
+  }
+  const taken = new Set([...lPages.keys(), ...rPages.keys()]);
+  for (const { page, doc } of copies) {
+    let id; do id = newId(); while (taken.has(id)); taken.add(id);
+    pages.push({ ...page, id, title: `${page.title || '未命名'}（衝突副本）`, open: true, created: Date.now() });
+    docs.push({ ...doc, pageId: id });
+  }
+  if (!pages.length) {
+    const id = newId();
+    pages.push({ id, parentId: null, title: '', order: 0, open: true, created: Date.now() });
+    docs.push({ pageId: id, view: DEFAULT_VIEW, items: [] });
+  }
+  // 上層被刪掉的頁面移到最上層；兩邊各把 A 移進 B、B 移進 A 造成的循環也打斷
+  const byId = new Map(pages.map(p => [p.id, p]));
+  for (const page of pages) if (page.parentId != null && !byId.has(page.parentId)) page.parentId = null;
+  for (const page of pages) {
+    const seen = new Set([page.id]);
+    for (let parent = page.parentId; parent != null; parent = byId.get(parent).parentId) {
+      if (seen.has(parent)) { page.parentId = null; break; }
+      seen.add(parent);
+    }
+  }
+  const name = L.name !== base.name ? local.name : remote.name;
+  const content = { name, pages, docs, blobs: new Map([...remote.blobs, ...local.blobs]) };
+  validateNotebook(content);
+  return { content, conflicts: copies.length };
 }

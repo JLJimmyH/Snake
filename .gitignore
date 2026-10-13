@@ -9,3 +9,5 @@ collab-assets/
 .env
 .env.*
 !.env.example
+dist/
+.wrangler/

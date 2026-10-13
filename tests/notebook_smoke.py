@@ -1,58 +1,9 @@
 """Notebooks: switching, zip import/export, simulated Google OAuth/Drive. No real Google credentials."""
-import json, os, re
-from urllib.parse import urlparse, parse_qs, unquote
+import io, json, os, re, sys, zipfile
 from playwright.sync_api import sync_playwright, expect
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from fake_drive import FakeDrive
 BASE = os.environ.get('NOTE_TEST_ORIGIN', 'http://127.0.0.1:8040')
-CORS = {'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization,content-type,x-upload-content-type',
-        'Access-Control-Allow-Methods': 'GET,POST,PATCH,PUT,OPTIONS', 'Access-Control-Expose-Headers': 'Location'}
-
-class FakeDrive:
-    def __init__(self):
-        self.files = {}; self.folders = {}; self.sessions = {}; self.next = 0; self.uploads = 0; self.fail_list = False
-    def fields(self, file):
-        return {k: v for k, v in file.items() if k != 'data'}
-    def route(self, route):
-        req = route.request; url = urlparse(req.url); q = parse_qs(url.query)
-        def reply(status, data, headers={}):
-            route.fulfill(status=status, content_type='application/json', headers={**CORS, **headers}, body=json.dumps(data))
-        if req.method == 'OPTIONS': return reply(200, {})
-        account = req.headers.get('authorization', '').removeprefix('Bearer token-')
-        files = self.files.setdefault(account, {}); folders = self.folders.setdefault(account, {})
-        if url.path.startswith('/upload/drive/v3/files'):
-            if 'upload_id' in q:
-                session = self.sessions.pop(q['upload_id'][0])
-                self.next += 1; self.uploads += 1
-                file = files.setdefault(session['id'] or 'file-' + str(self.next), {'id': session['id'] or 'file-' + str(self.next)})
-                file.update({**session['meta'], 'data': req.post_data_buffer, 'size': str(len(req.post_data_buffer)),
-                             'headRevisionId': 'rev-' + str(self.next), 'modifiedTime': '2026-10-06T00:00:%02dZ' % self.next})
-                return reply(200, self.fields(file))
-            file_id = unquote(url.path[len('/upload/drive/v3/files/'):]) if req.method == 'PATCH' else None
-            if file_id and file_id not in files: return reply(404, {'error': 'missing'})
-            self.next += 1; sid = str(self.next)
-            self.sessions[sid] = {'id': file_id, 'meta': json.loads(req.post_data)}
-            return reply(200, {}, {'Location': 'https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&upload_id=' + sid})
-        path = url.path.split('/drive/v3/')[-1]
-        if path == 'about': return reply(200, {'user': {'permissionId': account, 'emailAddress': account + '@example.test'}})
-        if path == 'files' and req.method == 'POST':
-            self.next += 1; folder = {'id': 'folder-' + str(self.next), **json.loads(req.post_data)}
-            assert folder['mimeType'] == 'application/vnd.google-apps.folder', folder
-            folders[folder['id']] = folder
-            return reply(200, {'id': folder['id']})
-        if path == 'files':
-            query = q['q'][0]
-            if 'vnd.google-apps.folder' in query:
-                name = re.search(r"name = '([^']+)'", query).group(1)
-                return reply(200, {'files': [{'id': f['id']} for f in folders.values() if f['name'] == name]})
-            if self.fail_list: return reply(500, {'error': 'boom'})
-            app = re.search(r"key='app' and value='([^']+)'", query).group(1)
-            parents = set(re.findall(r"'([^']+)' in parents", query))
-            return reply(200, {'files': [self.fields(f) for f in files.values()
-                                         if f.get('appProperties', {}).get('app') == app and parents & set(f.get('parents', []))]})
-        file = files.get(unquote(path[len('files/'):]))
-        if not file: return reply(404, {'error': 'missing'})
-        if q.get('alt') == ['media']: return route.fulfill(status=200, content_type='application/zip', headers=CORS, body=file['data'])
-        return reply(200, self.fields(file))
-
 GIS = """window.google={accounts:{oauth2:{initTokenClient(options){return {requestAccessToken(){options.callback({access_token:'token-'+(window.testAccount||'alice'),expires_in:3600,scope:'https://www.googleapis.com/auth/drive.file'})}}}}}};"""
 
 def new_context(browser, fake):
@@ -106,6 +57,22 @@ def draw(page, dy=0):
 def titles(page):
     return page.locator('#tree .pg-title').all_inner_texts()
 
+def zip_files(data):
+    with zipfile.ZipFile(io.BytesIO(data)) as z: return {name: z.read(name) for name in z.namelist()}
+
+def zip_json(data, name):
+    return json.loads(zip_files(data)[name])
+
+def make_zip(files):
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, 'w') as z:
+        for name, data in files.items(): z.writestr(name, data)
+    return out.getvalue()
+
+def page_ids(page):
+    """Title → local page ID of the current notebook."""
+    return page.evaluate("""async()=>{const {db}=await import('./js/db.js');const id=sessionStorage.getItem('notebook');return Object.fromEntries((await db.getAll('pages')).filter(p=>p.notebookId===id).map(p=>[p.title,p.id]))}""")
+
 def notebooks(page):
     return page.evaluate("""async()=>{const {db}=await import('./js/db.js');return (await db.getAll('notebooks')).sort((a,b)=>a.created-b.created)}""")
 
@@ -153,31 +120,38 @@ with sync_playwright() as pw:
     toast(page, '不是有效的 zip')
     assert len(notebooks(page)) == 3
 
-    # 3. Save to Drive (local → bound), edit marks unsaved, save overwrites the same file.
+    # 3. Save to Drive (local → bound), edit marks unsaved, Ctrl+S syncs the same file, idle edits upload by themselves.
     menu(page, '專案 A'); expect(page.locator('#nb-name')).to_have_text('專案 A')
     # 還沒連結任何地方：頂列按鈕打開「儲存與同步」，提醒只存在這個瀏覽器
     expect(page.locator('#sync-button')).to_have_attribute('aria-label', re.compile('只存在這個瀏覽器'))
     page.locator('#sync-button').click()
     expect(page.locator('#sync-warn')).to_be_visible()
     sync_click(page, '存到 Drive')
-    toast(page, '已儲存到 alice@example.test 的 Drive')
+    toast(page, '已儲存到 alice@example.test 的 Drive，之後的變更會自動同步')
     expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     assert [f['name'] for f in fake.files['alice'].values()] == ['專案 A.zip']
     file_id = next(iter(fake.files['alice']))
     assert [f['name'] for f in fake.folders['alice'].values()] == ['SnakeNote'], fake.folders
     folder_id = next(iter(fake.folders['alice']))
     assert fake.files['alice'][file_id]['parents'] == [folder_id]
+    # 檔案裡的頁面 ID 就是這台的 ID（之後每台裝置都用同一組 ID 合併）
+    assert zip_json(fake.files['alice'][file_id]['data'], 'pages.json')[0]['id'] == page_ids(page)['A 的頁面']
     draw(page, 60)
     expect(page.locator('#sync-button')).to_have_attribute('aria-label', UNSAVED)
     expect(page.locator('#nb-dirty')).to_be_visible()
     page.locator('#nb-button').click(); expect(page.locator('#menu button', has_text='專案 A').locator('.menu-hint')).to_have_text('☁•'); page.evaluate("document.querySelector('#menu').hidden = true")
     page.keyboard.press('Control+s')
-    toast(page, '已儲存到')
+    toast(page, '已和 alice@example.test 的 Drive 同步')
     expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     assert list(fake.files['alice']) == [file_id] and fake.uploads == 2
     # Panning only is not a change.
     page.locator('#zoom-in').click(); page.wait_for_timeout(700)
     expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
+    # 停手一陣子就自動上傳，不用按儲存
+    draw(page, 90)
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', UNSAVED)
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED, timeout=20000)
+    assert fake.uploads == 3
     # Rename syncs the Drive file name on the next save.
     dialogs.answers = ['專案 A 改名']; menu(page, '重新命名')
     expect(page.locator('#nb-name')).to_have_text('專案 A 改名')
@@ -204,33 +178,66 @@ with sync_playwright() as pw:
     open_from(device, 'Google Drive'); device.locator('.drive-file', has_text='專案 A 改名').locator('button', has_text='切換').click()
     expect(device.locator('#drive-dialog')).not_to_be_visible()
     assert len(notebooks(device)) == 2, 'opening an already open file switches instead of duplicating'
+    # 這台沒有別本筆記本用掉同樣的 ID，所以沿用檔案的 ID
+    assert page_ids(device)['A 的頁面'] == page_ids(page)['A 的頁面']
     draw(device, 120); device.locator('#sync-button').click(); expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
 
-    # 5. First device is now stale. Sync pulls the other device's strokes and
+    # 5. First device is stale. Coming back to the tab pulls the other device's strokes and
     # stays on the same page; syncing again is a no-op.
     uploads = fake.uploads; strokes = page.locator('.ink path').count()
-    sync_click(page, '從 Drive 同步'); toast(page, '已同步 Drive 上最新的「專案 A 改名」')
+    page.wait_for_timeout(5100); page.evaluate("window.dispatchEvent(new Event('focus'))"); toast(page, '已載入其他裝置在 Drive 上的變更')
     expect(page.locator('.ink path')).to_have_count(strokes + 1)
     expect(page.locator('#page-title')).to_have_value('A 的頁面')
     expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     assert titles(page) == ['A 的頁面'], titles(page)
-    sync_click(page, '從 Drive 同步'); toast(page, '已是最新內容')
+    sync_click(page, '立即同步'); toast(page, '已和 alice@example.test 的 Drive 同步')
     assert fake.uploads == uploads
-    # Unsaved local edits: cancelling the sync keeps them.
-    draw(device, 150); device.locator('#sync-button').click(); expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
-    uploads = fake.uploads
+    # Both changed, different pages: merged without asking, both strokes end up everywhere.
+    device.locator('#tree .row', has_text='A 的頁面').hover(); device.locator('#tree .row', has_text='A 的頁面').locator('[data-act=add]').click()
+    device.locator('#page-title').fill('B 的子頁'); device.locator('#page-title').press('Enter'); draw(device, 30)
+    device.locator('#sync-button').click(); expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     draw(page, 180); strokes = page.locator('.ink path').count()
-    dialogs.answers = [False]; sync_click(page, '從 Drive 同步')
-    assert '尚未存到 Drive 的變更' in dialogs.last(page)
-    expect(page.locator('#sync-button')).to_be_enabled()
+    page.locator('#sync-button').click(); expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     expect(page.locator('.ink path')).to_have_count(strokes)
-    expect(page.locator('#sync-button')).to_have_attribute('aria-label', UNSAVED)
-    # Saving while stale: cancel keeps Drive untouched, confirm overwrites.
-    dialogs.answers = [False]; page.locator('#sync-button').click()
-    assert '已被其他裝置修改' in dialogs.last(page)
-    expect(page.locator('#sync-button')).to_be_enabled(); page.wait_for_timeout(300)
+    assert sorted(titles(page)) == ['A 的頁面', 'B 的子頁'], titles(page)
+    remote = zip_json(fake.files['alice'][file_id]['data'], 'pages.json')
+    assert sorted(p['title'] for p in remote) == ['A 的頁面', 'B 的子頁'], remote
+    # Both changed the same page: this device keeps its version, the other one becomes a conflict copy.
+    device.locator('#tree .row', has_text='A 的頁面').locator('.pg-title').click(); expect(device.locator('#page-title')).to_have_value('A 的頁面')
+    sync_click(device, '立即同步'); expect(device.locator('#tree .pg-title')).to_have_count(2)
+    expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
+    draw(device, 210); device.locator('#sync-button').click(); expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
+    draw(page, 240); strokes = page.locator('.ink path').count()
+    page.locator('#sync-button').click(); toast(page, '存成「（衝突副本）」頁面')
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
+    assert sorted(titles(page)) == ['A 的頁面', 'A 的頁面（衝突副本）', 'B 的子頁'], titles(page)
+    expect(page.locator('.ink path')).to_have_count(strokes)
+    assert sorted(p['title'] for p in zip_json(fake.files['alice'][file_id]['data'], 'pages.json')) == ['A 的頁面', 'A 的頁面（衝突副本）', 'B 的子頁']
+    # Another device saved between this device's check and upload: its version is merged in, not lost.
+    def squeeze(data):
+        files = zip_files(data); pages = json.loads(files['pages.json'])
+        pages.append({'id': 'squeezed', 'parentId': None, 'title': '插隊的頁面', 'order': 99, 'open': True, 'created': 1})
+        files['pages.json'] = json.dumps(pages).encode(); files['docs/squeezed.json'] = json.dumps({'pageId': 'squeezed', 'view': {'x': 0, 'y': 0, 's': 1}, 'items': []}).encode()
+        return make_zip(files)
+    fake.inject = squeeze
+    draw(page, 270); page.locator('#sync-button').click()
+    expect(page.locator('#tree .pg-title', has_text='插隊的頁面')).to_have_count(1, timeout=15000)
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
+    remote = zip_json(fake.files['alice'][file_id]['data'], 'pages.json')
+    assert '插隊的頁面' in [p['title'] for p in remote] and len(remote) == 4, remote
+    # Old record without a snapshot (saved by the previous version): both changed → the user decides.
+    sync_click(device, '立即同步'); expect(device.locator('#tree .pg-title')).to_have_count(4)
+    draw(device, 300); device.locator('#sync-button').click(); expect(device.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
+    page.evaluate("""async()=>{const {db}=await import('./js/db.js');const nbs=await db.getAll('notebooks');const nb=nbs.find(n=>n.drive);delete nb.drive.base;await db.put('notebooks',nb,nb.id)}""")
+    draw(page, 330); uploads = fake.uploads
+    page.locator('#sync-button').click()
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', '同步需要處理')
+    page.locator('#sync-button').click(); expect(page.locator('#sync-drive')).to_contain_text('被別台裝置改過')
     assert fake.uploads == uploads
-    dialogs.answers = [True]; page.locator('#sync-button').click(); expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
+    page.locator('#sync-drive button', has_text='用這台覆蓋').click()
+    expect(page.locator('#sync-drive')).to_contain_text('已自動同步')
+    page.locator('#sync-close').click()
+    expect(page.locator('#sync-button')).to_have_attribute('aria-label', SAVED)
     assert fake.uploads == uploads + 1
 
     # 6. Save a copy: new file, current notebook still bound to the original.

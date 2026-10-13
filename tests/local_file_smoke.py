@@ -18,6 +18,14 @@ proto.requestPermission=function(){window.__asked=(window.__asked||0)+1;localSto
 """
 
 def read(page, name):
+    # 程式可能正好在寫這個檔案（createWritable 換檔的瞬間讀不到），稍等再讀
+    for attempt in range(5):
+        try: return read_once(page, name)
+        except Exception as error:
+            if 'NotReadableError' not in str(error) or attempt == 4: raise
+            page.wait_for_timeout(200)
+
+def read_once(page, name):
     return page.evaluate("""async name => {
       const {unpackNotebook}=await import('./js/notebook-core.js');
       const file=await (await (await navigator.storage.getDirectory()).getFileHandle(name)).getFile();
@@ -26,15 +34,16 @@ def read(page, name):
               texts:c.docs.flatMap(d=>d.items).filter(i=>i.type==='text').map(i=>i.text),modified:file.lastModified};
     }""",name)
 
-def write_external(page, name, title):
-    """Another computer (e.g. through OneDrive) replaces the file with a one-page notebook."""
-    page.evaluate("""async ([name,title]) => {
+def write_external(page, name, title, texts=()):
+    """Another computer (e.g. through OneDrive) replaces the file with a one-page notebook (page ID p1)."""
+    page.evaluate("""async ([name,title,texts]) => {
       const {packNotebook}=await import('./js/notebook-core.js');
-      const blob=await packNotebook({name:'x',pages:[{id:'p1',title,order:0}],docs:[{pageId:'p1',view:{x:0,y:0,s:1},items:[]}],blobs:new Map()});
+      const items=texts.map((text,i)=>({id:'t'+i,type:'text',x:0,y:i*40,size:18,text}));
+      const blob=await packNotebook({name:'我的筆記',pages:[{id:'p1',title,order:0}],docs:[{pageId:'p1',view:{x:0,y:0,s:1},items}],blobs:new Map()});
       await new Promise(r=>setTimeout(r,20));  // lastModified 一定不同
       const w=await (await (await navigator.storage.getDirectory()).getFileHandle(name)).createWritable();
       await w.write(blob);await w.close();
-    }""",[name,title])
+    }""",[name,title,list(texts)])
 
 def notebook(page):
     return page.evaluate("""async()=>{const {db}=await import('./js/db.js');return db.get('notebooks',sessionStorage.getItem('notebook'))}""")
@@ -123,9 +132,28 @@ with sync_playwright() as pw:
     synced(page)
     print('PASS: a file changed elsewhere is loaded when there are no local changes')
 
-    # 5. 兩邊都改過：暫停，選「用這台覆蓋」
+    # 5. 兩邊都改過、改的地方不同：自動合併後寫回（這台的筆跡＋檔案那邊的新標題）
     draw(page,40)
     write_external(page,'notes.zip','又被改了')
+    page.reload();page.wait_for_selector('.row.active')
+    expect(page.locator('#page-title')).to_have_value('又被改了')
+    until(lambda: read(page,'notes.zip')['titles']==['又被改了'] and read(page,'notes.zip')['strokes']==1)
+    synced(page)
+    # 兩邊都改了同一頁的內容：這台的留著，檔案那邊的存成衝突副本
+    draw(page,80)
+    write_external(page,'notes.zip','又被改了',['檔案那邊寫的'])
+    page.evaluate("window.dispatchEvent(new Event('focus'))")
+    toast(page,'存成「（衝突副本）」頁面')
+    expect(page.locator('#tree .pg-title',has_text='又被改了（衝突副本）')).to_have_count(1)
+    until(lambda: sorted(read(page,'notes.zip')['titles'])==['又被改了','又被改了（衝突副本）'] and read(page,'notes.zip')['strokes']==2
+          and read(page,'notes.zip')['texts']==['檔案那邊寫的'])
+    synced(page)
+    print('PASS: changes on both sides are merged page by page')
+
+    # 舊版留下的紀錄沒有快照、兩邊都改過：暫停，選「用這台覆蓋」
+    def drop_base(): page.evaluate("""async()=>{const {db}=await import('./js/db.js');const id=sessionStorage.getItem('notebook');await db.update('notebooks',id,nb=>{delete nb.local.base;return nb})}""")
+    drop_base();draw(page,120)
+    write_external(page,'notes.zip','舊版')
     expect(page.locator('#sync-button')).to_have_attribute('aria-label',TROUBLE,timeout=15000)
     expect(page.locator('#sync-button')).to_have_class(re.compile('warn'))
     page.locator('#sync-button').click()  # 有狀況：打開視窗
@@ -134,10 +162,10 @@ with sync_playwright() as pw:
     local.locator('button',has_text='用這台覆蓋').click()
     expect(local).to_contain_text('已自動同步')
     close_dialog(page)
-    until(lambda: read(page,'notes.zip')['titles']==['外部修改'] and read(page,'notes.zip')['strokes']==1)
+    until(lambda: sorted(read(page,'notes.zip')['titles'])==['又被改了','又被改了（衝突副本）'] and read(page,'notes.zip')['strokes']==3)
     synced(page)
     # 再來一次，這次選「載入檔案內容」
-    draw(page,80)
+    drop_base();draw(page,160)
     write_external(page,'notes.zip','用檔案的')
     expect(page.locator('#sync-button')).to_have_attribute('aria-label',TROUBLE,timeout=15000)
     page.locator('#sync-button').click()
@@ -148,7 +176,7 @@ with sync_playwright() as pw:
     close_dialog(page)
     expect(page.locator('#page-title')).to_have_value('用檔案的')
     synced(page)
-    print('PASS: conflicts pause syncing until the user overwrites or loads the file')
+    print('PASS: without a snapshot, conflicts pause syncing until the user overwrites or loads the file')
 
     # 6. 重開瀏覽器後要重新允許：顯示警告，按「繼續同步」
     page.evaluate("localStorage.setItem('testPerm','prompt')")

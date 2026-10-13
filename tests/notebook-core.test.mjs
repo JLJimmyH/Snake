@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { zipSync } from '../js/vendor/fflate.js';
-import { packNotebook, unpackNotebook, validateNotebook, renumber, fileName, nameFromFile, FORMAT } from '../js/notebook-core.js';
+import { packNotebook, unpackNotebook, readZip, validateNotebook, renumber, fileName, nameFromFile, FORMAT, toFile, fromFile, snapshot, sameSnapshot, mergeNotebook } from '../js/notebook-core.js';
 
 const png = new Blob([new Uint8Array([137, 80, 78, 71, 1, 2, 3])], { type: 'image/png' });
 const local = () => ({
@@ -94,4 +94,110 @@ test('Drive file name is the notebook name plus .zip', () => {
   assert.equal(fileName(''), '未命名筆記本.zip');
   assert.equal(nameFromFile('工作筆記.ZIP'), '工作筆記');
   assert.equal(nameFromFile('notes.v2.zip'), 'notes.v2');
+});
+
+// ---------- 同步 ----------
+const page = (id, title, extra = {}) => ({ id, parentId: null, title, order: 0, open: true, created: 1, ...extra });
+const text = (id, value) => ({ id, type: 'text', x: 0, y: 0, size: 18, text: value });
+const book = (pages, items = {}, name = '筆記') => ({
+  name, pages, blobs: new Map(),
+  docs: pages.map(p => ({ pageId: p.id, view: { x: 0, y: 0, s: 1 }, items: items[p.id] ?? [] })),
+});
+const itemsOf = (content, id) => content.docs.find(d => d.pageId === id).items;
+let counter = 0;
+const fresh = () => 'n' + ++counter;
+
+test('readZip keeps file IDs; pack → readZip round-trips', async () => {
+  const result = await readZip(await packNotebook(local()));
+  assert.deepEqual(result.pages.map(p => p.id), ['root', 'child']);
+  assert.equal(result.docs[0].items[2].blobId, 'img');
+  assert.deepEqual([...result.blobs.keys()], ['img']);
+});
+
+test('toFile / fromFile map only colliding IDs and reuse the mapping', () => {
+  const file = book([page('a', 'A'), page('b', 'B', { parentId: 'a' })], { a: [{ id: 'i', type: 'image', blobId: 'x', x: 0, y: 0, w: 1, h: 1 }] });
+  file.blobs = new Map([['x', png]]);
+  const first = fromFile(file, {}, new Set(['a', 'x']), fresh);
+  const [a, b] = first.content.pages;
+  assert.notEqual(a.id, 'a'); assert.equal(b.id, 'b'); assert.equal(b.parentId, a.id);
+  const blobId = itemsOf(first.content, a.id)[0].blobId;
+  assert.notEqual(blobId, 'x'); assert.ok(first.content.blobs.has(blobId));
+  assert.deepEqual(first.ids, { [a.id]: 'a', [blobId]: 'x' });
+  // 再開一次：同樣的檔案 ID 對到同樣的本機 ID
+  const again = fromFile(file, first.ids, new Set(['a', 'x']), fresh);
+  assert.deepEqual(again.content.pages.map(p => p.id), [a.id, 'b']);
+  // 轉回檔案 ID
+  const back = toFile({ name: '筆記', ...first.content }, first.ids);
+  assert.deepEqual(back.pages.map(p => [p.id, p.parentId]), [['a', null], ['b', 'a']]);
+  assert.equal(itemsOf(back, 'a')[0].blobId, 'x');
+  assert.ok(back.blobs.has('x'));
+});
+
+test('fromFile never hands one local ID to two file IDs', () => {
+  // 舊對照表：本機 p 對到檔案 q；檔案裡現在又出現一個叫 p 的頁面
+  const result = fromFile(book([page('q', 'Q'), page('p', 'P')]), { p: 'q' }, new Set(), fresh);
+  const ids = result.content.pages.map(x => x.id);
+  assert.equal(ids[0], 'p'); assert.notEqual(ids[1], 'p');
+  assert.equal(new Set(ids).size, 2);
+});
+
+test('snapshot ignores view, expanded state and key order', () => {
+  const a = book([page('a', 'A')], { a: [text('t', 'x')] });
+  const b = book([page('a', 'A', { open: false })], { a: [{ text: 'x', size: 18, y: 0, x: 0, type: 'text', id: 't' }] });
+  b.docs[0].view = { x: 99, y: 9, s: 2 };
+  assert.ok(sameSnapshot(snapshot(a), snapshot(b)));
+  b.docs[0].items[0].text = 'y';
+  assert.ok(!sameSnapshot(snapshot(a), snapshot(b)));
+});
+
+test('merge takes each page from the side that changed it', () => {
+  const base = book([page('a', 'A'), page('b', 'B', { order: 1 })], { a: [text('1', 'a')], b: [text('2', 'b')] });
+  const local = structuredClone(base); itemsOf(local, 'a').push(text('3', 'local'));
+  const remote = structuredClone(base); itemsOf(remote, 'b').push(text('4', 'remote')); remote.pages[1].title = 'B2';
+  const { content, conflicts } = mergeNotebook(snapshot(base), local, remote, fresh);
+  assert.equal(conflicts, 0);
+  assert.deepEqual(itemsOf(content, 'a').map(i => i.text), ['a', 'local']);
+  assert.deepEqual(itemsOf(content, 'b').map(i => i.text), ['b', 'remote']);
+  assert.equal(content.pages[1].title, 'B2');
+});
+
+test('merge keeps both versions when the same page changed on both sides', () => {
+  const base = book([page('a', 'A')], { a: [text('1', 'a')] });
+  const local = structuredClone(base); itemsOf(local, 'a').push(text('2', 'mine'));
+  const remote = structuredClone(base); itemsOf(remote, 'a').push(text('3', 'theirs'));
+  const { content, conflicts } = mergeNotebook(snapshot(base), local, remote, fresh);
+  assert.equal(conflicts, 1);
+  assert.deepEqual(itemsOf(content, 'a').map(i => i.text), ['a', 'mine']);
+  const copy = content.pages.find(p => p.id !== 'a');
+  assert.equal(copy.title, 'A（衝突副本）');
+  assert.deepEqual(itemsOf(content, copy.id).map(i => i.text), ['a', 'theirs']);
+});
+
+test('merge deletes a page removed on one side only if the other side left it alone', () => {
+  const base = book([page('a', 'A'), page('b', 'B'), page('c', 'C')], { b: [text('1', 'b')] });
+  const local = book([page('a', 'A'), page('b', 'B')], { b: [text('1', 'b'), text('2', 'edited')] });  // 刪 c、改 b
+  const remote = book([page('a', 'A'), page('c', 'C')]);  // 刪 b
+  const { content } = mergeNotebook(snapshot(base), local, remote, fresh);
+  assert.deepEqual(content.pages.map(p => p.id), ['a', 'b']);
+  assert.equal(itemsOf(content, 'b').length, 2);
+});
+
+test('merge adds new pages from both sides and fixes orphans and cycles', () => {
+  const base = book([page('a', 'A'), page('b', 'B')]);
+  const local = book([page('a', 'A', { parentId: 'b' }), page('b', 'B'), page('l', 'L', { parentId: 'gone' })]);
+  const remote = book([page('a', 'A'), page('b', 'B', { parentId: 'a' }), page('r', 'R')]);
+  const { content } = mergeNotebook(snapshot(base), local, remote, fresh);
+  assert.deepEqual(content.pages.map(p => p.id).sort(), ['a', 'b', 'l', 'r']);
+  assert.equal(content.pages.find(p => p.id === 'l').parentId, null);
+  validateNotebook(content);
+});
+
+test('merge takes the renamed notebook name and unions images', () => {
+  const base = book([page('a', 'A')]);
+  const local = book([page('a', 'A')], {}, '新名字');
+  const remote = book([page('a', 'A')], { a: [{ id: 'i', type: 'image', blobId: 'x', x: 0, y: 0, w: 1, h: 1 }] });
+  remote.blobs = new Map([['x', png]]);
+  const { content } = mergeNotebook(snapshot(base), local, remote, fresh);
+  assert.equal(content.name, '新名字');
+  assert.ok(content.blobs.has('x'));
 });
