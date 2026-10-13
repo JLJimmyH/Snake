@@ -10,6 +10,20 @@
 
 本功能可在 GitHub Pages 運作，不需要 Supabase 或 Node 後端；只是 Google 授權約一小時過期，過期後要再按一次儲存重新連線。部署到自己的 Cloudflare 網域（見第 8 節）就能長期保持登入，背景自動同步不會中斷。Google OAuth／Drive 真實帳號尚未在本開發環境驗收；請完成下列設定後，先用測試帳號驗證。
 
+## 目前的設定（要改東西從這裡進）
+
+Google Cloud 專案 ID：`note-510807`（第 1～4 節已做完，以下直接開到對應頁面）
+
+| 要改什麼 | 網址 |
+| --- | --- |
+| 用戶端：JavaScript 來源、redirect URI、Client secret（第 4、8 節） | https://console.cloud.google.com/auth/clients?project=note-510807 |
+| 對象：測試使用者、Testing／In production（第 3、7 節） | https://console.cloud.google.com/auth/audience?project=note-510807 |
+| 資料存取：`drive.file` 權限（第 3 節） | https://console.cloud.google.com/auth/scopes?project=note-510807 |
+| 品牌：應用名稱、首頁、隱私權政策（第 7 節） | https://console.cloud.google.com/auth/branding?project=note-510807 |
+| Google Drive API 啟用狀態（第 2 節） | https://console.cloud.google.com/apis/library/drive.googleapis.com?project=note-510807 |
+
+Client ID 寫在 `js/drive-config.js`（GitHub Pages）與 `wrangler.jsonc` 的 `GOOGLE_CLIENT_ID`（Cloudflare），兩邊要一致。
+
 ## 你需要什麼
 
 - 一個你能管理的 Google 帳號。

@@ -18,4 +18,4 @@
 
 <kbd>V</kbd> <kbd>L</kbd> <kbd>P</kbd> <kbd>H</kbd> <kbd>E</kbd> <kbd>T</kbd> 工具　<kbd>Ctrl</kbd>+<kbd>Z</kbd>/<kbd>Y</kbd> 復原　<kbd>Ctrl</kbd>+<kbd>S</kbd> 存到 Drive　<kbd>M</kbd> 小地圖
 
-<sub>開發：`python server.py` ・ [協作設定](collaboration/README.md) ・ [Drive 設定](docs/GOOGLE_DRIVE_SETUP.md)</sub>
+<sub>開發：`python server.py` ・ [協作設定](collaboration/README.md) ・ [Drive 設定](docs/GOOGLE_DRIVE_SETUP.md) ・ [Google 控制台](https://console.cloud.google.com/auth/clients?project=note-510807)</sub>
