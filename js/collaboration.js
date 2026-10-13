@@ -43,8 +43,16 @@ class LiveSession {
 
   // items：還沒有本機快取時先顯示的內容（筆記本裡的這一頁）
   async start(items = []) {
-    await this.ticket();
     const cached = await db.get('meta', this.cacheKey);
+    try { await this.ticket(); }
+    catch (error) {
+      // 離線或還沒連線 Google：用這台的快取照常編輯，連上後再補送。沒有權限、檔案不見了就不能開
+      if (!['offline', 'signin', 'error'].includes(error.code)) throw error;
+      // 別人共用來、這台又沒開過：沒有內容可以顯示
+      if (!cached && !this.page.local) throw error;
+      this.role = cached?.role ?? 'editor';
+      this.page.title ??= cached?.title ?? '共用頁面';
+    }
     if (cached) {
       Y.applyUpdate(this.doc, decode(cached.update), 'cache');
       this.version = cached.version ?? 0; this.dirty = cached.dirty;
@@ -90,7 +98,7 @@ class LiveSession {
   }
 
   async cache() {
-    const value = { update: encode(Y.encodeStateAsUpdate(this.doc)), dirty: this.dirty, version: this.version, uploads: [...this.uploads] };
+    const value = { update: encode(Y.encodeStateAsUpdate(this.doc)), dirty: this.dirty, version: this.version, uploads: [...this.uploads], role: this.role, title: this.page.title };
     // 同一頁在好幾個分頁開著：各自的待同步標記分開記，不會互相蓋掉
     this.cacheQueue = this.cacheQueue.then(() => db.update('meta', this.cacheKey, previous => {
       const pending = { ...(previous?.pending ?? {}) };
@@ -121,7 +129,7 @@ class LiveSession {
 
   scheduleSend() {
     clearTimeout(this.sendTimer);
-    this.ui.status(this.ready ? '同步中…' : '離線，已保留待同步內容');
+    this.ui.status(this.ready ? '同步中…' : '離線中：可以繼續編輯，連上後自動同步');
     this.sendTimer = setTimeout(() => this.send().catch(error => this.fail(error)), 80);
   }
 
@@ -175,14 +183,28 @@ class LiveSession {
         this.ui.board.clearPreviews();
         this.ui.presence(this, []);
         if (event.code === 4001) { this.pass = null; this.connect(); return; }  // 通行證到期：換一張再連
-        this.ui.status(this.dirty ? '離線，已保留待同步內容' : '連線中斷，正在重連');
-        this.retryTimer = setTimeout(() => this.connect(), 2000);
+        this.ui.status(this.dirty ? '離線中：可以繼續編輯，連上後自動同步' : navigator.onLine ? '連線中斷，正在重連' : '離線中，正在重新連線');
+        this.retry();
       };
       ws.onerror = () => {}; // onclose 處理離線
     } catch (error) {
-      if (error.code === 'signin' || error.code === 'access' || error.code === 'missing') { this.ui.status(error.message); return; }
+      if (error.code === 'signin') { this.ui.status(this.role === 'editor' ? '連線 Google 後才會同步；可以先繼續編輯' : error.message); return; }
+      if (error.code === 'access' || error.code === 'missing') { this.ui.status(error.message); return; }
+      if (error.code === 'offline') {
+        this.ui.status(this.dirty ? '離線中：可以繼續編輯，連上後自動同步' : '離線中，正在重新連線');
+        this.retry();
+        return;
+      }
       this.fail(error);
     }
+  }
+
+  // 連不上時越等越久再試（2 秒起，最多 30 秒）；連上就重設
+  retry() {
+    if (this.closed) return;
+    this.retryDelay = Math.min(30000, (this.retryDelay ?? 1000) * 2);
+    clearTimeout(this.retryTimer);
+    this.retryTimer = setTimeout(() => this.connect(), this.retryDelay);
   }
 
   async receive(ws, message) {
@@ -191,6 +213,7 @@ class LiveSession {
     if (message.type === 'sync') {
       Y.applyUpdate(this.doc, decode(message.update), 'remote');
       this.vector = message.vector; this.role = message.role; this.peer = message.peer;
+      this.retryDelay = null;
       board.setReadOnly(message.role !== 'editor');
       this.ready = true; this.inFlight = null;
       if (message.empty && message.role === 'editor') await this.seed();
@@ -292,7 +315,7 @@ class LiveSession {
   fail(error) {
     this.ui.status(error.message || '同步失敗，待同步內容已保留');
     this.ws?.close();
-    if (!this.closed && !this.ws) this.retryTimer = setTimeout(() => this.connect(), 2000);
+    if (!this.closed && !this.ws) this.retry();
   }
 
   undoLocal(redo = false) {
@@ -316,7 +339,7 @@ class LiveSession {
 
 // board；beforeOpen()：開房間前把本機頁面存好；onOpen(page)／onLeave()：進出別人共用的頁面（不在筆記本裡）；
 // onContent(page, items)：房間內容變了（筆記本裡的這一頁要跟著存）；drivePage：{ load(file), save(file, content) }
-export async function setupCollaboration({ board, beforeOpen, onOpen, onLeave, onContent, drivePage, toast }) {
+export async function setupCollaboration({ board, beforeOpen, onOpen, onLeave, onContent, drivePage, showMenu, toast }) {
   const ui = {
     board, active: null, drivePage,
     status(text) { $('#collab-state').textContent = text; },
@@ -332,12 +355,13 @@ export async function setupCollaboration({ board, beforeOpen, onOpen, onLeave, o
       board._history();
     },
     content(session, items) { if (session.page.local) onContent(session.page, items); },
-    // 在線的人（不含自己）：頂列的彩色圓點
+    // 在線的人：電腦版是其他人的彩色圓點，手機版只顯示「👥 人數」；點一下列出所有人
     presence(session, people) {
       const box = $('#collab-presence');
+      const others = people.filter(person => person.id !== session.me?.id);
+      ui.people = people.map(person => ({ ...person, me: person.id === session.me?.id }));
       box.replaceChildren();
-      for (const person of people) {
-        if (person.id === session.me?.id) continue;
+      for (const person of others) {
         const dot = document.createElement('span');
         dot.className = 'presence-dot';
         dot.style.setProperty('--peer', person.color);
@@ -345,6 +369,12 @@ export async function setupCollaboration({ board, beforeOpen, onOpen, onLeave, o
         dot.title = `${person.name || person.email}${person.role === 'editor' ? '' : '（檢視者）'}`;
         box.append(dot);
       }
+      const count = document.createElement('span');
+      count.className = 'presence-count';
+      count.textContent = `👥 ${people.length}`;
+      box.append(count);
+      box.title = others.length ? `${people.length} 人正在看這一頁，點一下看是誰` : '';
+      box.classList.toggle('alone', !others.length);
     },
     // page：{ file, title, local }；items：還沒有快取時先顯示的內容。沒登入／沒權限丟出 code 為 signin／access 的錯誤
     async open(page, items = []) {
@@ -368,6 +398,13 @@ export async function setupCollaboration({ board, beforeOpen, onOpen, onLeave, o
     async saved() { if (ui.active) await ui.active.cache(); },
   };
   $('#collab-leave').addEventListener('click', async () => { await beforeOpen(); await ui.detach(); await onLeave(); });
+  $('#collab-presence').addEventListener('click', event => {
+    if (!ui.people?.length) return;
+    showMenu(event.currentTarget.getBoundingClientRect(), [
+      { head: `正在看這一頁（${ui.people.length} 人）` },
+      ...ui.people.map(person => ({ label: `${person.name || person.email}${person.me ? '（你）' : ''}`, hint: person.role === 'editor' ? '可編輯' : '檢視者', run: () => {} })),
+    ]);
+  });
   window.addEventListener('online', () => { if (ui.active && !ui.active.ready) { clearTimeout(ui.active.retryTimer); ui.active.connect(); } });
   return ui;
 }

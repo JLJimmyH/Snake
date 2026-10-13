@@ -987,6 +987,18 @@ async function initialNotebook() {
   return notebookId;
 }
 
+// ---------- 搬家提示 ----------
+// 舊網址（GitHub Pages）：網站搬到 note.g6n4f.com。本機筆記本跟著網址走，提醒先存到 Drive 再到新網站開啟。每次開網站提醒一次
+function showMoveBanner() {
+  if (location.hostname !== 'jljimmyh.github.io') return;
+  try { if (sessionStorage.getItem('moveBanner') === 'closed') return; } catch { /* ignore */ }
+  $('#move-banner').hidden = false;
+  $('#move-close').addEventListener('click', () => {
+    $('#move-banner').hidden = true;
+    try { sessionStorage.setItem('moveBanner', 'closed'); } catch { /* ignore */ }
+  });
+}
+
 // ---------- init ----------
 // 附加功能壞掉不能擋住筆記載入。例如剛更新時，瀏覽器快取（GitHub Pages 10 分鐘）可能給新舊混在一起的檔案
 function optional(name, setup) {
@@ -1000,6 +1012,7 @@ function optional(name, setup) {
 }
 
 async function init() {
+  showMoveBanner();
   // 小地圖預設：桌機打開、手機收合；之後記住使用者的選擇
   let map = null;
   try { map = localStorage.getItem('minimap'); } catch { /* ignore */ }
@@ -1031,7 +1044,7 @@ async function init() {
     if (config?.mode !== 'cloudflare') { showLocalCollaborationInfo(); return; }
     const { setupCollaboration } = await import('/collab-assets/collaboration.js');
     collaboration = await setupCollaboration({
-      board, beforeOpen: flush, toast, drivePage: notebooks?.drivePage,
+      board, beforeOpen: flush, toast, showMenu, drivePage: notebooks?.drivePage,
       // 別人共用來的頁面：不在筆記本裡，標題唯讀
       onOpen: page => {
         current = null;

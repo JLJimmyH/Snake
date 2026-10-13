@@ -188,7 +188,9 @@ GitHub Pages 只能用 Google 給的短期 access token。部署成 Cloudflare W
 - 需要時瀏覽器向 `/api/google/token` 換新的 access token，重新整理、隔天打開都不用再登入。
 - Worker 不存任何資料，也不經手筆記內容；筆記仍由瀏覽器直接傳到 Google Drive。
 
-目前 `sync` 分支的測試站是 `https://snake-dev.g6n4f.com`。
+兩個站：正式站 `https://note.g6n4f.com`（`npx wrangler deploy --env production`，Worker `snake-note`）、
+測試站 `https://snake-dev.g6n4f.com`（`npx wrangler deploy`，Worker `snake-dev`）。兩站的登入與共用頁房間互相獨立，
+Google 設定（下面的網址、Picker 金鑰的網站限制）兩個網域都要加。
 
 ### Google Cloud 設定（同一個 OAuth Client）
 
@@ -203,7 +205,8 @@ GitHub Pages 只能用 Google 給的短期 access token。部署成 Cloudflare W
 在專案資料夾執行（`wrangler` 已登入同一個 Cloudflare 帳號）：
 
 ```
-npx wrangler secret put GOOGLE_CLIENT_SECRET
+npx wrangler secret put GOOGLE_CLIENT_SECRET                    # 測試站
+npx wrangler secret put GOOGLE_CLIENT_SECRET --env production   # 正式站
 ```
 
 貼上 Client secret（輸入時不會顯示）。另一個 secret `SESSION_KEY` 是加密 cookie 用的隨機字串，部署時已設定；換掉它會讓所有人的登入失效，需要重新連線。

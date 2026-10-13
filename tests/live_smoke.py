@@ -61,6 +61,8 @@ def context(browser, fake):
         body = route.fetch().text().replace("GOOGLE_PICKER_KEY = ''", "GOOGLE_PICKER_KEY = 'test-picker-key'")
         route.fulfill(content_type='text/javascript', body=body)
     ctx.route('**/js/drive-config.js*', config)
+    # 記下頁面開的 WebSocket，測試斷線時可以把它關掉
+    ctx.add_init_script("{const Native=window.WebSocket;window.__sockets=[];window.WebSocket=class extends Native{constructor(...a){super(...a);window.__sockets.push(this)}}}")
     return ctx
 
 def draw(page, x=300, y=300):
@@ -159,6 +161,33 @@ with sync_playwright() as pw:
         b.mouse.move(box['x'] - 50, box['y'] - 50)  # 離開畫布
         expect(a.locator('.peer-cursor', has_text='Bob')).to_have_count(0, timeout=10000)
         print('PASS: cursors, selection and presence are visible to the other person')
+
+        # 5b. 在線名單：點一下列出所有人；手機寬度只顯示人數
+        a.locator('#collab-presence').click()
+        expect(a.locator('#menu')).to_contain_text('正在看這一頁（2 人）')
+        expect(a.locator('#menu')).to_contain_text('Alice（你）')
+        expect(a.locator('#menu')).to_contain_text('Bob')
+        a.keyboard.press('Escape'); a.mouse.click(5, 300)
+        b.set_viewport_size({'width': 390, 'height': 800})
+        expect(b.locator('#collab-presence .presence-count')).to_be_visible()
+        expect(b.locator('#collab-presence .presence-count')).to_have_text('👥 2')
+        expect(b.locator('#collab-presence .presence-dot')).to_be_hidden()
+        b.set_viewport_size({'width': 1300, 'height': 900})
+        print('PASS: who is online opens from the avatars or, on phones, the head count')
+
+        # 5c. 斷線時照樣能畫，連回來自動送出
+        strokes = a.locator('.ink path:not(.remote-preview)').count()
+        b.context.set_offline(True)
+        b.evaluate("window.__sockets.forEach(s => s.close())")
+        expect(b.locator('#collab-state')).to_contain_text('離線', timeout=10000)
+        draw(b, 300, 560)
+        expect(b.locator('#collab-state')).to_contain_text('可以繼續編輯')
+        a.wait_for_timeout(1500)
+        assert a.locator('.ink path:not(.remote-preview)').count() == strokes, 'nothing arrives while offline'
+        b.context.set_offline(False)
+        expect(a.locator('.ink path:not(.remote-preview)')).to_have_count(strokes + 1, timeout=40000)
+        expect(b.locator('#collab-state')).to_have_text('已同步', timeout=20000)
+        print('PASS: drawing while offline is sent once the connection is back')
 
         # 6. 寫回 Drive（saver 是先進來的 Alice）與 Alice 筆記本裡的這一頁
         deadline = time.time() + 40

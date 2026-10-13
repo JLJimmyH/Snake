@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Snake Note</title>
 <!-- 版本：scripts/stamp.mjs 產生，不要手改 -->
-<meta name="build" content="dc20525e64">
+<meta name="build" content="a02972a891">
 <script type="importmap">
 {
   "imports": {
@@ -15,7 +15,7 @@
     "./js/ai-ui.js": "./js/ai-ui.js?v=b831864465",
     "./js/appearance.js": "./js/appearance.js?v=6970172940",
     "./js/board.js": "./js/board.js?v=6f601148bd",
-    "./js/collaboration.js": "./js/collaboration.js?v=8ce4e62d4f",
+    "./js/collaboration.js": "./js/collaboration.js?v=05e9b0c684",
     "./js/color.js": "./js/color.js?v=9ed004b7a7",
     "./js/db.js": "./js/db.js?v=57b51b5146",
     "./js/diagram.js": "./js/diagram.js?v=2048c1ffb2",
@@ -26,7 +26,7 @@
     "./js/highlight.js": "./js/highlight.js?v=1c4fb22def",
     "./js/input-mode.js": "./js/input-mode.js?v=35acee13a1",
     "./js/local-file.js": "./js/local-file.js?v=d967cc6232",
-    "./js/main.js": "./js/main.js?v=a6d32cf2dd",
+    "./js/main.js": "./js/main.js?v=e0f0b5f934",
     "./js/markdown.js": "./js/markdown.js?v=48793a922b",
     "./js/minimap.js": "./js/minimap.js?v=906cff3b48",
     "./js/notebook-core.js": "./js/notebook-core.js?v=f122f13340",
@@ -36,12 +36,12 @@
     "./js/share-ui.js": "./js/share-ui.js?v=5b38a37782",
     "./js/shortcuts.js": "./js/shortcuts.js?v=8f44b92950",
     "./js/vendor/fflate.js": "./js/vendor/fflate.js?v=89c01a7364",
-    "./js/build.js": "./js/build.js?v=4923417d5a"
+    "./js/build.js": "./js/build.js?v=671cbef16b"
   }
 }
 </script>
 <!-- /版本 -->
-<link rel="stylesheet" href="css/style.css?v=2b09ae2848">
+<link rel="stylesheet" href="css/style.css?v=34d2e6a780">
 <script>
   // 在畫面出來前套用主題，避免先閃一下別的顏色；之後由 js/appearance.js 接手
   // theme 存 'system' 或主題名稱；舊版存 light／dark，主題另外存在 lightPalette／darkPalette
@@ -61,6 +61,11 @@
 </script>
 </head>
 <body>
+<div id="move-banner" role="note" hidden>
+  <p><strong>Snake Note 搬家到 <a href="https://note.g6n4f.com/">note.g6n4f.com</a> 了</strong>：新網站會自動同步到 Google Drive，也能跟別人即時共用頁面。</p>
+  <p>這裡的筆記本只存在這個瀏覽器，新網站看不到。搬過去前，請先在「⇅ 儲存與同步」把每本筆記本存到 Drive，再到新網站用「開啟 → Google Drive」打開。</p>
+  <div class="move-actions"><a class="collab-primary" href="https://note.g6n4f.com/">前往新網站</a><button id="move-close" class="chip">稍後再說</button></div>
+</div>
 <div id="app">
   <aside id="sidebar">
     <div class="sb-head">
@@ -456,6 +461,6 @@
   <textarea id="ai-request" rows="2" aria-label="想要 AI 做什麼" placeholder="想要 AI 做什麼（交給 AI 用，可以不填）"></textarea>
   <p class="export-actions"><button id="ai-copy" class="collab-primary">✨ 複製給 AI</button><button id="export-image" class="chip">🖼 複製圖片</button><button id="export-pdf" class="chip">📄 匯出 PDF</button></p>
 </dialog>
-<script type="module" src="js/main.js?v=a6d32cf2dd"></script>
+<script type="module" src="js/main.js?v=e0f0b5f934"></script>
 </body>
 </html>
