@@ -233,7 +233,7 @@ with sync_playwright() as pw:
         print('PASS: an invitee copies a shared page into their own notebook')
 
         # 9. Alice 停止共用（頂列「共用」）：移除 Bob 的權限，共用檔案移到垃圾桶，清單上不再有它
-        a.locator('#lib-back').click()
+        a.locator('#library .lib-row[data-notebook].active').click()
         a.locator('#share-button').click()
         expect(a.locator('#share-dialog')).to_contain_text('具有存取權的使用者', timeout=20000)
         a.once('dialog', lambda d: d.accept())
@@ -243,11 +243,11 @@ with sync_playwright() as pw:
         expect(a.locator('#tree .row.active .pg-icon')).to_have_text('📄')
         a.locator('#nb-button').click()
         expect(a.locator('#library .lib-row[data-shared]')).to_have_count(0, timeout=20000)
-        expect(a.locator('#library')).to_contain_text('還沒有。')
+        expect(a.locator('#library')).to_contain_text('還沒有')
         print('PASS: stopping sharing trashes the shared file and removes it from the list')
 
         # 10. 刪掉共用頁就自動停止共用；沒連線時刪的，下次連上 Google 再停
-        a.locator('#lib-back').click()
+        a.locator('#library .lib-row[data-notebook].active').click()
         confirms = []
         def accept(dialog): confirms.append(dialog.message); dialog.accept()
         def share_new(title):
@@ -279,15 +279,15 @@ with sync_playwright() as pw:
         assert later.get('trashed') is True and not later['perms']
         print('PASS: deleting a shared page stops sharing it, right away or after signing in again')
 
-        # 11. 清單上留下來的共用頁（這台的筆記本裡沒有這一頁，例如舊版刪掉的）：⋯ 停止共用
+        # 11. 清單上留下來的共用頁（這台沒有這一頁，例如舊版刪掉的）：⋯ 停止共用
         orphan = {'id': 'orphan-page', 'name': '舊的共用頁.zip', 'owner': 'alice', 'mimeType': 'application/zip',
                   'appProperties': {'app': 'snake-note-notebook-v1', 'kind': 'page'}, 'perms': {'bob': 'writer'}}
         fake.store(orphan, b'zip'); fake.files['alice']['orphan-page'] = orphan
         a.locator('#nb-button').click()
         a.locator('#account .acct-btn').click(); a.locator('#menu button', has_text='重新整理').click()
         row = a.locator('#library .lib-row[data-shared="orphan-page"]')
-        expect(row).to_contain_text('這台的筆記本裡沒有這一頁', timeout=20000)
-        expect(a.locator('#library .lib-row[data-shared]', has_text='這台的筆記本裡沒有這一頁')).to_have_count(1)
+        expect(row).to_contain_text('這台沒有這一頁', timeout=20000)
+        expect(a.locator('#library .lib-row[data-shared]', has_text='這台沒有這一頁')).to_have_count(1)
         a.once('dialog', accept)
         row.hover(); row.locator('[data-act=more]').click(); a.locator('#menu button', has_text='停止共用').click()
         toast(a, '已停止共用「舊的共用頁」')

@@ -7,7 +7,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <title>Snake Note</title>
 <!-- 版本：scripts/stamp.mjs 產生，不要手改 -->
-<meta name="build" content="ee8d6bd87f">
+<meta name="build" content="93d18e3abf">
 <script type="importmap">
 {
   "imports": {
@@ -25,9 +25,9 @@
     "./js/export.js": "./js/export.js?v=9f8170afb2",
     "./js/highlight.js": "./js/highlight.js?v=1c4fb22def",
     "./js/input-mode.js": "./js/input-mode.js?v=35acee13a1",
-    "./js/library.js": "./js/library.js?v=1485e5a734",
+    "./js/library.js": "./js/library.js?v=248d8d1dfa",
     "./js/local-file.js": "./js/local-file.js?v=d967cc6232",
-    "./js/main.js": "./js/main.js?v=427a40a5ce",
+    "./js/main.js": "./js/main.js?v=ad8d46eb7c",
     "./js/markdown.js": "./js/markdown.js?v=48793a922b",
     "./js/minimap.js": "./js/minimap.js?v=906cff3b48",
     "./js/notebook-core.js": "./js/notebook-core.js?v=f122f13340",
@@ -37,12 +37,12 @@
     "./js/share-ui.js": "./js/share-ui.js?v=d510f3ff4d",
     "./js/shortcuts.js": "./js/shortcuts.js?v=8f44b92950",
     "./js/vendor/fflate.js": "./js/vendor/fflate.js?v=89c01a7364",
-    "./js/build.js": "./js/build.js?v=dac4ac081e"
+    "./js/build.js": "./js/build.js?v=8c707bac5d"
   }
 }
 </script>
 <!-- /版本 -->
-<link rel="stylesheet" href="css/style.css?v=519878dfc9">
+<link rel="stylesheet" href="css/style.css?v=de5b8b6695">
 <script>
   // 在畫面出來前套用主題，避免先閃一下別的顏色；之後由 js/appearance.js 接手
   // theme 存 'system' 或主題名稱；舊版存 light／dark，主題另外存在 lightPalette／darkPalette
@@ -68,11 +68,11 @@
   <div class="move-actions"><a class="collab-primary" href="https://note.g6n4f.com/">前往新網站</a><button id="move-close" class="chip">稍後再說</button></div>
 </div>
 <div id="app">
-  <!-- 兩層：data-level=notebook 是目前這本筆記本（頁面／搜尋）；點頂部的筆記本名稱往上一層到 library（所有筆記本＋共用頁面） -->
+  <!-- 兩層：data-level=notebook 是目前這本筆記本（頁面／搜尋）；點頂部的「‹ 筆記本名稱」往上一層到 library（所有筆記本＋共用頁面），點清單上的筆記本回來 -->
   <aside id="sidebar" data-level="notebook">
     <div class="sb-head">
-      <button id="nb-button" class="sb-brand at-notebook" aria-controls="library-pane" aria-expanded="false" title="所有筆記本與共用頁面">📒 <span id="nb-name">我的筆記</span><span class="nb-caret">▾</span></button>
-      <button id="lib-back" class="sb-brand at-library" title="回到目前的筆記本"><span class="lib-back-arrow" aria-hidden="true">‹</span> 所有筆記本</button>
+      <button id="nb-button" class="sb-brand at-notebook" aria-controls="library-pane" aria-expanded="false" aria-label="所有筆記本" title="所有筆記本與共用頁面"><span class="nb-up" aria-hidden="true">‹</span>📒 <span id="nb-name">我的筆記</span></button>
+      <h2 class="sb-title at-library">所有筆記本</h2>
       <button id="lib-new" class="icon-btn at-library" title="新增筆記本" aria-label="新增筆記本">＋</button>
       <button id="sb-close" class="icon-btn only-mobile" aria-label="關閉側欄">✕</button>
     </div>
@@ -457,6 +457,6 @@
   <textarea id="ai-request" rows="2" aria-label="想要 AI 做什麼" placeholder="想要 AI 做什麼（交給 AI 用，可以不填）"></textarea>
   <p class="export-actions"><button id="ai-copy" class="collab-primary">✨ 複製給 AI</button><button id="export-image" class="chip">🖼 複製圖片</button><button id="export-pdf" class="chip">📄 匯出 PDF</button></p>
 </dialog>
-<script type="module" src="js/main.js?v=427a40a5ce"></script>
+<script type="module" src="js/main.js?v=ad8d46eb7c"></script>
 </body>
 </html>

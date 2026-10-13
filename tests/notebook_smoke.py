@@ -120,10 +120,11 @@ with sync_playwright() as pw:
     book(page, '專案 A')
     expect(page.locator('#page-title')).to_have_value('A 的頁面')
     expect(page.locator('#viewport path, #viewport polyline').first).to_be_attached()
-    # 側欄兩層：點筆記本名稱往上一層（分頁收起來），‹ 所有筆記本 回到這本
+    # 側欄兩層：點「‹ 筆記本名稱」往上一層（分頁收起來），點清單上目前那本回來
     page.locator('#nb-button').click()
     expect(page.locator('#library-pane')).to_be_visible(); expect(page.locator('.sb-tabs')).to_be_hidden(); expect(page.locator('#tree')).to_be_hidden()
-    page.locator('#lib-back').click()
+    expect(page.locator('#sidebar .sb-title')).to_have_text('所有筆記本')
+    book(page, '專案 A')
     expect(page.locator('#tree')).to_be_visible(); expect(page.locator('#library-pane')).to_be_hidden(); expect(page.locator('#nb-button')).to_be_visible()
 
     # 2. Export → import creates an independent local copy.
@@ -195,7 +196,7 @@ with sync_playwright() as pw:
     other = new_context(browser, fake); device = other.new_page(); device.on('pageerror', lambda e: errors.append(str(e))); Dialogs(device)
     device.goto(BASE); expect(device.locator('#nb-name')).to_have_text('我的筆記')
     # 筆記本清單：連線 Google 後，Drive 上還沒在這台開過的筆記本跟這台的列在一起
-    fake.fail_list = True; lib(device); device.locator('.lib-connect').click()
+    fake.fail_list = True; lib(device); device.locator('#account .acct-connect').click()
     expect(device.locator('#library')).to_contain_text('Drive 請求失敗 (500)')
     fake.fail_list = False
     fake.files['alice']['stray'] = {**fake.files['alice'][file_id], 'id': 'stray', 'name': '資料夾外.zip', 'parents': ['root']}

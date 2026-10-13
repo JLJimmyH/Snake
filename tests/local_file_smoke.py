@@ -108,7 +108,7 @@ with sync_playwright() as pw:
     assert '歡迎使用' in first['titles'] and first['strokes']==0,first
     synced(page)
     expect(book_row(page,'我的筆記').locator('.lib-status')).to_have_text('💾 notes.zip')
-    page.locator('#lib-back').click()
+    book_row(page,'我的筆記').click()
     print('PASS: link a file and write it right away')
 
     # 2. 有變更：停手 5 秒後自動寫入

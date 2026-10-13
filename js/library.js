@@ -74,41 +74,36 @@ export function setupLibrary({ drive, notebooks, shares, showPages, connect, dis
         nodes.push(row({ icon: '☁', name: nameFromFile(file.name), status: `在 Drive 上 · ${when(file.modifiedTime)} · ${size(Number(file.size ?? 0))}`, data: { file: file.id } }));
       }
     }
-    if (!drive.connected) {
-      if (!notebooks.resuming()) {
-        const button = el('button', '☁ 連線 Google，列出 Drive 上的筆記本', 'lib-link lib-connect');
-        nodes.push(button);
-      }
-    } else if (error) {
+    // 沒連線時清單上不放連線按鈕：底部帳號列就有「連線 Google Drive」
+    if (drive.connected && error) {
       const note = el('p', '⚠ ' + error + ' ', 'lib-muted lib-error');
       const retry = el('button', '重試', 'link-btn lib-retry');
       note.append(retry);
       nodes.push(note);
-    } else if (!files) nodes.push(el('p', '讀取 Drive 上的筆記本…', 'lib-muted'));
+    } else if (drive.connected && !files) nodes.push(el('p', '讀取中…', 'lib-muted'));
     nodes.push(el('button', '📂 ' + notebooks.localLabel, 'lib-link lib-local'));
 
     if (shares.ready()) {
       nodes.push(head('共用頁面'));
       const active = shares.active();
-      if (!drive.connected) nodes.push(el('p', '連線 Google 後，這裡會列出你共用出去的頁面，和別人共用給你的頁面。', 'lib-muted'));
+      if (!drive.connected) nodes.push(el('p', '連線 Google 後顯示', 'lib-muted'));
       else if (pages) {
         const mine = pages.filter(p => p.mine), theirs = pages.filter(p => !p.mine), linked = await shares.linked();
-        nodes.push(el('div', '我共用的', 'lib-sub'));
-        if (!mine.length) nodes.push(el('p', '還沒有。在頁面的「⋯」或右上角的「共用」開始共用一頁。', 'lib-muted'));
+        if (!pages.length) nodes.push(el('p', '還沒有', 'lib-muted'));
+        if (mine.length) nodes.push(el('div', '我共用的', 'lib-sub'));
         for (const page of mine) {
           const people = page.people ? `${page.people} 人可以存取` : page.people === 0 && !page.anyone ? '還沒共用給任何人' : '';
           // 頁面刪掉了（或在別台的筆記本裡）：標出來，⋯ 可以直接停止共用
           const orphan = !linked.has(page.id);
-          const status = [orphan && '這台的筆記本裡沒有這一頁', people, page.anyone && '知道連結的人都能開'].filter(Boolean).join(' · ') || '你共用的';
+          const status = [orphan && '這台沒有這一頁', people, page.anyone && '有連結就能開'].filter(Boolean).join(' · ') || '你共用的';
           nodes.push(row({ icon: '👥', name: page.name, status, warn: orphan, active: page.id === active, data: { shared: page.id }, more: orphan }));
         }
-        nodes.push(el('div', '共用給我的', 'lib-sub'));
-        if (!theirs.length) nodes.push(el('p', '別人共用給你的頁面，第一次要在下面選一次才會出現在這裡。', 'lib-muted'));
+        if (theirs.length) nodes.push(el('div', '共用給我的', 'lib-sub'));
         for (const page of theirs) {
           nodes.push(row({ icon: '👤', name: page.name, status: `${page.owner} · ${page.canEdit ? '可編輯' : '只能檢視'}`, active: page.id === active, data: { shared: page.id } }));
         }
-      } else if (!error) nodes.push(el('p', '讀取共用頁面…', 'lib-muted'));
-      nodes.push(el('button', '＋ 開啟別人共用給我的頁面…', 'lib-link lib-pick'));
+      } else if (!error) nodes.push(el('p', '讀取中…', 'lib-muted'));
+      nodes.push(el('button', '＋ 開啟別人共用的頁面…', 'lib-link lib-pick'));
     }
     // 同步狀態一直在變，清單常常重畫：內容一樣就不換，免得正要點的那一列被換掉
     const next = el('div');
@@ -147,7 +142,6 @@ export function setupLibrary({ drive, notebooks, shares, showPages, connect, dis
   // ---------- 事件 ----------
   box.addEventListener('click', event => {
     const target = event.target;
-    if (target.closest('.lib-connect')) { connect(); return; }
     if (target.closest('.lib-retry')) { refresh(true); return; }
     if (target.closest('.lib-local')) { notebooks.openLocal(); return; }
     if (target.closest('.lib-pick')) { shares.pick(); return; }
